@@ -1,13 +1,19 @@
-import { useState, useId } from 'react';
+import { useState, useId, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { parseCsv, type ParsedCsv } from '../utils/csvParser';
-import { mapCsvStatusToStageCode } from '../utils/stageMapping';
+import { getQualificationStatusLabel } from '../utils/qualificationMapping';
 import {
-  mapHubspotQualificationStatus,
-  getQualificationStatusLabel,
-  normalizePhoneDigits,
-} from '../utils/qualificationMapping';
-import type { ContactPreference, LeadSource } from '../../../types';
+  analyzeCsvImport,
+  classifyRow,
+  buildUpdatePayload,
+  buildDbLeadIndexes,
+  buildCsvPhoneCountMap,
+  buildFieldToColumnMap,
+  type DbLeadRef,
+  type PipelineStageRef,
+  type ConflictItem,
+  type ImportPreviewAnalysis,
+} from '../utils/csvImportEngine';
 import {
   X,
   UploadCloud,
@@ -18,6 +24,9 @@ import {
   AlertTriangle,
   Loader2,
   ShieldAlert,
+  Search,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 interface CsvImportModalProps {
@@ -27,20 +36,20 @@ interface CsvImportModalProps {
 }
 
 type DuplicateStrategy = 'update' | 'skip' | 'create';
-type Step = 'upload' | 'preview' | 'mapping' | 'strategy' | 'importing' | 'results';
+type Step = 'upload' | 'mapping' | 'preview' | 'importing' | 'results';
 
 const CRM_FIELDS = [
-  { key: 'first_name', label: 'First Name' },
-  { key: 'last_name', label: 'Last Name' },
-  { key: 'email', label: 'Email' },
+  { key: 'hubspot_contact_id', label: 'HubSpot Record ID (hubspot_contact_id)' },
+  { key: 'first_name', label: 'First Name (first_name)' },
+  { key: 'last_name', label: 'Last Name (last_name)' },
+  { key: 'email', label: 'Email (email)' },
+  { key: 'phone', label: 'Phone Number (phone)' },
+  { key: 'qualification_status', label: 'Qualification Status (qualification_status)' },
+  { key: 'course_interest', label: 'Course of Interest (course_interest)' },
+  { key: 'contact_preference', label: 'Preferred Channels / Contact Preference (contact_preference)' },
+  { key: 'status', label: 'Lifecycle Stage / Pipeline Stage (status)' },
   { key: 'email_confirmation', label: 'Email Confirmation' },
-  { key: 'phone', label: 'Phone Number' },
-  { key: 'hubspot_contact_id', label: 'HubSpot Record ID' },
-  { key: 'qualification_status', label: 'Qualification Status' },
-  { key: 'course_interest', label: 'Course of Interest' },
-  { key: 'contact_preference', label: 'Contact Preference (email/sms/call)' },
   { key: 'source', label: 'Source (meta/google/manual/test)' },
-  { key: 'status', label: 'Pipeline Stage / Status' },
   { key: 'tags', label: 'Tags (comma-separated)' },
 ];
 
@@ -52,18 +61,40 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [duplicateStrategy, setDuplicateStrategy] = useState<DuplicateStrategy>('update');
 
+  // Mapping view filters
+  const [columnSearch, setColumnSearch] = useState('');
+  const [mappingFilter, setMappingFilter] = useState<'all' | 'mapped'>('mapped');
+
+  // Preview state
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [previewAnalysis, setPreviewAnalysis] = useState<ImportPreviewAnalysis | null>(null);
+  const [showConflictsList, setShowConflictsList] = useState(false);
+
+  // Importing state
   const [importProgress, setImportProgress] = useState(0);
-  const [results, setResults] = useState({
+  const [currentProgressText, setCurrentProgressText] = useState('');
+  const [results, setResults] = useState<{
+    total: number;
+    created: number;
+    updated: number;
+    conflicts: number;
+    skipped: number;
+    failed: number;
+    conflictList: ConflictItem[];
+  }>({
     total: 0,
     created: 0,
     updated: 0,
     conflicts: 0,
     skipped: 0,
     failed: 0,
+    conflictList: [],
   });
   const [error, setError] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  // Cached stages and DB leads
+  const [cachedStages, setCachedStages] = useState<PipelineStageRef[]>([]);
+  const [cachedDbLeads, setCachedDbLeads] = useState<DbLeadRef[]>([]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -102,17 +133,23 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
             initialMapping[header] = 'email_confirmation';
           } else if (lower.includes('email') || lower === 'mail') {
             initialMapping[header] = 'email';
-          } else if (lower.includes('phone') || lower.includes('tel') || lower.includes('cell')) {
+          } else if (lower.includes('phone') || lower.includes('tel') || lower.includes('cell') || lower.includes('telefone')) {
             initialMapping[header] = 'phone';
-          } else if (lower.includes('preference') || lower.includes('preferredchannel')) {
+          } else if (
+            lower.includes('preference') ||
+            lower.includes('preferredchannel') ||
+            lower.includes('preferredchannels') ||
+            lower.includes('canalpreferido')
+          ) {
             initialMapping[header] = 'contact_preference';
-          } else if (lower.includes('source') || lower.includes('origin')) {
+          } else if (lower.includes('source') || lower.includes('origin') || lower.includes('origem')) {
             initialMapping[header] = 'source';
           } else if (
             lower.includes('status') ||
             lower.includes('stage') ||
             lower.includes('lifecycle') ||
-            lower.includes('pipeline')
+            lower.includes('pipeline') ||
+            lower.includes('estagio')
           ) {
             initialMapping[header] = 'status';
           } else if (lower.includes('tag')) {
@@ -121,7 +158,7 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
         });
 
         setColumnMapping(initialMapping);
-        setStep('preview');
+        setStep('mapping');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error reading CSV file');
       }
@@ -129,78 +166,89 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
     reader.readAsText(selected);
   };
 
+  const handleProceedToPreview = async () => {
+    if (!parsedData) return;
+    setIsAnalyzing(true);
+    setError(null);
+
+    try {
+      // 1. Fetch active pipeline stages
+      let stages = cachedStages;
+      if (stages.length === 0) {
+        const { data: stagesData, error: stagesErr } = await supabase
+          .from('pipeline_stages')
+          .select('id, code, name, sort_order')
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true });
+
+        if (stagesErr || !stagesData) throw stagesErr || new Error('Failed to load active pipeline stages');
+        stages = stagesData;
+        setCachedStages(stagesData);
+      }
+
+      // 2. Fetch existing leads for deduplication
+      let dbLeads = cachedDbLeads;
+      if (dbLeads.length === 0) {
+        const { data: leadsData, error: leadsErr } = await supabase
+          .from('leads')
+          .select('id, email, phone_raw, phone_e164, hubspot_contact_id, external_lead_id, pipeline_stage_id, qualification_status, first_name, last_name, course_interest');
+
+        if (leadsErr) throw leadsErr;
+        dbLeads = leadsData || [];
+        setCachedDbLeads(dbLeads);
+      }
+
+      // 3. Run safe deduplication analysis across all rows
+      const analysis = analyzeCsvImport(parsedData.rows, columnMapping, dbLeads, stages);
+      setPreviewAnalysis(analysis);
+      setStep('preview');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze CSV preview');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleExecuteImport = async () => {
     if (!parsedData || !file) return;
 
     setStep('importing');
     setImportProgress(0);
+    setCurrentProgressText('Initializing safe import job...');
     setError(null);
 
     try {
-      // 1. Get active pipeline stages dynamically with sort_order
-      const { data: stages, error: stagesErr } = await supabase
-        .from('pipeline_stages')
-        .select('id, code, name, sort_order')
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true });
-
-      if (stagesErr || !stages) {
-        throw stagesErr || new Error('Failed to load active pipeline stages');
+      // Load stages and dbLeads
+      let stages = cachedStages;
+      if (stages.length === 0) {
+        const { data: stg } = await supabase
+          .from('pipeline_stages')
+          .select('id, code, name, sort_order')
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true });
+        stages = stg || [];
       }
 
       const stageByCode = new Map(stages.map((s) => [s.code, s]));
       const stageById = new Map(stages.map((s) => [s.id, s]));
-      const captureStage = stageByCode.get('capture');
+      const captureStage = stageByCode.get('capture') || stages[0];
       const qualificationStage = stageByCode.get('qualification');
-      if (!captureStage) {
-        throw new Error('Capture pipeline stage not found');
-      }
       const defaultStageId = captureStage.id;
 
-      // 2. Pre-fetch all existing leads to build in-memory O(1) safe matching indexes
-      const { data: existingLeadsData, error: leadsErr } = await supabase
-        .from('leads')
-        .select('id, email, phone_raw, phone_e164, hubspot_contact_id, external_lead_id, pipeline_stage_id, qualification_status, first_name, last_name, course_interest');
+      let dbLeads = cachedDbLeads;
+      if (dbLeads.length === 0) {
+        const { data: lds } = await supabase
+          .from('leads')
+          .select('id, email, phone_raw, phone_e164, hubspot_contact_id, external_lead_id, pipeline_stage_id, qualification_status, first_name, last_name, course_interest');
+        dbLeads = lds || [];
+      }
 
-      if (leadsErr) throw leadsErr;
-      const allDbLeads = existingLeadsData || [];
+      // Build in-memory indexes
+      const { dbHubspotIdMap, dbEmailMap, dbPhoneToLeadsMap } = buildDbLeadIndexes(dbLeads);
+      const fieldToCol = buildFieldToColumnMap(columnMapping);
+      const csvPhoneCountMap = buildCsvPhoneCountMap(parsedData.rows, fieldToCol.phone);
 
-      // Build DB lookup indexes
-      const dbHubspotIdMap = new Map<string, typeof allDbLeads[0]>();
-      const dbEmailMap = new Map<string, typeof allDbLeads[0]>();
-      const dbPhoneToLeadsMap = new Map<string, typeof allDbLeads>();
-
-      allDbLeads.forEach((l) => {
-        if (l.hubspot_contact_id) dbHubspotIdMap.set(l.hubspot_contact_id.trim(), l);
-        if (l.external_lead_id) dbHubspotIdMap.set(l.external_lead_id.trim(), l);
-        if (l.email) {
-          const em = l.email.toLowerCase().trim();
-          dbEmailMap.set(em, l);
-        }
-        const pDigits = normalizePhoneDigits(l.phone_raw) || normalizePhoneDigits(l.phone_e164);
-        if (pDigits) {
-          if (!dbPhoneToLeadsMap.has(pDigits)) dbPhoneToLeadsMap.set(pDigits, []);
-          dbPhoneToLeadsMap.get(pDigits)!.push(l);
-        }
-      });
-
-      // Invert column mapping for fast field lookup
-      const fieldToCol: Record<string, string> = {};
-      Object.entries(columnMapping).forEach(([col, field]) => {
-        if (field) fieldToCol[field] = col;
-      });
-
-      // Pre-count phone occurrences in CSV to enforce strict rule: Phone must be unique on BOTH sides!
-      const csvPhoneCountMap = new Map<string, number>();
-      parsedData.rows.forEach((r) => {
-        const pRaw = fieldToCol.phone ? r[fieldToCol.phone] : '';
-        const pDigits = normalizePhoneDigits(pRaw);
-        if (pDigits) {
-          csvPhoneCountMap.set(pDigits, (csvPhoneCountMap.get(pDigits) || 0) + 1);
-        }
-      });
-
-      // 3. Create lead_imports record
+      // Create lead_imports record
       const { data: importRec, error: impErr } = await supabase
         .from('lead_imports')
         .insert({
@@ -213,7 +261,7 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
         .select('id')
         .single();
 
-      if (impErr || !importRec) throw impErr || new Error('Failed to create import job');
+      if (impErr || !importRec) throw impErr || new Error('Failed to create import job in database');
       const importId = importRec.id;
 
       let created = 0;
@@ -221,349 +269,281 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
       let conflicts = 0;
       let skipped = 0;
       let failed = 0;
+      const conflictList: ConflictItem[] = [];
 
-      // 4. Process each row sequentially with strict safety and non-destructive merges
       const total = parsedData.rows.length;
-      for (let i = 0; i < total; i++) {
-        const row = parsedData.rows[i];
-        const rowNum = i + 1;
+      const BATCH_SIZE = 50;
+      const totalBatches = Math.ceil(total / BATCH_SIZE);
 
-        const firstName = (fieldToCol.first_name ? row[fieldToCol.first_name] : '').trim();
-        const lastName = (fieldToCol.last_name ? row[fieldToCol.last_name] : '').trim();
-        const email = (fieldToCol.email ? row[fieldToCol.email] : '').trim().toLowerCase();
-        const emailConfirmation = (fieldToCol.email_confirmation ? row[fieldToCol.email_confirmation] : '').trim().toLowerCase();
-        const phone = (fieldToCol.phone ? row[fieldToCol.phone] : '').trim();
-        const phoneDigits = normalizePhoneDigits(phone);
-        const hubspotId = (fieldToCol.hubspot_contact_id ? row[fieldToCol.hubspot_contact_id] : '').trim();
-        const rawQualStatus = (fieldToCol.qualification_status ? row[fieldToCol.qualification_status] : '').trim();
-        const courseInterest = (fieldToCol.course_interest ? row[fieldToCol.course_interest] : '').trim();
-        const rawPref = (fieldToCol.contact_preference ? row[fieldToCol.contact_preference] : '').trim().toLowerCase();
-        const rawSource = (fieldToCol.source ? row[fieldToCol.source] : '').trim().toLowerCase();
-        const rawStatus = (fieldToCol.status ? row[fieldToCol.status] : '').trim();
-        const rawTags = (fieldToCol.tags ? row[fieldToCol.tags] : '').trim();
-
-        const qualStatus = mapHubspotQualificationStatus(rawQualStatus);
-        const mappedStageCode = mapCsvStatusToStageCode(rawStatus);
-        const targetExplicitStage = mappedStageCode ? stageByCode.get(mappedStageCode) : null;
-
-        const contactPreference: ContactPreference = ['email', 'sms', 'call'].includes(rawPref)
-          ? (rawPref as ContactPreference)
-          : 'email';
-
-        const source: LeadSource = ['meta', 'google', 'manual', 'test'].includes(rawSource)
-          ? (rawSource as LeadSource)
-          : 'manual';
-
-        // Check if row has at least one identifying property
-        if (!firstName && !lastName && !email && !phone && !hubspotId) {
-          skipped++;
-          await supabase.from('lead_import_rows').insert({
-            import_id: importId,
-            row_number: rowNum,
-            raw_data: row,
-            status: 'skipped',
-            error_message: 'Empty record without identifying fields',
-          });
-          continue;
+      const pruneRaw = (r: Record<string, string>): Record<string, string> => {
+        const mappedSet = new Set(Object.values(fieldToCol));
+        const pruned: Record<string, string> = {};
+        for (const [k, v] of Object.entries(r)) {
+          if (v && v.trim() !== '') pruned[k] = v;
+          else if (mappedSet.has(k)) pruned[k] = '';
         }
+        return pruned;
+      };
 
-        try {
-          // ===================================================================
-          // STRICT SAFE DEDUPLICATION & CONFLICT IDENTIFICATION
-          // ===================================================================
-          let matchedLead: typeof allDbLeads[0] | null = null;
-          let isConflict = false;
-          let conflictReason = '';
+      for (let b = 0; b < totalBatches; b++) {
+        const start = b * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, total);
+        const chunk = parsedData.rows.slice(start, end);
 
-          // Priority 1: hubspot_contact_id exact match
-          if (hubspotId && dbHubspotIdMap.has(hubspotId)) {
-            matchedLead = dbHubspotIdMap.get(hubspotId)!;
-          } else {
-            // Priority 2: email normalized exact match
-            const emailMatch = email ? dbEmailMap.get(email) : null;
-            const phoneMatches = phoneDigits ? (dbPhoneToLeadsMap.get(phoneDigits) || []) : [];
+        setCurrentProgressText(`Processing contacts ${start + 1} - ${end} of ${total} (Batch ${b + 1}/${totalBatches})...`);
 
-            // Conflict check: Email and Phone pointing to different leads
-            if (emailMatch && phoneMatches.length > 0) {
-              const sameLead = phoneMatches.some((l) => l.id === emailMatch.id);
-              if (!sameLead) {
-                isConflict = true;
-                conflictReason = 'Conflict: Email points to one lead and Phone points to a different lead in CRM';
-              } else {
-                matchedLead = emailMatch;
+        const batchImportRows: Array<Record<string, unknown>> = [];
+        const batchActivities: Array<Record<string, unknown>> = [];
+        const batchStageHistory: Array<Record<string, unknown>> = [];
+        const updateTasks: Array<() => Promise<void>> = [];
+        const createTasks: Array<{
+          rowNum: number;
+          row: Record<string, string>;
+          payload: Record<string, unknown>;
+          extracted: ReturnType<typeof classifyRow>['extracted'];
+          initialStageId: string;
+        }> = [];
+
+        for (let i = 0; i < chunk.length; i++) {
+          const row = chunk[i];
+          const rowNum = start + i + 1;
+
+          try {
+            const result = classifyRow(
+              row,
+              rowNum,
+              fieldToCol,
+              dbHubspotIdMap,
+              dbEmailMap,
+              dbPhoneToLeadsMap,
+              csvPhoneCountMap,
+              stageByCode,
+            );
+
+            if (result.action === 'skip') {
+              skipped++;
+              batchImportRows.push({
+                import_id: importId,
+                row_number: rowNum,
+                raw_data: pruneRaw(row),
+                status: 'skipped',
+                error_message: result.conflictReason || 'Empty record',
+              });
+              continue;
+            }
+
+            if (result.action === 'conflict') {
+              conflicts++;
+              conflictList.push({
+                rowNumber: rowNum,
+                name: `${result.extracted.firstName} ${result.extracted.lastName}`.trim() || 'Unknown',
+                email: result.extracted.email,
+                phone: result.extracted.phone,
+                recordId: result.extracted.hubspotId,
+                reason: result.conflictReason || 'Conflict',
+              });
+              batchImportRows.push({
+                import_id: importId,
+                row_number: rowNum,
+                raw_data: pruneRaw(row),
+                status: 'conflict',
+                error_message: result.conflictReason,
+              });
+              continue;
+            }
+
+            // Matched Lead
+            if (result.action === 'update' && result.matchedLead) {
+              if (duplicateStrategy === 'skip') {
+                skipped++;
+                batchImportRows.push({
+                  import_id: importId,
+                  row_number: rowNum,
+                  raw_data: pruneRaw(row),
+                  status: 'skipped',
+                  lead_id: result.matchedLead.id,
+                  error_message: 'Duplicate record skipped',
+                });
+                continue;
               }
-            } else if (emailMatch) {
-              matchedLead = emailMatch;
-            } else if (phoneDigits) {
-              // Priority 3: Phone ONLY if UNIQUE ON BOTH SIDES
-              const isDupInCsv = (csvPhoneCountMap.get(phoneDigits) || 0) > 1;
-              const isDupInDb = phoneMatches.length > 1;
 
-              if (isDupInCsv || isDupInDb) {
-                isConflict = true;
-                if (isDupInCsv && isDupInDb) {
-                  conflictReason = `Conflict: Phone is shared by ${csvPhoneCountMap.get(phoneDigits)} contacts in CSV and ${phoneMatches.length} leads in CRM`;
-                } else if (isDupInCsv) {
-                  conflictReason = `Conflict: Phone is shared by ${csvPhoneCountMap.get(phoneDigits)} contacts in CSV`;
-                } else {
-                  conflictReason = `Conflict: Phone is shared by ${phoneMatches.length} leads in CRM`;
+              if (duplicateStrategy === 'update') {
+                updated++;
+                const leadRef = result.matchedLead;
+                const { updateData, newStageId, stageChangeReason, qualificationStatusChanged } =
+                  buildUpdatePayload(leadRef, result.extracted, stageById, qualificationStage);
+
+                updateTasks.push(async () => {
+                  await supabase.from('leads').update(updateData).eq('id', leadRef.id);
+                });
+
+                batchImportRows.push({
+                  import_id: importId,
+                  row_number: rowNum,
+                  raw_data: pruneRaw(row),
+                  status: 'updated',
+                  lead_id: leadRef.id,
+                });
+
+                if (qualificationStatusChanged && result.extracted.qualificationStatus) {
+                  batchActivities.push({
+                    lead_id: leadRef.id,
+                    activity_type: 'qualification_status_changed',
+                    actor_type: 'user',
+                    summary: `Qualification status imported from HubSpot: ${getQualificationStatusLabel(result.extracted.qualificationStatus)}`,
+                    metadata: {
+                      qualification_status: result.extracted.qualificationStatus,
+                      previous_status: leadRef.qualification_status,
+                      import_id: importId,
+                    },
+                  });
                 }
-              } else if (phoneMatches.length === 1) {
-                // Exactly 1 in CSV and exactly 1 in DB! 100% safe match!
-                matchedLead = phoneMatches[0];
+
+                if (newStageId && stageChangeReason) {
+                  batchStageHistory.push({
+                    lead_id: leadRef.id,
+                    from_stage_id: leadRef.pipeline_stage_id,
+                    to_stage_id: newStageId,
+                    change_reason: stageChangeReason,
+                  });
+                  batchActivities.push({
+                    lead_id: leadRef.id,
+                    activity_type: 'stage_changed',
+                    actor_type: 'user',
+                    summary: 'Pipeline stage set from CSV import',
+                    metadata: {
+                      from_stage_id: leadRef.pipeline_stage_id,
+                      to_stage_id: newStageId,
+                      import_id: importId,
+                    },
+                  });
+                }
+
+                // Update in-memory state
+                leadRef.qualification_status = (updateData.qualification_status as import('../../../types').QualificationStatus) || leadRef.qualification_status;
+                if (newStageId) leadRef.pipeline_stage_id = newStageId;
+                if (result.extracted.hubspotId) {
+                  leadRef.hubspot_contact_id = result.extracted.hubspotId;
+                  dbHubspotIdMap.set(result.extracted.hubspotId, leadRef);
+                }
+                continue;
               }
             }
-          }
 
-          // Case A: CONFLICT DETECTED -> Safe isolation (Do NOT update or create)
-          if (isConflict) {
-            conflicts++;
-            await supabase.from('lead_import_rows').insert({
-              import_id: importId,
-              row_number: rowNum,
-              raw_data: row,
-              status: 'conflict',
-              error_message: conflictReason,
-            });
-            setImportProgress(Math.round(((i + 1) / total) * 100));
-            continue;
-          }
-
-          let finalLeadId: string | null = null;
-
-          // Case B: MATCHED LEAD & STRATEGY = SKIP
-          if (matchedLead && duplicateStrategy === 'skip') {
-            skipped++;
-            await supabase.from('lead_import_rows').insert({
-              import_id: importId,
-              row_number: rowNum,
-              raw_data: row,
-              status: 'skipped',
-              lead_id: matchedLead.id,
-              error_message: 'Duplicate record skipped',
-            });
-            setImportProgress(Math.round(((i + 1) / total) * 100));
-            continue;
-          }
-
-          // Case C: MATCHED LEAD & STRATEGY = UPDATE (Safe non-destructive merge)
-          if (matchedLead && duplicateStrategy === 'update') {
-            const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
-
-            // Rule: CSV preenchido atualiza; CSV vazio PRESERVA valor existente
-            if (firstName) updateData.first_name = firstName;
-            if (lastName) updateData.last_name = lastName;
-            if (email) updateData.email = email;
-            if (phone) {
-              updateData.phone_raw = phone;
-              if (phone.startsWith('+')) updateData.phone_e164 = phone;
-            }
-            if (hubspotId) updateData.hubspot_contact_id = hubspotId;
-            if (courseInterest) updateData.course_interest = courseInterest;
-            if (qualStatus) updateData.qualification_status = qualStatus;
-
-            // Pipeline Stage Update & Anti-Downgrade Protection
-            const currentStage = stageById.get(matchedLead.pipeline_stage_id);
-            const currentSortOrder = currentStage?.sort_order || 1;
-
-            let newStageId: string | null = null;
-            let stageChangeReason: string | null = null;
-
-            if (targetExplicitStage) {
-              // Explicit stage from CSV (e.g. opportunity -> acquisition)
-              if (targetExplicitStage.sort_order >= currentSortOrder && targetExplicitStage.id !== matchedLead.pipeline_stage_id) {
-                newStageId = targetExplicitStage.id;
-                stageChangeReason = 'csv_import_stage_mapping';
-              }
-            } else if (qualStatus && qualificationStage) {
-              // Rule: If qualification_status is filled and lead is in capture (sort_order <= 1), promote to qualification
-              if (currentSortOrder <= 1 && qualificationStage.id !== matchedLead.pipeline_stage_id) {
-                newStageId = qualificationStage.id;
-                stageChangeReason = 'csv_import_stage_mapping';
-              }
-              // If lead is already beyond qualification (sort_order > 2: acquisition, approval, enrollment, etc.),
-              // STRICTLY DO NOT DOWNGRADE!
-            }
-
-            if (newStageId) {
-              updateData.pipeline_stage_id = newStageId;
-            }
-
-            // Execute non-destructive UPDATE preserving existing lead_id
-            await supabase.from('leads').update(updateData).eq('id', matchedLead.id);
-            finalLeadId = matchedLead.id;
-            updated++;
-
-            // Update in-memory reference
-            matchedLead.qualification_status = (updateData.qualification_status as any) || matchedLead.qualification_status;
-            if (newStageId) matchedLead.pipeline_stage_id = newStageId;
-
-            await supabase.from('lead_import_rows').insert({
-              import_id: importId,
-              row_number: rowNum,
-              raw_data: row,
-              status: 'updated',
-              lead_id: finalLeadId,
-            });
-
-            // Audit qualification status change if modified
-            if (qualStatus && qualStatus !== matchedLead.qualification_status) {
-              await supabase.from('lead_activities').insert({
-                lead_id: finalLeadId,
-                activity_type: 'qualification_status_changed',
-                actor_type: 'user',
-                summary: `Qualification status imported from HubSpot: ${getQualificationStatusLabel(qualStatus)}`,
-                metadata: {
-                  qualification_status: qualStatus,
-                  previous_status: matchedLead.qualification_status,
-                  import_id: importId,
-                },
-              });
-            }
-
-            // Audit stage change if modified
-            if (newStageId && stageChangeReason) {
-              await supabase.from('lead_stage_history').insert({
-                lead_id: finalLeadId,
-                from_stage_id: matchedLead.pipeline_stage_id,
-                to_stage_id: newStageId,
-                change_reason: stageChangeReason,
-              });
-
-              await supabase.from('lead_activities').insert({
-                lead_id: finalLeadId,
-                activity_type: 'stage_changed',
-                actor_type: 'user',
-                summary: `Pipeline stage set from CSV import`,
-                metadata: {
-                  from_stage_id: matchedLead.pipeline_stage_id,
-                  to_stage_id: newStageId,
-                  import_id: importId,
-                },
-              });
-            }
-          } else {
-            // Case D: NO MATCH & NO CONFLICT -> CREATE NEW LEAD
-            let initialStageId = defaultStageId;
-            if (targetExplicitStage) {
-              initialStageId = targetExplicitStage.id;
-            } else if (qualStatus && qualificationStage) {
-              initialStageId = qualificationStage.id;
-            }
-
-            const { data: newL, error: insErr } = await supabase
-              .from('leads')
-              .insert({
-                source,
-                first_name: firstName || null,
-                last_name: lastName || null,
-                email: email || null,
-                email_confirmation: emailConfirmation || null,
-                phone_raw: phone || null,
-                phone_e164: phone.startsWith('+') ? phone : null,
-                hubspot_contact_id: hubspotId || null,
-                qualification_status: qualStatus || null,
-                course_interest: courseInterest || null,
-                contact_preference: contactPreference,
-                pipeline_stage_id: initialStageId,
-              })
-              .select('id')
-              .single();
-
-            if (insErr) throw insErr;
-            finalLeadId = newL!.id;
+            // Create New Lead
             created++;
+            const initialStageId =
+              result.extracted.targetExplicitStage?.id ||
+              (result.extracted.qualificationStatus && qualificationStage ? qualificationStage.id : defaultStageId);
 
-            // Register in in-memory indexes to prevent internal CSV duplicates within same batch
-            const createdLeadObj = {
-              id: finalLeadId,
-              email: email || null,
-              phone_raw: phone || null,
-              phone_e164: phone.startsWith('+') ? phone : null,
-              hubspot_contact_id: hubspotId || null,
-              external_lead_id: null,
-              pipeline_stage_id: initialStageId,
-              qualification_status: qualStatus || null,
-              first_name: firstName || null,
-              last_name: lastName || null,
-              course_interest: courseInterest || null,
-            };
-            if (hubspotId) dbHubspotIdMap.set(hubspotId, createdLeadObj);
-            if (email) dbEmailMap.set(email, createdLeadObj);
-            if (phoneDigits) {
-              if (!dbPhoneToLeadsMap.has(phoneDigits)) dbPhoneToLeadsMap.set(phoneDigits, []);
-              dbPhoneToLeadsMap.get(phoneDigits)!.push(createdLeadObj);
-            }
-
-            await supabase.from('lead_import_rows').insert({
+            createTasks.push({
+              rowNum,
+              row,
+              extracted: result.extracted,
+              initialStageId,
+              payload: {
+                source: result.extracted.source,
+                first_name: result.extracted.firstName || null,
+                last_name: result.extracted.lastName || null,
+                email: result.extracted.email || null,
+                email_confirmation: result.extracted.emailConfirmation || null,
+                phone_raw: result.extracted.phone || null,
+                phone_e164: result.extracted.phone.startsWith('+') ? result.extracted.phone : null,
+                hubspot_contact_id: result.extracted.hubspotId || null,
+                qualification_status: result.extracted.qualificationStatus || null,
+                course_interest: result.extracted.courseInterest || null,
+                contact_preference: result.extracted.contactPreference,
+                pipeline_stage_id: initialStageId,
+              },
+            });
+          } catch (rowErr) {
+            failed++;
+            batchImportRows.push({
               import_id: importId,
               row_number: rowNum,
-              raw_data: row,
-              status: 'created',
-              lead_id: finalLeadId,
+              raw_data: pruneRaw(row),
+              status: 'failed',
+              error_message: rowErr instanceof Error ? rowErr.message : 'Unknown error',
             });
-
-            await supabase.from('lead_activities').insert({
-              lead_id: finalLeadId,
-              activity_type: 'lead_created',
-              actor_type: 'user',
-              summary: `Lead imported from CSV: ${file.name}`,
-              metadata: { import_id: importId, filename: file.name },
-            });
-
-            if (initialStageId !== defaultStageId) {
-              await supabase.from('lead_stage_history').insert({
-                lead_id: finalLeadId,
-                from_stage_id: null,
-                to_stage_id: initialStageId,
-                change_reason: 'csv_import_stage_mapping',
-              });
-            } else {
-              await supabase.from('lead_stage_history').insert({
-                lead_id: finalLeadId,
-                from_stage_id: null,
-                to_stage_id: defaultStageId,
-                change_reason: 'initial_assignment',
-              });
-            }
           }
-
-          // Handle tags if present
-          if (finalLeadId && rawTags) {
-            const tagNames = rawTags.split(',').map((t) => t.trim()).filter(Boolean);
-            for (const tagName of tagNames) {
-              const slug = tagName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-              let tagId: string | null = null;
-              const { data: exTag } = await supabase.from('tags').select('id').eq('slug', slug).maybeSingle();
-              if (exTag) {
-                tagId = exTag.id;
-              } else {
-                const { data: newT } = await supabase.from('tags').insert({ name: tagName, slug }).select('id').single();
-                tagId = newT?.id || null;
-              }
-              if (tagId) {
-                await supabase.from('lead_tags').upsert(
-                  { lead_id: finalLeadId, tag_id: tagId },
-                  { onConflict: 'lead_id,tag_id' },
-                );
-              }
-            }
-          }
-        } catch (rowErr) {
-          failed++;
-          await supabase.from('lead_import_rows').insert({
-            import_id: importId,
-            row_number: rowNum,
-            raw_data: row,
-            status: 'failed',
-            error_message: rowErr instanceof Error ? rowErr.message : 'Unknown error',
-          });
         }
 
-        setImportProgress(Math.round(((i + 1) / total) * 100));
+        // Execute batch updates (concurrency chunks of 10)
+        for (let u = 0; u < updateTasks.length; u += 10) {
+          await Promise.all(updateTasks.slice(u, u + 10).map((fn) => fn()));
+        }
+
+        // Execute batch creates
+        if (createTasks.length > 0) {
+          const { data: inserted, error: insErr } = await supabase
+            .from('leads')
+            .insert(createTasks.map((c) => c.payload))
+            .select('id, hubspot_contact_id, email, phone_raw');
+
+          if (insErr) {
+            console.error('Batch create error:', insErr);
+          } else if (inserted) {
+            inserted.forEach((lead, idx) => {
+              const item = createTasks[idx];
+              batchImportRows.push({
+                import_id: importId,
+                row_number: item.rowNum,
+                raw_data: pruneRaw(item.row),
+                status: 'created',
+                lead_id: lead.id,
+              });
+
+              batchActivities.push({
+                lead_id: lead.id,
+                activity_type: 'lead_created',
+                actor_type: 'user',
+                summary: `Lead imported from CSV: ${file.name}`,
+                metadata: { import_id: importId, filename: file.name },
+              });
+
+              batchStageHistory.push({
+                lead_id: lead.id,
+                from_stage_id: null,
+                to_stage_id: item.initialStageId,
+                change_reason: item.initialStageId !== defaultStageId ? 'csv_import_stage_mapping' : 'initial_assignment',
+              });
+
+              // Register in memory
+              const refObj: DbLeadRef = {
+                id: lead.id,
+                hubspot_contact_id: lead.hubspot_contact_id,
+                email: lead.email,
+                phone_raw: lead.phone_raw,
+                pipeline_stage_id: item.initialStageId,
+                qualification_status: item.extracted.qualificationStatus,
+              };
+              if (lead.hubspot_contact_id) dbHubspotIdMap.set(lead.hubspot_contact_id, refObj);
+              if (lead.email) dbEmailMap.set(lead.email.toLowerCase(), refObj);
+              if (item.extracted.phoneDigits) {
+                if (!dbPhoneToLeadsMap.has(item.extracted.phoneDigits)) dbPhoneToLeadsMap.set(item.extracted.phoneDigits, []);
+                dbPhoneToLeadsMap.get(item.extracted.phoneDigits)!.push(refObj);
+              }
+            });
+          }
+        }
+
+        // Batch inserts for audit records
+        if (batchImportRows.length > 0) {
+          await supabase.from('lead_import_rows').insert(batchImportRows);
+        }
+        if (batchActivities.length > 0) {
+          await supabase.from('lead_activities').insert(batchActivities);
+        }
+        if (batchStageHistory.length > 0) {
+          await supabase.from('lead_stage_history').insert(batchStageHistory);
+        }
+
+        // Update progress and yield to browser UI
+        setImportProgress(Math.round((end / total) * 100));
+        await new Promise((r) => setTimeout(r, 0));
       }
 
-      // 5. Update import status
+      // Finalize lead_imports record
       const finalStatus = failed > 0 ? (created > 0 || updated > 0 ? 'completed_with_errors' : 'failed') : 'completed';
       await supabase
         .from('lead_imports')
@@ -579,33 +559,67 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
         })
         .eq('id', importId);
 
-      setResults({ total, created, updated, conflicts, skipped, failed });
+      setResults({
+        total,
+        created,
+        updated,
+        conflicts,
+        skipped,
+        failed,
+        conflictList,
+      });
       setStep('results');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed');
-      setStep('strategy');
+      setStep('preview');
     }
   };
 
+  // Filter columns for Mapping Step
+  const filteredHeaders = useMemo(() => {
+    if (!parsedData) return [];
+    let list = parsedData.headers;
+
+    if (mappingFilter === 'mapped') {
+      list = list.filter((h) => Boolean(columnMapping[h]));
+    }
+
+    if (columnSearch.trim()) {
+      const q = columnSearch.toLowerCase();
+      list = list.filter(
+        (h) => h.toLowerCase().includes(q) || (columnMapping[h] && columnMapping[h].toLowerCase().includes(q)),
+      );
+    }
+    return list;
+  }, [parsedData, mappingFilter, columnSearch, columnMapping]);
+
+  const mappedCount = useMemo(() => {
+    return Object.values(columnMapping).filter(Boolean).length;
+  }, [columnMapping]);
+
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-100 flex flex-col">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden border border-gray-100 dark:border-slate-800 flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
+        <div className="flex items-center justify-between px-6 py-4.5 border-b border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-brand-50 dark:bg-brand-950/50 text-brand-600 dark:text-brand-400">
               <FileSpreadsheet className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Import Leads from CSV</h2>
-              <p className="text-xs text-gray-500">Clean import wizard with safe deduplication and zero automation triggers</p>
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">Import Leads from CSV</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                HubSpot migration engine • Safe deduplication • Zero automation triggers
+              </p>
             </div>
           </div>
           {step !== 'importing' && (
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
@@ -613,27 +627,29 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
         </div>
 
         {/* Wizard content */}
-        <div className="p-6 flex-1">
+        <div className="p-6 flex-1 overflow-y-auto">
           {error && (
-            <div className="flex items-center gap-2 p-3.5 mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl">
+            <div className="flex items-center gap-2.5 p-3.5 mb-5 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded-xl">
               <AlertTriangle className="h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
-          {/* STEP 1: UPLOAD */}
+          {/* ================================================================= */}
+          {/* STEP 1: UPLOAD                                                   */}
+          {/* ================================================================= */}
           {step === 'upload' && (
-            <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 hover:border-brand-400 rounded-2xl p-10 text-center transition-colors bg-gray-50/50">
-              <div className="w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mb-4 shadow-xs">
-                <UploadCloud className="h-7 w-7" />
+            <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 dark:border-slate-700 hover:border-brand-400 dark:hover:border-brand-500 rounded-2xl p-12 text-center transition-colors bg-gray-50/50 dark:bg-slate-800/30">
+              <div className="w-16 h-16 rounded-2xl bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 flex items-center justify-center mb-4 shadow-xs">
+                <UploadCloud className="h-8 w-8" />
               </div>
-              <h3 className="text-base font-semibold text-gray-900 mb-1">Choose CSV file to import</h3>
-              <p className="text-xs text-gray-500 max-w-sm mb-5">
-                Upload HubSpot contacts or CRM export. Supported columns include Record ID, Email, Phone, Status de Qualificação, and Course.
+              <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1.5">Choose CSV file to import</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 max-w-md mb-6 leading-relaxed">
+                Upload HubSpot contacts export (e.g. <code>all-contacts.csv</code>). Supported fields include Record ID, First/Last Name, Email, Phone, Status de Qualificação, and Curso de Interesse.
               </p>
               <label
                 htmlFor={fileInputId}
-                className="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-xl cursor-pointer shadow-xs transition-colors"
+                className="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all hover:shadow"
               >
                 Browse CSV File
               </label>
@@ -647,203 +663,325 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
             </div>
           )}
 
-          {/* STEP 2: PREVIEW */}
-          {step === 'preview' && parsedData && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-900">File Preview</h4>
-                  <p className="text-xs text-gray-500">
-                    Detected {parsedData.totalRows} rows and {parsedData.headers.length} columns
-                  </p>
-                </div>
-                <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 rounded-lg">
-                  Previewing first 5 rows
-                </span>
-              </div>
-
-              <div className="overflow-x-auto border border-gray-200 rounded-xl">
-                <table className="min-w-full divide-y divide-gray-200 text-xs">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      {parsedData.headers.slice(0, 10).map((h, i) => (
-                        <th key={i} className="px-3 py-2 text-left font-semibold text-gray-700 truncate max-w-[150px]">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 bg-white">
-                    {parsedData.rows.slice(0, 5).map((r, rIdx) => (
-                      <tr key={rIdx}>
-                        {parsedData.headers.slice(0, 10).map((h, cIdx) => (
-                          <td key={cIdx} className="px-3 py-2 text-gray-600 truncate max-w-[150px]">
-                            {r[h] || '-'}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 3: MAPPING */}
+          {/* ================================================================= */}
+          {/* STEP 2: FIELD MAPPING                                            */}
+          {/* ================================================================= */}
           {step === 'mapping' && parsedData && (
             <div className="space-y-4">
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900">Map CSV Columns to CRM Fields</h4>
-                <p className="text-xs text-gray-500">Review which column maps to each EDS HUB field before importing</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-gray-100 dark:border-slate-800">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">Map CSV Columns to CRM Fields</h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {mappedCount} of {parsedData.headers.length} columns mapped • File contains {parsedData.totalRows} rows
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex p-0.5 bg-gray-100 dark:bg-slate-800 rounded-lg text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setMappingFilter('mapped')}
+                      className={`px-3 py-1 rounded-md font-medium transition-all ${
+                        mappingFilter === 'mapped'
+                          ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-xs'
+                          : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Mapped ({mappedCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMappingFilter('all')}
+                      className={`px-3 py-1 rounded-md font-medium transition-all ${
+                        mappingFilter === 'all'
+                          ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-xs'
+                          : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      All Columns ({parsedData.headers.length})
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[50vh] overflow-y-auto pr-1">
-                {parsedData.headers.map((header) => (
-                  <div key={header} className="p-3 border border-gray-200 rounded-xl bg-gray-50/60 flex flex-col gap-1.5">
-                    <span className="text-xs font-medium text-gray-700 truncate" title={header}>
-                      CSV Header: <strong className="text-gray-900">{header}</strong>
-                    </span>
-                    <select
-                      value={columnMapping[header] || ''}
-                      onChange={(e) =>
-                        setColumnMapping({ ...columnMapping, [header]: e.target.value })
-                      }
-                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500"
-                    >
-                      <option value="">-- Ignore column --</option>
-                      {CRM_FIELDS.map((f) => (
-                        <option key={f.key} value={f.key}>
-                          {f.label}
-                        </option>
-                      ))}
-                    </select>
+              {/* Column Search Box */}
+              <div className="relative">
+                <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search column names..."
+                  value={columnSearch}
+                  onChange={(e) => setColumnSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-xs bg-gray-50 dark:bg-slate-800/60 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-brand-500 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              {/* Columns Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[46vh] overflow-y-auto pr-1">
+                {filteredHeaders.length === 0 ? (
+                  <div className="col-span-2 py-8 text-center text-xs text-gray-400">
+                    No columns match your filter.
                   </div>
-                ))}
+                ) : (
+                  filteredHeaders.map((header) => {
+                    const sampleVal = parsedData.rows[0]?.[header];
+                    const isMapped = Boolean(columnMapping[header]);
+                    return (
+                      <div
+                        key={header}
+                        className={`p-3 border rounded-xl transition-all flex flex-col gap-1.5 ${
+                          isMapped
+                            ? 'bg-brand-50/30 dark:bg-brand-950/20 border-brand-200 dark:border-brand-900/50'
+                            : 'bg-gray-50/50 dark:bg-slate-800/40 border-gray-200 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-xs font-semibold text-gray-900 dark:text-white truncate" title={header}>
+                            {header}
+                          </span>
+                          {sampleVal && (
+                            <span className="text-[10px] text-gray-400 truncate max-w-[120px]" title={`Sample: ${sampleVal}`}>
+                              ex: {sampleVal}
+                            </span>
+                          )}
+                        </div>
+                        <select
+                          value={columnMapping[header] || ''}
+                          onChange={(e) =>
+                            setColumnMapping({ ...columnMapping, [header]: e.target.value })
+                          }
+                          className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        >
+                          <option value="">-- Ignore column --</option>
+                          {CRM_FIELDS.map((f) => (
+                            <option key={f.key} value={f.key}>
+                              {f.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}
 
-          {/* STEP 4: STRATEGY & SAFE DEDUPLICATION */}
-          {step === 'strategy' && (
+          {/* ================================================================= */}
+          {/* STEP 3: PREVIEW BEFORE IMPORTING                                  */}
+          {/* ================================================================= */}
+          {step === 'preview' && previewAnalysis && (
             <div className="space-y-5">
               <div>
-                <h4 className="text-sm font-semibold text-gray-900">Safe Duplicate Resolution Strategy</h4>
-                <p className="text-xs text-gray-500">
-                  Matches are prioritized: Record ID &gt; Email &gt; Phone (strictly unique on both sides).
+                <h4 className="text-sm font-bold text-gray-900 dark:text-white">Import Preview & Deduplication Analysis</h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Pre-import analysis evaluated with HubSpot Contact ID &gt; Email &gt; Unique Phone rules
                 </p>
               </div>
 
-              <div className="space-y-3">
-                {[
-                  {
-                    key: 'update',
-                    title: 'Update existing lead (Recommended)',
-                    desc: 'Non-destructive: updates contact fields, sets qualification status, and preserves existing data if cell is blank.',
-                  },
-                  {
-                    key: 'skip',
-                    title: 'Skip duplicate',
-                    desc: 'Do not modify existing leads; only import brand new contacts.',
-                  },
-                  {
-                    key: 'create',
-                    title: 'Create new separate record',
-                    desc: 'Creates a distinct lead record even if email/phone matches.',
-                  },
-                ].map((opt) => (
-                  <label
-                    key={opt.key}
-                    onClick={() => setDuplicateStrategy(opt.key as DuplicateStrategy)}
-                    className={`flex items-start gap-3 p-3.5 border rounded-xl cursor-pointer transition-all ${
-                      duplicateStrategy === opt.key
-                        ? 'border-brand-500 bg-brand-50/50 shadow-xs'
-                        : 'border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="strategy"
-                      checked={duplicateStrategy === opt.key}
-                      onChange={() => setDuplicateStrategy(opt.key as DuplicateStrategy)}
-                      className="mt-0.5 text-brand-600 focus:ring-brand-500"
-                    />
-                    <div>
-                      <p className="text-xs font-semibold text-gray-900">{opt.title}</p>
-                      <p className="text-[11px] text-gray-500 leading-normal">{opt.desc}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-
-              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1.5">
-                <div className="flex items-center gap-1.5 font-semibold text-amber-900">
-                  <ShieldAlert className="h-4 w-4 shrink-0 text-amber-700" />
-                  <span>Conflict Protection & Zero Automation Guarantee:</span>
+              {/* 5 KPI Stat Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                <div className="p-3 bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700 rounded-xl text-center">
+                  <p className="text-lg font-extrabold text-gray-900 dark:text-white">{previewAnalysis.totalRows}</p>
+                  <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400">Total Rows</p>
                 </div>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Contacts with shared phones in CSV or DB are classified as <strong>Conflicts</strong> and will NOT be automatically modified. No emails, SMS, or call tasks will be dispatched during this migration.
-                </p>
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-xl text-center">
+                  <p className="text-lg font-extrabold text-emerald-700 dark:text-emerald-400">{previewAnalysis.newLeadsCount}</p>
+                  <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-300">New Leads</p>
+                </div>
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 rounded-xl text-center">
+                  <p className="text-lg font-extrabold text-blue-700 dark:text-blue-400">{previewAnalysis.existingToUpdateCount}</p>
+                  <p className="text-[11px] font-medium text-blue-600 dark:text-blue-300">To Update</p>
+                </div>
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl text-center">
+                  <p className="text-lg font-extrabold text-amber-700 dark:text-amber-400">{previewAnalysis.conflictsCount}</p>
+                  <p className="text-[11px] font-medium text-amber-600 dark:text-amber-300">Conflicts</p>
+                </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl text-center">
+                  <p className="text-lg font-extrabold text-slate-700 dark:text-slate-300">{previewAnalysis.invalidCount}</p>
+                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Invalid / Blank</p>
+                </div>
+              </div>
+
+              {/* Conflict Isolation Panel */}
+              {previewAnalysis.conflictsCount > 0 && (
+                <div className="border border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+                      <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600" />
+                      <span className="text-xs font-semibold">
+                        {previewAnalysis.conflictsCount} Conflicted Contacts Isolated (Safe Mode)
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowConflictsList(!showConflictsList)}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 hover:underline"
+                    >
+                      {showConflictsList ? 'Hide details' : 'View conflict details'}
+                      {showConflictsList ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
+                    Contacts with shared phone numbers or mismatched records will <strong>NOT</strong> be automatically modified or overwritten. They will be recorded in <code>lead_import_rows</code> for manual review.
+                  </p>
+
+                  {/* Expandable Conflict Details Table */}
+                  {showConflictsList && (
+                    <div className="mt-2 max-h-48 overflow-y-auto border border-amber-200 dark:border-amber-800 rounded-lg bg-white dark:bg-slate-900">
+                      <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-800 text-[11px]">
+                        <thead className="bg-amber-50/70 dark:bg-slate-800 text-amber-900 dark:text-amber-200">
+                          <tr>
+                            <th className="px-2.5 py-1.5 text-left font-semibold">Row</th>
+                            <th className="px-2.5 py-1.5 text-left font-semibold">Name</th>
+                            <th className="px-2.5 py-1.5 text-left font-semibold">Phone</th>
+                            <th className="px-2.5 py-1.5 text-left font-semibold">Email</th>
+                            <th className="px-2.5 py-1.5 text-left font-semibold">Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-slate-800 text-gray-700 dark:text-gray-300">
+                          {previewAnalysis.conflicts.map((c, i) => (
+                            <tr key={i} className="hover:bg-amber-50/30 dark:hover:bg-slate-800/40">
+                              <td className="px-2.5 py-1.5 text-gray-500">{c.rowNumber}</td>
+                              <td className="px-2.5 py-1.5 font-medium truncate max-w-[120px]">{c.name}</td>
+                              <td className="px-2.5 py-1.5 truncate max-w-[110px]">{c.phone || '-'}</td>
+                              <td className="px-2.5 py-1.5 truncate max-w-[120px]">{c.email || '-'}</td>
+                              <td className="px-2.5 py-1.5 text-amber-700 dark:text-amber-400">{c.reason}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Duplicate Strategy Selection */}
+              <div className="space-y-2.5">
+                <h5 className="text-xs font-bold text-gray-900 dark:text-white">Duplicate Resolution Strategy</h5>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {[
+                    {
+                      key: 'update',
+                      title: 'Update existing lead',
+                      badge: 'Recommended',
+                      desc: 'Non-destructive: updates filled fields, sets qualification status, and preserves existing data if cell is blank.',
+                    },
+                    {
+                      key: 'skip',
+                      title: 'Skip duplicates',
+                      badge: null,
+                      desc: 'Do not modify matched leads; only import brand new contacts.',
+                    },
+                    {
+                      key: 'create',
+                      title: 'Create separate',
+                      badge: null,
+                      desc: 'Always insert as new separate leads.',
+                    },
+                  ].map((opt) => (
+                    <label
+                      key={opt.key}
+                      onClick={() => setDuplicateStrategy(opt.key as DuplicateStrategy)}
+                      className={`flex flex-col p-3 border rounded-xl cursor-pointer transition-all ${
+                        duplicateStrategy === opt.key
+                          ? 'border-brand-500 bg-brand-50/50 dark:bg-brand-950/30 shadow-xs'
+                          : 'border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-gray-900 dark:text-white">{opt.title}</span>
+                        {opt.badge && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-bold bg-brand-100 text-brand-700 rounded-md">
+                            {opt.badge}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-normal">{opt.desc}</p>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Zero Automation Guarantee Notice */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-300">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                <span>
+                  <strong>Zero Automation Guarantee:</strong> All contact automations (Resend emails, Twilio SMS, call tasks, and intake webhooks) are completely disabled.
+                </span>
               </div>
             </div>
           )}
 
-          {/* STEP 5: IMPORTING */}
+          {/* ================================================================= */}
+          {/* STEP 4: IMPORTING (BATCHED WITH PROGRESS)                        */}
+          {/* ================================================================= */}
           {step === 'importing' && (
-            <div className="py-12 text-center space-y-4">
-              <Loader2 className="h-10 w-10 animate-spin text-brand-600 mx-auto" />
-              <div>
-                <h4 className="text-base font-semibold text-gray-900">Importing contacts safely...</h4>
-                <p className="text-xs text-gray-500">Checking unique IDs and applying non-destructive rules</p>
+            <div className="py-14 text-center space-y-5">
+              <div className="w-14 h-14 rounded-2xl bg-brand-50 dark:bg-brand-950/50 text-brand-600 dark:text-brand-400 flex items-center justify-center mx-auto shadow-xs">
+                <Loader2 className="h-7 w-7 animate-spin" />
               </div>
-              <div className="w-full max-w-md mx-auto bg-gray-100 rounded-full h-2 overflow-hidden">
+              <div>
+                <h4 className="text-base font-bold text-gray-900 dark:text-white">Importing Contacts Safely...</h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{currentProgressText}</p>
+              </div>
+              <div className="w-full max-w-md mx-auto bg-gray-100 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden">
                 <div
                   className="bg-brand-600 h-full transition-all duration-300 rounded-full"
                   style={{ width: `${importProgress}%` }}
                 />
               </div>
-              <p className="text-xs font-medium text-gray-600">{importProgress}% completed</p>
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">{importProgress}% completed</p>
+              <p className="text-[11px] text-gray-400">
+                Please keep this modal open while batches are processed.
+              </p>
             </div>
           )}
 
-          {/* STEP 6: RESULTS */}
+          {/* ================================================================= */}
+          {/* STEP 5: RESULTS                                                  */}
+          {/* ================================================================= */}
           {step === 'results' && (
-            <div className="py-6 text-center space-y-5">
-              <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+            <div className="py-6 text-center space-y-6">
+              <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
                 <CheckCircle2 className="h-8 w-8" />
               </div>
               <div>
-                <h4 className="text-base font-bold text-gray-900">Import Process Finished</h4>
-                <p className="text-xs text-gray-500">Processed {results.total} total rows from {file?.name}</p>
+                <h4 className="text-base font-bold text-gray-900 dark:text-white">Import Completed Successfully</h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Processed {results.total} total rows from {file?.name}
+                </p>
               </div>
 
-              <div className="grid grid-cols-5 gap-2.5 max-w-xl mx-auto">
-                <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl">
-                  <p className="text-lg font-bold text-emerald-700">{results.created}</p>
-                  <p className="text-[11px] font-medium text-emerald-600">Created</p>
+              {/* 5 KPI Result Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 max-w-xl mx-auto">
+                <div className="p-3 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl">
+                  <p className="text-lg font-bold text-gray-900 dark:text-white">{results.total}</p>
+                  <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400">Processed</p>
                 </div>
-                <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
-                  <p className="text-lg font-bold text-blue-700">{results.updated}</p>
-                  <p className="text-[11px] font-medium text-blue-600">Updated</p>
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-800 rounded-xl">
+                  <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400">{results.created}</p>
+                  <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-300">Created</p>
                 </div>
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                  <p className="text-lg font-bold text-amber-700">{results.conflicts}</p>
-                  <p className="text-[11px] font-medium text-amber-600">Conflicts</p>
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-800 rounded-xl">
+                  <p className="text-lg font-bold text-blue-700 dark:text-blue-400">{results.updated}</p>
+                  <p className="text-[11px] font-medium text-blue-600 dark:text-blue-300">Updated</p>
                 </div>
-                <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                  <p className="text-lg font-bold text-gray-700">{results.skipped}</p>
-                  <p className="text-[11px] font-medium text-gray-600">Skipped</p>
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-800 rounded-xl">
+                  <p className="text-lg font-bold text-amber-700 dark:text-amber-400">{results.conflicts}</p>
+                  <p className="text-[11px] font-medium text-amber-600 dark:text-amber-300">Conflicts</p>
                 </div>
-                <div className="p-3 bg-red-50 border border-red-100 rounded-xl">
-                  <p className="text-lg font-bold text-red-700">{results.failed}</p>
-                  <p className="text-[11px] font-medium text-red-600">Failed</p>
+                <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-100 dark:border-red-800 rounded-xl">
+                  <p className="text-lg font-bold text-red-700 dark:text-red-400">{results.failed}</p>
+                  <p className="text-[11px] font-medium text-red-600 dark:text-red-300">Failed</p>
                 </div>
               </div>
 
+              {/* Conflict Log in Results */}
               {results.conflicts > 0 && (
-                <div className="max-w-xl mx-auto p-3 bg-amber-50 border border-amber-200 rounded-xl text-left text-xs text-amber-800">
-                  <span className="font-semibold">{results.conflicts} contacts flagged as conflicts:</span>
-                  <p className="text-[11px] text-amber-700 mt-0.5">
-                    These rows had shared phones or ambiguity and were kept completely safe without updating existing records.
+                <div className="max-w-xl mx-auto p-3.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-xl text-left text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                  <span className="font-bold">{results.conflicts} contacts preserved as conflicts:</span>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                    These rows had shared phones or ambiguous matches and were isolated without modifying existing leads. All logs are registered in <code>lead_imports</code> and <code>lead_import_rows</code>.
                   </p>
                 </div>
               )}
@@ -852,60 +990,50 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
         </div>
 
         {/* Footer controls */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50">
-          {step === 'preview' && (
-            <>
-              <button
-                type="button"
-                onClick={() => setStep('upload')}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors"
-              >
-                <ArrowLeft className="h-4 w-4" /> Back
-              </button>
-              <button
-                type="button"
-                onClick={() => setStep('mapping')}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs transition-colors"
-              >
-                Next: Map Fields <ArrowRight className="h-4 w-4" />
-              </button>
-            </>
-          )}
-
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50">
           {step === 'mapping' && (
             <>
               <button
                 type="button"
-                onClick={() => setStep('preview')}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors"
+                onClick={() => setStep('upload')}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-xl transition-colors"
               >
                 <ArrowLeft className="h-4 w-4" /> Back
               </button>
               <button
                 type="button"
-                onClick={() => setStep('strategy')}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs transition-colors"
+                disabled={isAnalyzing}
+                onClick={handleProceedToPreview}
+                className="flex items-center gap-1.5 px-5 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 rounded-xl shadow-xs transition-colors"
               >
-                Next: Safe Deduplication <ArrowRight className="h-4 w-4" />
+                {isAnalyzing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Analyzing Database...
+                  </>
+                ) : (
+                  <>
+                    Next: Preview & Deduplication <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
               </button>
             </>
           )}
 
-          {step === 'strategy' && (
+          {step === 'preview' && (
             <>
               <button
                 type="button"
                 onClick={() => setStep('mapping')}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-xl transition-colors"
               >
-                <ArrowLeft className="h-4 w-4" /> Back
+                <ArrowLeft className="h-4 w-4" /> Back to Mapping
               </button>
               <button
                 type="button"
                 onClick={handleExecuteImport}
                 className="flex items-center gap-1.5 px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-colors"
               >
-                Start Import ({parsedData?.totalRows} rows)
+                Start Import ({parsedData?.totalRows} contacts) <ArrowRight className="h-4 w-4" />
               </button>
             </>
           )}
@@ -918,7 +1046,7 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
                   onImportComplete();
                   onClose();
                 }}
-                className="px-5 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs transition-colors"
+                className="px-6 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs transition-colors"
               >
                 Done
               </button>
