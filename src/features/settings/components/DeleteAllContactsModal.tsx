@@ -47,8 +47,10 @@ export function DeleteAllContactsModal({ isOpen, onClose, onSuccess }: DeleteAll
       const { data, error: rpcErr } = await supabase.rpc('get_contacts_purge_preview');
       if (rpcErr) throw rpcErr;
       setCounts(data as PurgePreviewCounts);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load preview counts');
+    } catch (err: unknown) {
+      console.error('Fetch preview counts error:', err);
+      const postgrestErr = err as { message?: string; details?: string };
+      setError(postgrestErr?.message || (err instanceof Error ? err.message : 'Failed to load preview counts'));
     } finally {
       setIsLoadingCounts(false);
     }
@@ -84,8 +86,14 @@ export function DeleteAllContactsModal({ isOpen, onClose, onSuccess }: DeleteAll
 
       onSuccess();
       onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete contacts');
+    } catch (err: unknown) {
+      console.error('Delete all contacts error:', err);
+      const postgrestErr = err as { message?: string; details?: string; hint?: string; code?: string };
+      const errorMessage =
+        postgrestErr?.message ||
+        postgrestErr?.details ||
+        (err instanceof Error ? err.message : 'Failed to delete contacts');
+      setError(errorMessage);
       setIsDeleting(false);
     }
   };

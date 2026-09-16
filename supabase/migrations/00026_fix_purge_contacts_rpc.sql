@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 00025: Create secure RPC to purge all contacts and related data
+-- Migration 00026: Fix and optimize contact purge RPC with explicit statement_timeout
 -- =============================================================================
 
 -- 1. Preview RPC: returns counts of contacts and dependent records
