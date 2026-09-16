@@ -127,4 +127,23 @@ describe('Secure Contact Purge & Danger Zone Security', () => {
       expect(isValid('CONFIRM')).toBe(false);
     });
   });
+
+  describe('Safeupdate Protection & SQL Structure Audit', () => {
+    it('verifies all DELETE statements in migration have an explicit WHERE clause', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const migrationPath = path.resolve(process.cwd(), 'supabase/migrations/00026_fix_purge_contacts_rpc.sql');
+      const sql = fs.readFileSync(migrationPath, 'utf8');
+
+      // Find all DELETE statements
+      const deleteStatements = sql.match(/DELETE\s+FROM\s+public\.[a-z_]+[^;]*;/gi) || [];
+      expect(deleteStatements.length).toBe(11);
+
+      // Verify that every single DELETE statement includes WHERE
+      for (const stmt of deleteStatements) {
+        expect(stmt.toUpperCase().includes('WHERE')).toBe(true);
+        expect(stmt.toUpperCase().includes('IS NOT NULL')).toBe(true);
+      }
+    });
+  });
 });
