@@ -219,38 +219,212 @@ Deno.serve(async (req) => {
     let actionSucceeded = false;
     const errors: string[] = [];
 
-    switch (payload.contact_preference) {
-      case 'email': {
-        const result = await handleEmailPreference(
-          db, payload, leadId, intakeEventId, salutation, idempotencyKey,
-        );
-        messagesSent = result.sent;
-        messagesFailed = result.failed;
-        tasksCreated = result.tasksCreated;
-        actionSucceeded = result.allSucceeded;
-        errors.push(...result.errors);
-        break;
+    const pref = payload.contact_preference;
+    const isValidPreference = pref === 'email' || pref === 'sms' || pref === 'call';
+
+    if (!isValidPreference) {
+      // Preference missing, invalid, or unsupported
+      // Audit decision in lead_activities
+      await db.from('lead_activities').insert([
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'contact_preference_detected',
+          actor_type: 'system',
+          summary: `Invalid or missing contact preference detected: "${pref ?? 'none'}"`,
+          metadata: { preference: pref ?? null, valid: false },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'channel_skipped',
+          channel: 'email',
+          actor_type: 'system',
+          summary: 'Email channel skipped: invalid or missing contact preference',
+          metadata: { channel: 'email', reason: 'invalid_or_missing_preference' },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'channel_skipped',
+          channel: 'sms',
+          actor_type: 'system',
+          summary: 'SMS channel skipped: invalid or missing contact preference',
+          metadata: { channel: 'sms', reason: 'invalid_or_missing_preference' },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'channel_skipped',
+          channel: 'call',
+          actor_type: 'system',
+          summary: 'Call channel skipped: invalid or missing contact preference',
+          metadata: { channel: 'call', reason: 'invalid_or_missing_preference' },
+        },
+      ]);
+
+      // Create administrative data_review task (internal review, not customer contact)
+      const { data: existingReviewTask } = await db
+        .from('tasks')
+        .select('id')
+        .eq('intake_event_id', intakeEventId)
+        .eq('task_type', 'data_review')
+        .single();
+
+      if (!existingReviewTask) {
+        await db.from('tasks').insert({
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          task_type: 'data_review',
+          title: 'Review lead contact preference',
+          description: `Contact preference '${pref || 'none'}' is missing or invalid. Internal data review required before initiating contact.`,
+          status: 'pending',
+          created_by: 'system',
+        });
       }
-      case 'sms': {
-        const result = await handleSmsPreference(
-          db, payload, leadId, intakeEventId, salutation, idempotencyKey,
-        );
-        messagesSent = result.sent;
-        messagesFailed = result.failed;
-        tasksCreated = result.tasksCreated;
-        actionSucceeded = result.allSucceeded;
-        errors.push(...result.errors);
-        break;
-      }
-      case 'call': {
-        const result = await handleCallPreference(
-          db, leadId, intakeEventId, salutation,
-        );
-        tasksCreated = result.tasksCreated;
-        actionSucceeded = result.success;
-        errors.push(...result.errors);
-        break;
-      }
+
+      tasksCreated = 1;
+      actionSucceeded = false;
+      errors.push(`Invalid or missing contact_preference: "${pref ?? 'none'}"`);
+    } else if (pref === 'email') {
+      await db.from('lead_activities').insert([
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'contact_preference_detected',
+          actor_type: 'system',
+          summary: 'Contact preference detected: email',
+          metadata: { preference: 'email', valid: true },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'email_selected',
+          channel: 'email',
+          actor_type: 'system',
+          summary: 'Email channel selected based on lead contact preference',
+          metadata: { channel: 'email' },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'channel_skipped',
+          channel: 'sms',
+          actor_type: 'system',
+          summary: 'SMS channel skipped: contact preference is email',
+          metadata: { channel: 'sms', reason: 'preference_exclusion', preferred: 'email' },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'channel_skipped',
+          channel: 'call',
+          actor_type: 'system',
+          summary: 'Call channel skipped: contact preference is email',
+          metadata: { channel: 'call', reason: 'preference_exclusion', preferred: 'email' },
+        },
+      ]);
+
+      const result = await handleEmailPreference(
+        db, payload, leadId, intakeEventId, salutation, idempotencyKey,
+      );
+      messagesSent = result.sent;
+      messagesFailed = result.failed;
+      tasksCreated = result.tasksCreated;
+      actionSucceeded = result.allSucceeded;
+      errors.push(...result.errors);
+    } else if (pref === 'sms') {
+      await db.from('lead_activities').insert([
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'contact_preference_detected',
+          actor_type: 'system',
+          summary: 'Contact preference detected: sms',
+          metadata: { preference: 'sms', valid: true },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'sms_selected',
+          channel: 'sms',
+          actor_type: 'system',
+          summary: 'SMS channel selected based on lead contact preference',
+          metadata: { channel: 'sms' },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'channel_skipped',
+          channel: 'email',
+          actor_type: 'system',
+          summary: 'Email channel skipped: contact preference is sms',
+          metadata: { channel: 'email', reason: 'preference_exclusion', preferred: 'sms' },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'channel_skipped',
+          channel: 'call',
+          actor_type: 'system',
+          summary: 'Call channel skipped: contact preference is sms',
+          metadata: { channel: 'call', reason: 'preference_exclusion', preferred: 'sms' },
+        },
+      ]);
+
+      const result = await handleSmsPreference(
+        db, payload, leadId, intakeEventId, salutation, idempotencyKey,
+      );
+      messagesSent = result.sent;
+      messagesFailed = result.failed;
+      tasksCreated = result.tasksCreated;
+      actionSucceeded = result.allSucceeded;
+      errors.push(...result.errors);
+    } else if (pref === 'call') {
+      await db.from('lead_activities').insert([
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'contact_preference_detected',
+          actor_type: 'system',
+          summary: 'Contact preference detected: call',
+          metadata: { preference: 'call', valid: true },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'call_selected',
+          channel: 'call',
+          actor_type: 'system',
+          summary: 'Call channel selected based on lead contact preference',
+          metadata: { channel: 'call' },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'channel_skipped',
+          channel: 'email',
+          actor_type: 'system',
+          summary: 'Email channel skipped: contact preference is call',
+          metadata: { channel: 'email', reason: 'preference_exclusion', preferred: 'call' },
+        },
+        {
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'channel_skipped',
+          channel: 'sms',
+          actor_type: 'system',
+          summary: 'SMS channel skipped: contact preference is call',
+          metadata: { channel: 'sms', reason: 'preference_exclusion', preferred: 'call' },
+        },
+      ]);
+
+      const result = await handleCallPreference(
+        db, leadId, intakeEventId, salutation,
+      );
+      tasksCreated = result.tasksCreated;
+      actionSucceeded = result.success;
+      errors.push(...result.errors);
     }
 
     // --- 9. Advance pipeline if successful ---
@@ -343,9 +517,6 @@ function validatePayload(p: LeadIntakePayload): string[] {
   if (!p.source || !['meta', 'google', 'manual', 'test'].includes(p.source)) {
     errors.push('Invalid or missing source');
   }
-  if (!p.contact_preference || !['email', 'sms', 'call'].includes(p.contact_preference)) {
-    errors.push('Invalid or missing contact_preference');
-  }
   return errors;
 }
 
@@ -403,6 +574,11 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
     .eq('code', 'capture')
     .single();
 
+  // Determine DB-safe contact_preference ('email' | 'sms' | 'call')
+  const rawPref = payload.contact_preference;
+  const isPrefValid = rawPref === 'email' || rawPref === 'sms' || rawPref === 'call';
+  const dbContactPreference = isPrefValid ? rawPref : 'email';
+
   // Create new lead
   const { data: newLead, error: createError } = await db
     .from('leads')
@@ -417,7 +593,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
         : null,
       phone_raw: payload.phone || null,
       phone_e164: payload.phone && payload.phone.startsWith('+') ? payload.phone : null,
-      contact_preference: payload.contact_preference,
+      contact_preference: dbContactPreference,
       pipeline_stage_id: captureStage!.id,
       source_created_at: payload.source_created_at || null,
     })
@@ -456,25 +632,34 @@ async function handleEmailPreference(
   const recipients = resolveEmailRecipients(payload.email, payload.email_confirmation);
 
   if (recipients.length === 0) {
-    // No valid email — create data_review task
-    await db.from('tasks').insert({
-      lead_id: leadId,
-      intake_event_id: intakeEventId,
-      task_type: 'data_review',
-      title: 'Review lead email data',
-      description: 'No valid email address available for this lead. Please review and update.',
-      status: 'pending',
-      created_by: 'system',
-    });
+    // No valid email — create data_review task (idempotent)
+    const { data: existingReviewTask } = await db
+      .from('tasks')
+      .select('id')
+      .eq('intake_event_id', intakeEventId)
+      .eq('task_type', 'data_review')
+      .single();
 
-    await db.from('lead_activities').insert({
-      lead_id: leadId,
-      intake_event_id: intakeEventId,
-      activity_type: 'processing_failed',
-      actor_type: 'system',
-      summary: 'No valid email address — data review task created',
-      metadata: { reason: 'no_valid_email' },
-    });
+    if (!existingReviewTask) {
+      await db.from('tasks').insert({
+        lead_id: leadId,
+        intake_event_id: intakeEventId,
+        task_type: 'data_review',
+        title: 'Review lead email data',
+        description: 'No valid email address available for this lead. Please review and update.',
+        status: 'pending',
+        created_by: 'system',
+      });
+
+      await db.from('lead_activities').insert({
+        lead_id: leadId,
+        intake_event_id: intakeEventId,
+        activity_type: 'processing_failed',
+        actor_type: 'system',
+        summary: 'No valid email address — data review task created',
+        metadata: { reason: 'no_valid_email' },
+      });
+    }
 
     return { sent: 0, failed: 0, tasksCreated: 1, allSucceeded: false, errors: ['No valid email address'] };
   }
@@ -624,25 +809,34 @@ async function handleSmsPreference(
   }
 
   if (!phoneE164) {
-    // No usable phone — create data_review task
-    await db.from('tasks').insert({
-      lead_id: leadId,
-      intake_event_id: intakeEventId,
-      task_type: 'data_review',
-      title: 'Review lead phone data',
-      description: 'No E.164 phone number available. Please review and update with international format.',
-      status: 'pending',
-      created_by: 'system',
-    });
+    // No usable phone — create data_review task (idempotent)
+    const { data: existingReviewTask } = await db
+      .from('tasks')
+      .select('id')
+      .eq('intake_event_id', intakeEventId)
+      .eq('task_type', 'data_review')
+      .single();
 
-    await db.from('lead_activities').insert({
-      lead_id: leadId,
-      intake_event_id: intakeEventId,
-      activity_type: 'processing_failed',
-      actor_type: 'system',
-      summary: 'No E.164 phone number — data review task created',
-      metadata: { reason: 'no_e164_phone', raw_phone: payload.phone || null },
-    });
+    if (!existingReviewTask) {
+      await db.from('tasks').insert({
+        lead_id: leadId,
+        intake_event_id: intakeEventId,
+        task_type: 'data_review',
+        title: 'Review lead phone data',
+        description: 'No E.164 phone number available. Please review and update with international format.',
+        status: 'pending',
+        created_by: 'system',
+      });
+
+      await db.from('lead_activities').insert({
+        lead_id: leadId,
+        intake_event_id: intakeEventId,
+        activity_type: 'processing_failed',
+        actor_type: 'system',
+        summary: 'No E.164 phone number — data review task created',
+        metadata: { reason: 'no_e164_phone', raw_phone: payload.phone || null },
+      });
+    }
 
     return { sent: 0, failed: 0, tasksCreated: 1, allSucceeded: false, errors: ['No E.164 phone number'] };
   }
@@ -771,6 +965,17 @@ async function handleCallPreference(
   salutation: string,
 ) {
   try {
+    const { data: existingCallTask } = await db
+      .from('tasks')
+      .select('id')
+      .eq('intake_event_id', intakeEventId)
+      .eq('task_type', 'call')
+      .single();
+
+    if (existingCallTask) {
+      return { tasksCreated: 1, success: true, errors: [] as string[] };
+    }
+
     await db.from('tasks').insert({
       lead_id: leadId,
       intake_event_id: intakeEventId,
@@ -785,6 +990,7 @@ async function handleCallPreference(
       lead_id: leadId,
       intake_event_id: intakeEventId,
       activity_type: 'call_task_created',
+      channel: 'call',
       actor_type: 'system',
       summary: `Call task created for ${salutation}`,
       metadata: { task_type: 'call' },

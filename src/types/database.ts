@@ -4,7 +4,7 @@
 
 export type LeadSource = 'meta' | 'google' | 'manual' | 'test';
 export type ContactPreference = 'email' | 'sms' | 'call';
-export type MessageChannel = 'email' | 'sms';
+export type MessageChannel = 'email' | 'sms' | 'call';
 export type MessageProvider = 'resend' | 'twilio';
 export type MessageStatus = 'pending' | 'sent' | 'failed';
 export type IntakeStatus = 'received' | 'processing' | 'processed' | 'failed' | 'duplicate';
@@ -22,7 +22,12 @@ export type ActivityType =
   | 'note_created'
   | 'tag_added'
   | 'tag_removed'
-  | 'campaign_sent';
+  | 'campaign_sent'
+  | 'contact_preference_detected'
+  | 'email_selected'
+  | 'sms_selected'
+  | 'call_selected'
+  | 'channel_skipped';
 export type ActorType = 'system' | 'user';
 export type StageChangeReason = 'initial_assignment' | 'auto_after_intake' | 'manual';
 export type DomainVerificationStatus = 'unknown' | 'pending' | 'passed' | 'verified' | 'failed';
