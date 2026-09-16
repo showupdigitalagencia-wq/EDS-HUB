@@ -158,6 +158,14 @@ export function LeadsListPage() {
     fetchLeads();
   }, [fetchLeads]);
 
+  useEffect(() => {
+    const handlePurged = () => {
+      fetchLeads();
+    };
+    window.addEventListener('leads-purged', handlePurged);
+    return () => window.removeEventListener('leads-purged', handlePurged);
+  }, [fetchLeads]);
+
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
   const stageMap = stages.reduce<Record<string, PipelineStage>>((acc, s) => {

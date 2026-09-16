@@ -104,6 +104,14 @@ export function PipelineKanbanPage() {
     loadPipelineData();
   }, [loadPipelineData]);
 
+  useEffect(() => {
+    const handlePurged = () => {
+      loadPipelineData();
+    };
+    window.addEventListener('leads-purged', handlePurged);
+    return () => window.removeEventListener('leads-purged', handlePurged);
+  }, [loadPipelineData]);
+
   // Handle stage drag and drop
   const handleDragStart = (leadId: string) => {
     setDraggedLeadId(leadId);
