@@ -10,14 +10,19 @@ import { PipelineKanbanPage } from './features/pipeline/PipelineKanbanPage';
 import { CampaignsListPage } from './features/campaigns/CampaignsListPage';
 import { CampaignDetailPage } from './features/campaigns/CampaignDetailPage';
 import { TemplatesListPage } from './features/templates/TemplatesListPage';
+import { FormsListPage } from './features/forms/FormsListPage';
+import { FormBuilderPage } from './features/forms/FormBuilderPage';
+import { FormSubmissionsPage } from './features/forms/FormSubmissionsPage';
+import { PublicFormPage } from './features/forms/public/PublicFormPage';
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public route */}
+          {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/f/:slug" element={<PublicFormPage />} />
 
           {/* Protected routes */}
           <Route
@@ -49,6 +54,38 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <PipelineKanbanPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/forms"
+            element={
+              <ProtectedRoute>
+                <FormsListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/forms/new"
+            element={
+              <ProtectedRoute>
+                <FormBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/forms/:id"
+            element={
+              <ProtectedRoute>
+                <FormBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/forms/:id/submissions"
+            element={
+              <ProtectedRoute>
+                <FormSubmissionsPage />
               </ProtectedRoute>
             }
           />

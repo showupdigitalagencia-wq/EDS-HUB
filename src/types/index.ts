@@ -42,5 +42,13 @@ export type {
   CampaignRecipient,
   CampaignTestSend,
   CampaignJob,
+  FormStatus,
+  FormFieldType,
+  SubmissionProcessingStatus,
+  Form,
+  FormField,
+  FormSubmission,
+  PublicFormField,
+  PublicFormDefinition,
 } from './database';
 export type { LeadIntakePayload, LeadIntakeResponse } from './lead-intake';

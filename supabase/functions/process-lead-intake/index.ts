@@ -50,11 +50,22 @@ Deno.serve(async (req) => {
     const idempotencyKey = generateIdempotencyKey(payload);
 
     // --- 4. Register lead_intake_event ---
-    const { data: existingEvent } = await db
-      .from('lead_intake_events')
-      .select('id, status, lead_id')
-      .eq('idempotency_key', idempotencyKey)
-      .single();
+    let existingEvent: { id: string; status: string; lead_id: string | null; attempt_count?: number } | null = null;
+    if (payload.intake_event_id) {
+      const { data: byId } = await db
+        .from('lead_intake_events')
+        .select('id, status, lead_id, attempt_count')
+        .eq('id', payload.intake_event_id)
+        .single();
+      existingEvent = byId;
+    } else {
+      const { data: byKey } = await db
+        .from('lead_intake_events')
+        .select('id, status, lead_id, attempt_count')
+        .eq('idempotency_key', idempotencyKey)
+        .single();
+      existingEvent = byKey;
+    }
 
     if (existingEvent && (existingEvent.status === 'processed' || existingEvent.status === 'duplicate')) {
       return jsonResponse({
@@ -514,7 +525,7 @@ Deno.serve(async (req) => {
 
 function validatePayload(p: LeadIntakePayload): string[] {
   const errors: string[] = [];
-  if (!p.source || !['meta', 'google', 'manual', 'test'].includes(p.source)) {
+  if (!p.source || !['meta', 'google', 'manual', 'test', 'form'].includes(p.source)) {
     errors.push('Invalid or missing source');
   }
   return errors;
@@ -553,6 +564,19 @@ function sanitizeForStorage(p: LeadIntakePayload): Record<string, unknown> {
 
 // deno-lint-ignore no-explicit-any
 async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEventId: string) {
+  // Try direct lead_id lookup if provided
+  if (payload.lead_id) {
+    const { data: existing } = await db
+      .from('leads')
+      .select('id')
+      .eq('id', payload.lead_id)
+      .single();
+
+    if (existing) {
+      return { leadId: existing.id, isNewLead: false };
+    }
+  }
+
   // Try to find existing lead by source + external_lead_id
   if (payload.external_lead_id) {
     const { data: existing } = await db

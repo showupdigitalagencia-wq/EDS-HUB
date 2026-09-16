@@ -9,12 +9,14 @@ import {
   Settings,
   LogOut,
   ShieldCheck,
+  ClipboardList,
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Foundation Status', href: '/', icon: LayoutDashboard },
   { name: 'Leads', href: '/leads', icon: Users },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban },
+  { name: 'Forms', href: '/forms', icon: ClipboardList },
   { name: 'Campaigns', href: '/campaigns', icon: Mail },
   { name: 'Templates', href: '/templates', icon: FileText },
   { name: 'System Setup', href: '/settings', icon: Settings },

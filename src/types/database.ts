@@ -2,7 +2,7 @@
 // EDS HUB — Database Types (Phase 1 + Phase 2)
 // =============================================================================
 
-export type LeadSource = 'meta' | 'google' | 'manual' | 'test';
+export type LeadSource = 'meta' | 'google' | 'manual' | 'test' | 'form';
 export type ContactPreference = 'email' | 'sms' | 'call';
 export type MessageChannel = 'email' | 'sms' | 'call';
 export type MessageProvider = 'resend' | 'twilio';
@@ -29,7 +29,8 @@ export type ActivityType =
   | 'call_selected'
   | 'channel_skipped'
   | 'csv_status_unmapped'
-  | 'qualification_status_changed';
+  | 'qualification_status_changed'
+  | 'form_submitted';
 export type ActorType = 'system' | 'user';
 export type StageChangeReason = 'initial_assignment' | 'auto_after_intake' | 'manual' | 'csv_import_stage_mapping';
 export type DomainVerificationStatus = 'unknown' | 'pending' | 'passed' | 'verified' | 'failed';
@@ -367,3 +368,120 @@ export interface CampaignJob {
   created_at: string;
   updated_at: string;
 }
+
+// =============================================================================
+// Phase 3: Forms Types
+// =============================================================================
+
+export type FormStatus = 'active' | 'inactive';
+
+export type FormFieldType =
+  | 'first_name'
+  | 'last_name'
+  | 'email'
+  | 'phone'
+  | 'contact_preference'
+  | 'course_interest'
+  | 'text'
+  | 'textarea'
+  | 'select'
+  | 'radio'
+  | 'checkbox'
+  | 'hidden';
+
+export type SubmissionProcessingStatus =
+  | 'received'
+  | 'processing'
+  | 'processed'
+  | 'conflict'
+  | 'failed';
+
+export interface Form {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  status: FormStatus;
+  success_message: string;
+  redirect_url: string | null;
+  source_detail: string | null;
+  default_pipeline_stage_id: string;
+  default_tags: string[];
+  duplicate_update_enabled: boolean;
+  current_version: number;
+  submit_button_text: string;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  // Computed fields from queries
+  submission_count?: number;
+  lead_count?: number;
+}
+
+export interface FormField {
+  id: string;
+  form_id: string;
+  version: number;
+  field_type: FormFieldType;
+  internal_name: string;
+  label: string;
+  required: boolean;
+  placeholder: string | null;
+  help_text: string | null;
+  options: string[];
+  sort_order: number;
+  settings: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FormSubmission {
+  id: string;
+  form_id: string;
+  form_version: number;
+  lead_id: string | null;
+  intake_event_id: string | null;
+  submitted_data: Record<string, unknown>;
+  email: string | null;
+  phone_e164: string | null;
+  contact_preference: string | null;
+  course_interest: string | null;
+  source_detail: string | null;
+  processing_status: SubmissionProcessingStatus;
+  processing_error: string | null;
+  idempotency_key: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  submitted_at: string;
+  processed_at: string | null;
+  // Joined fields
+  form_name?: string;
+  lead?: {
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+  } | null;
+}
+
+export interface PublicFormField {
+  internal_name: string;
+  label: string;
+  field_type: FormFieldType;
+  required: boolean;
+  placeholder: string | null;
+  help_text: string | null;
+  options: string[];
+  sort_order: number;
+}
+
+export interface PublicFormDefinition {
+  name: string;
+  slug: string;
+  description: string | null;
+  version: number;
+  submit_button_text: string;
+  success_message: string;
+  redirect_url: string | null;
+  fields: PublicFormField[];
+}
+

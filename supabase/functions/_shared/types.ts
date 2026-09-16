@@ -3,7 +3,9 @@
 // =============================================================================
 
 export interface LeadIntakePayload {
-  source: 'meta' | 'google' | 'manual' | 'test';
+  source: 'meta' | 'google' | 'manual' | 'test' | 'form';
+  lead_id?: string;
+  intake_event_id?: string;
   external_event_id?: string;
   external_lead_id?: string;
   first_name?: string;
