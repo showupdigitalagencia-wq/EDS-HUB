@@ -27,9 +27,10 @@ export type ActivityType =
   | 'email_selected'
   | 'sms_selected'
   | 'call_selected'
-  | 'channel_skipped';
+  | 'channel_skipped'
+  | 'csv_status_unmapped';
 export type ActorType = 'system' | 'user';
-export type StageChangeReason = 'initial_assignment' | 'auto_after_intake' | 'manual';
+export type StageChangeReason = 'initial_assignment' | 'auto_after_intake' | 'manual' | 'csv_import_stage_mapping';
 export type DomainVerificationStatus = 'unknown' | 'pending' | 'passed' | 'verified' | 'failed';
 
 // Phase 2 Enums

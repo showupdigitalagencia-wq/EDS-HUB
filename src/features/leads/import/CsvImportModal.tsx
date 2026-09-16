@@ -1,6 +1,7 @@
 import { useState, useId } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { parseCsv, type ParsedCsv } from '../utils/csvParser';
+import { mapCsvStatusToStageCode } from '../utils/stageMapping';
 import type { ContactPreference, LeadSource } from '../../../types';
 import {
   X,
@@ -31,6 +32,7 @@ const CRM_FIELDS = [
   { key: 'phone', label: 'Phone Number' },
   { key: 'contact_preference', label: 'Contact Preference (email/sms/call)' },
   { key: 'source', label: 'Source (meta/google/manual/test)' },
+  { key: 'status', label: 'Lead / Pipeline Status' },
   { key: 'tags', label: 'Tags (comma-separated)' },
 ];
 
@@ -84,6 +86,13 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
           else if (lower.includes('phone') || lower.includes('tel') || lower.includes('cell')) initialMapping[header] = 'phone';
           else if (lower.includes('preference') || lower.includes('contact')) initialMapping[header] = 'contact_preference';
           else if (lower.includes('source') || lower.includes('origin')) initialMapping[header] = 'source';
+          else if (
+            lower.includes('status') ||
+            lower.includes('stage') ||
+            lower.includes('lifecycle') ||
+            lower.includes('qualification') ||
+            lower.includes('pipeline')
+          ) initialMapping[header] = 'status';
           else if (lower.includes('tag')) initialMapping[header] = 'tags';
         });
 
@@ -104,17 +113,22 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
     setError(null);
 
     try {
-      // 1. Get default Capture stage ID
-      const { data: captureStage } = await supabase
+      // 1. Get active pipeline stages dynamically
+      const { data: stages, error: stagesErr } = await supabase
         .from('pipeline_stages')
-        .select('id')
-        .eq('code', 'capture')
-        .single();
+        .select('id, code, name')
+        .eq('is_active', true);
 
-      const defaultStageId = captureStage?.id;
-      if (!defaultStageId) {
+      if (stagesErr || !stages) {
+        throw stagesErr || new Error('Failed to load active pipeline stages');
+      }
+
+      const stageByCode = new Map(stages.map((s) => [s.code, s]));
+      const captureStage = stageByCode.get('capture');
+      if (!captureStage) {
         throw new Error('Capture pipeline stage not found');
       }
+      const defaultStageId = captureStage.id;
 
       // 2. Create lead_imports record
       const { data: importRec, error: impErr } = await supabase
@@ -156,7 +170,12 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
         const phone = (fieldToCol.phone ? row[fieldToCol.phone] : '').trim();
         const rawPref = (fieldToCol.contact_preference ? row[fieldToCol.contact_preference] : '').trim().toLowerCase();
         const rawSource = (fieldToCol.source ? row[fieldToCol.source] : '').trim().toLowerCase();
+        const rawStatus = (fieldToCol.status ? row[fieldToCol.status] : '').trim();
         const rawTags = (fieldToCol.tags ? row[fieldToCol.tags] : '').trim();
+
+        // Determine mapped target stage
+        const mappedStageCode = mapCsvStatusToStageCode(rawStatus);
+        const targetStage = mappedStageCode ? stageByCode.get(mappedStageCode) : null;
 
         const contactPreference: ContactPreference = ['email', 'sms', 'call'].includes(rawPref)
           ? (rawPref as ContactPreference)
@@ -180,83 +199,109 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
 
         try {
           // Check for existing lead by email or phone
-          let existingLead: { id: string } | null = null;
+          let existingLead: { id: string; pipeline_stage_id: string } | null = null;
           if (email) {
-            const { data } = await supabase.from('leads').select('id').eq('email', email).maybeSingle();
+            const { data } = await supabase
+              .from('leads')
+              .select('id, pipeline_stage_id')
+              .eq('email', email)
+              .maybeSingle();
             existingLead = data;
           }
           if (!existingLead && phone) {
-            const { data } = await supabase.from('leads').select('id').eq('phone_raw', phone).maybeSingle();
+            const { data } = await supabase
+              .from('leads')
+              .select('id, pipeline_stage_id')
+              .eq('phone_raw', phone)
+              .maybeSingle();
             existingLead = data;
           }
 
           let finalLeadId: string | null = null;
 
-          if (existingLead) {
-            if (duplicateStrategy === 'skip') {
-              skipped++;
-              await supabase.from('lead_import_rows').insert({
-                import_id: importId,
-                row_number: rowNum,
-                raw_data: row,
-                status: 'skipped',
-                lead_id: existingLead.id,
-                error_message: 'Duplicate record skipped',
-              });
-              continue;
-            } else if (duplicateStrategy === 'update') {
-              // Update existing lead
-              const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
-              if (firstName) updateData.first_name = firstName;
-              if (lastName) updateData.last_name = lastName;
-              if (phone) {
-                updateData.phone_raw = phone;
-                if (phone.startsWith('+')) updateData.phone_e164 = phone;
-              }
+          if (existingLead && duplicateStrategy === 'skip') {
+            // Rule 3: Skip Duplicates - do not alter anything on existing lead
+            skipped++;
+            await supabase.from('lead_import_rows').insert({
+              import_id: importId,
+              row_number: rowNum,
+              raw_data: row,
+              status: 'skipped',
+              lead_id: existingLead.id,
+              error_message: 'Duplicate record skipped',
+            });
+            continue;
+          }
 
-              await supabase.from('leads').update(updateData).eq('id', existingLead.id);
-              finalLeadId = existingLead.id;
-              updated++;
+          if (existingLead && duplicateStrategy === 'update') {
+            // Update existing lead
+            const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
+            if (firstName) updateData.first_name = firstName;
+            if (lastName) updateData.last_name = lastName;
+            if (phone) {
+              updateData.phone_raw = phone;
+              if (phone.startsWith('+')) updateData.phone_e164 = phone;
+            }
 
-              await supabase.from('lead_import_rows').insert({
-                import_id: importId,
-                row_number: rowNum,
-                raw_data: row,
-                status: 'updated',
+            const hasStageChanged = Boolean(targetStage && targetStage.id !== existingLead.pipeline_stage_id);
+            const fromStageId = existingLead.pipeline_stage_id;
+            if (hasStageChanged && targetStage) {
+              updateData.pipeline_stage_id = targetStage.id;
+            }
+
+            await supabase.from('leads').update(updateData).eq('id', existingLead.id);
+            finalLeadId = existingLead.id;
+            updated++;
+
+            await supabase.from('lead_import_rows').insert({
+              import_id: importId,
+              row_number: rowNum,
+              raw_data: row,
+              status: 'updated',
+              lead_id: finalLeadId,
+            });
+
+            if (hasStageChanged && targetStage) {
+              // Rule 4: Update Existing + status válido diferente
+              await supabase.from('lead_stage_history').insert({
                 lead_id: finalLeadId,
+                from_stage_id: fromStageId,
+                to_stage_id: targetStage.id,
+                change_reason: 'csv_import_stage_mapping',
               });
-            } else {
-              // Create new anyway
-              const { data: newL, error: insErr } = await supabase
-                .from('leads')
-                .insert({
-                  source,
-                  first_name: firstName || null,
-                  last_name: lastName || null,
-                  email: email || null,
-                  email_confirmation: emailConfirmation || null,
-                  phone_raw: phone || null,
-                  phone_e164: phone.startsWith('+') ? phone : null,
-                  contact_preference: contactPreference,
-                  pipeline_stage_id: defaultStageId,
-                })
-                .select('id')
-                .single();
 
-              if (insErr) throw insErr;
-              finalLeadId = newL!.id;
-              created++;
-
-              await supabase.from('lead_import_rows').insert({
-                import_id: importId,
-                row_number: rowNum,
-                raw_data: row,
-                status: 'created',
+              await supabase.from('lead_activities').insert({
                 lead_id: finalLeadId,
+                activity_type: 'stage_changed',
+                actor_type: 'user',
+                summary: `Pipeline stage set from CSV import status: ${rawStatus}`,
+                metadata: {
+                  status_raw: rawStatus,
+                  from_stage_id: existingLead.pipeline_stage_id,
+                  to_stage_id: targetStage.id,
+                  to_stage_code: targetStage.code,
+                  import_id: importId,
+                },
+              });
+            } else if (!targetStage) {
+              // Rule 6: Update Existing + status vazio ou desconhecido -> preserve stage, log csv_status_unmapped
+              await supabase.from('lead_activities').insert({
+                lead_id: finalLeadId,
+                activity_type: 'csv_status_unmapped',
+                actor_type: 'user',
+                summary: 'CSV status not mapped; lead kept in current stage',
+                metadata: {
+                  status_raw: rawStatus || null,
+                  current_stage_id: existingLead.pipeline_stage_id,
+                  import_id: importId,
+                },
               });
             }
+            // Rule 5: Update Existing + mesmo estágio -> no redundant stage history or activity
           } else {
-            // New lead insertion
+            // New lead insertion (or duplicateStrategy === 'create')
+            const initialStageId = targetStage ? targetStage.id : defaultStageId;
+
             const { data: newL, error: insErr } = await supabase
               .from('leads')
               .insert({
@@ -268,7 +313,7 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
                 phone_raw: phone || null,
                 phone_e164: phone.startsWith('+') ? phone : null,
                 contact_preference: contactPreference,
-                pipeline_stage_id: defaultStageId,
+                pipeline_stage_id: initialStageId,
               })
               .select('id')
               .single();
@@ -285,14 +330,6 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
               lead_id: finalLeadId,
             });
 
-            // Initial stage history & activity
-            await supabase.from('lead_stage_history').insert({
-              lead_id: finalLeadId,
-              from_stage_id: null,
-              to_stage_id: defaultStageId,
-              change_reason: 'initial_assignment',
-            });
-
             await supabase.from('lead_activities').insert({
               lead_id: finalLeadId,
               activity_type: 'lead_created',
@@ -300,6 +337,49 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
               summary: `Lead imported from CSV: ${file.name}`,
               metadata: { import_id: importId, filename: file.name },
             });
+
+            if (targetStage) {
+              // Rule 1: Create All + status válido
+              await supabase.from('lead_stage_history').insert({
+                lead_id: finalLeadId,
+                from_stage_id: null,
+                to_stage_id: targetStage.id,
+                change_reason: 'csv_import_stage_mapping',
+              });
+
+              await supabase.from('lead_activities').insert({
+                lead_id: finalLeadId,
+                activity_type: 'stage_changed',
+                actor_type: 'user',
+                summary: `Pipeline stage set from CSV import status: ${rawStatus}`,
+                metadata: {
+                  status_raw: rawStatus,
+                  mapped_stage_code: targetStage.code,
+                  mapped_stage_name: targetStage.name,
+                  import_id: importId,
+                },
+              });
+            } else {
+              // Rule 2: Create All + status vazio/desconhecido
+              await supabase.from('lead_stage_history').insert({
+                lead_id: finalLeadId,
+                from_stage_id: null,
+                to_stage_id: defaultStageId,
+                change_reason: 'initial_assignment',
+              });
+
+              await supabase.from('lead_activities').insert({
+                lead_id: finalLeadId,
+                activity_type: 'csv_status_unmapped',
+                actor_type: 'user',
+                summary: 'CSV status not mapped; lead kept in New Lead',
+                metadata: {
+                  status_raw: rawStatus || null,
+                  default_stage: 'capture',
+                  import_id: importId,
+                },
+              });
+            }
           }
 
           // Handle tags if present
