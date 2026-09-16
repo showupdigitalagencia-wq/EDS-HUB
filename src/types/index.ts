@@ -21,6 +21,7 @@ export type {
   AppSettings,
   PipelineStage,
   Lead,
+  QualificationStatus,
   LeadIntakeEvent,
   TransactionalTemplate,
   OutboundMessage,

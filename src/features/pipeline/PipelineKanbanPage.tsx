@@ -5,6 +5,7 @@ import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import type { Lead, PipelineStage, Tag } from '../../types';
+import { getQualificationStatusBadge } from '../leads/utils/qualificationMapping';
 import {
   Kanban,
   RotateCw,
@@ -309,6 +310,22 @@ export function PipelineKanbanPage() {
                                   <span className="text-[9px] text-gray-400">+{tags.length - 3}</span>
                                 )}
                               </div>
+                            )}
+
+                            {/* Qualification badge */}
+                            {lead.qualification_status && (
+                              (() => {
+                                const badge = getQualificationStatusBadge(lead.qualification_status);
+                                return (
+                                  <div className="pt-0.5">
+                                    <span
+                                      className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-md border ${badge.bg} ${badge.text} ${badge.border}`}
+                                    >
+                                      {badge.label}
+                                    </span>
+                                  </div>
+                                );
+                              })()
                             )}
 
                             {/* Footer info */}

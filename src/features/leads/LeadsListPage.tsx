@@ -8,6 +8,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { NewLeadModal } from './components/NewLeadModal';
 import { CsvImportModal } from './import/CsvImportModal';
 import type { Lead, PipelineStage, Tag } from '../../types';
+import { getQualificationStatusBadge } from './utils/qualificationMapping';
 import {
   Users,
   Plus,
@@ -42,6 +43,7 @@ export function LeadsListPage() {
   const [stageFilter, setStageFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [preferenceFilter, setPreferenceFilter] = useState('');
+  const [qualificationFilter, setQualificationFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
 
   // Modals
@@ -90,6 +92,11 @@ export function LeadsListPage() {
       // Filter by contact preference
       if (preferenceFilter) {
         query = query.eq('contact_preference', preferenceFilter);
+      }
+
+      // Filter by qualification status
+      if (qualificationFilter) {
+        query = query.eq('qualification_status', qualificationFilter);
       }
 
       // Filter by tag if selected
@@ -145,7 +152,7 @@ export function LeadsListPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [searchTerm, stageFilter, sourceFilter, preferenceFilter, tagFilter, currentPage]);
+  }, [searchTerm, stageFilter, sourceFilter, preferenceFilter, qualificationFilter, tagFilter, currentPage]);
 
   useEffect(() => {
     fetchLeads();
@@ -274,6 +281,23 @@ export function LeadsListPage() {
                 <option value="call">Call</option>
               </select>
 
+              {/* Qualification status */}
+              <select
+                value={qualificationFilter}
+                onChange={(e) => {
+                  setQualificationFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="">All Qualification</option>
+                <option value="no_response">No Response</option>
+                <option value="some_response">Some Response</option>
+                <option value="interested">Interested</option>
+                <option value="hot">Hot</option>
+                <option value="confirmed">Confirmed</option>
+              </select>
+
               {/* Tag filter */}
               <select
                 value={tagFilter}
@@ -322,6 +346,7 @@ export function LeadsListPage() {
                     <th className="px-5 py-3.5">Contact Info</th>
                     <th className="px-5 py-3.5">Preference</th>
                     <th className="px-5 py-3.5">Pipeline Stage</th>
+                    <th className="px-5 py-3.5">Qualification</th>
                     <th className="px-5 py-3.5">Tags</th>
                     <th className="px-5 py-3.5">Source</th>
                     <th className="px-5 py-3.5">Created</th>
@@ -380,6 +405,22 @@ export function LeadsListPage() {
                             </span>
                           ) : (
                             <span className="text-xs text-gray-400">Unknown</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5 whitespace-nowrap">
+                          {lead.qualification_status ? (
+                            (() => {
+                              const badge = getQualificationStatusBadge(lead.qualification_status);
+                              return (
+                                <span
+                                  className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-lg border ${badge.bg} ${badge.text} ${badge.border}`}
+                                >
+                                  {badge.label}
+                                </span>
+                              );
+                            })()
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
                           )}
                         </td>
                         <td className="px-5 py-3.5">

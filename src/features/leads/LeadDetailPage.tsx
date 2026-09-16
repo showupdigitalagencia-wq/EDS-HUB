@@ -4,7 +4,8 @@ import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
-import type { Lead, PipelineStage, Tag, LeadNote, Task, LeadActivity, ContactPreference } from '../../types';
+import type { Lead, PipelineStage, Tag, LeadNote, Task, LeadActivity, ContactPreference, QualificationStatus } from '../../types';
+import { getQualificationStatusBadge, getQualificationStatusLabel } from './utils/qualificationMapping';
 import {
   ArrowLeft,
   Mail,
@@ -43,6 +44,8 @@ export function LeadDetailPage() {
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editPref, setEditPref] = useState<ContactPreference>('email');
+  const [editQualStatus, setEditQualStatus] = useState<QualificationStatus | ''>('');
+  const [editCourseInterest, setEditCourseInterest] = useState('');
 
   // New Note state
   const [newNoteContent, setNewNoteContent] = useState('');
@@ -77,6 +80,8 @@ export function LeadDetailPage() {
       setEditEmail(l.email || '');
       setEditPhone(l.phone_raw || '');
       setEditPref(l.contact_preference);
+      setEditQualStatus(l.qualification_status || '');
+      setEditCourseInterest(l.course_interest || '');
 
       if (stagesRes.data) setStages(stagesRes.data);
       if (allTagsRes.data) setAllTags(allTagsRes.data);
@@ -109,6 +114,9 @@ export function LeadDetailPage() {
   const handleSaveContact = async () => {
     if (!lead) return;
     try {
+      const newQualStatus = editQualStatus ? (editQualStatus as QualificationStatus) : null;
+      const hasQualChanged = newQualStatus !== lead.qualification_status;
+
       const { error: updateErr } = await supabase
         .from('leads')
         .update({
@@ -118,11 +126,26 @@ export function LeadDetailPage() {
           phone_raw: editPhone.trim() || null,
           phone_e164: editPhone.trim().startsWith('+') ? editPhone.trim() : null,
           contact_preference: editPref,
+          qualification_status: newQualStatus,
+          course_interest: editCourseInterest.trim() || null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', lead.id);
 
       if (updateErr) throw updateErr;
+
+      if (hasQualChanged) {
+        await supabase.from('lead_activities').insert({
+          lead_id: lead.id,
+          activity_type: 'qualification_status_changed',
+          actor_type: 'user',
+          summary: `Qualification status updated to: ${getQualificationStatusLabel(newQualStatus)}`,
+          metadata: {
+            qualification_status: newQualStatus,
+            previous_status: lead.qualification_status,
+          },
+        });
+      }
 
       setIsEditing(false);
       loadLeadData();
@@ -367,6 +390,37 @@ export function LeadDetailPage() {
                     </span>
                   </div>
                   <div>
+                    <span className="text-xs text-gray-400 block mb-0.5">Qualification Status</span>
+                    {lead.qualification_status ? (
+                      (() => {
+                        const badge = getQualificationStatusBadge(lead.qualification_status);
+                        return (
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 text-xs font-semibold rounded-md border ${badge.bg} ${badge.text} ${badge.border}`}
+                          >
+                            {badge.label}
+                          </span>
+                        );
+                      })()
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">None</span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-400 block mb-0.5">Course of Interest</span>
+                    <span className="font-medium text-gray-800 text-xs">
+                      {lead.course_interest || '—'}
+                    </span>
+                  </div>
+                  {lead.hubspot_contact_id && (
+                    <div>
+                      <span className="text-xs text-gray-400 block mb-0.5">HubSpot Contact ID</span>
+                      <span className="font-mono text-xs text-gray-700 bg-gray-50 px-2 py-0.5 rounded border border-gray-200">
+                        {lead.hubspot_contact_id}
+                      </span>
+                    </div>
+                  )}
+                  <div>
                     <span className="text-xs text-gray-400 block mb-0.5">Created Date</span>
                     <span className="text-gray-600 text-xs">
                       {new Date(lead.created_at).toLocaleString()}
@@ -422,6 +476,31 @@ export function LeadDetailPage() {
                       <option value="sms">SMS</option>
                       <option value="call">Call</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 block mb-1">Qualification Status</label>
+                    <select
+                      value={editQualStatus}
+                      onChange={(e) => setEditQualStatus(e.target.value as QualificationStatus | '')}
+                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white"
+                    >
+                      <option value="">None</option>
+                      <option value="no_response">No Response</option>
+                      <option value="some_response">Some Response</option>
+                      <option value="interested">Interested</option>
+                      <option value="hot">Hot</option>
+                      <option value="confirmed">Confirmed</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs font-semibold text-gray-700 block mb-1">Course of Interest</label>
+                    <input
+                      type="text"
+                      value={editCourseInterest}
+                      onChange={(e) => setEditCourseInterest(e.target.value)}
+                      placeholder="e.g. Intensive, Wisdom"
+                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-brand-500"
+                    />
                   </div>
                 </div>
               )}

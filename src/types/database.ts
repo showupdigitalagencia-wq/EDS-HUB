@@ -28,14 +28,22 @@ export type ActivityType =
   | 'sms_selected'
   | 'call_selected'
   | 'channel_skipped'
-  | 'csv_status_unmapped';
+  | 'csv_status_unmapped'
+  | 'qualification_status_changed';
 export type ActorType = 'system' | 'user';
 export type StageChangeReason = 'initial_assignment' | 'auto_after_intake' | 'manual' | 'csv_import_stage_mapping';
 export type DomainVerificationStatus = 'unknown' | 'pending' | 'passed' | 'verified' | 'failed';
 
+export type QualificationStatus =
+  | 'no_response'
+  | 'some_response'
+  | 'interested'
+  | 'hot'
+  | 'confirmed';
+
 // Phase 2 Enums
 export type ImportStatus = 'pending' | 'processing' | 'completed' | 'completed_with_errors' | 'failed';
-export type ImportRowStatus = 'created' | 'updated' | 'skipped' | 'failed';
+export type ImportRowStatus = 'created' | 'updated' | 'skipped' | 'failed' | 'conflict';
 export type CampaignStatus = 'draft' | 'pending_approval' | 'approved' | 'scheduled' | 'sending' | 'sent' | 'cancelled' | 'failed';
 export type RecipientStatus = 'pending' | 'sent' | 'failed' | 'skipped';
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
@@ -79,6 +87,7 @@ export interface Lead {
   id: string;
   source: LeadSource;
   external_lead_id: string | null;
+  hubspot_contact_id: string | null;
   first_name: string | null;
   last_name: string | null;
   email: string | null;
@@ -86,6 +95,9 @@ export interface Lead {
   phone_raw: string | null;
   phone_e164: string | null;
   contact_preference: ContactPreference;
+  qualification_status: QualificationStatus | null;
+  course_interest: string | null;
+  course_interests: string[];
   pipeline_stage_id: string;
   source_created_at: string | null;
   created_at: string;
@@ -228,6 +240,7 @@ export interface LeadImport {
   updated_count: number;
   skipped_count: number;
   failed_count: number;
+  conflict_count?: number;
   error_summary: string | null;
   mapping_config: Record<string, string>;
   created_by_user_id: string | null;
