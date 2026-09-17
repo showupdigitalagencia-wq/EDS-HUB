@@ -44,23 +44,23 @@ export const SourceAndChannelWidget: React.FC<SourceAndChannelWidgetProps> = ({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* 1. Canonical Sources */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm flex flex-col justify-between">
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs flex flex-col justify-between">
         <div>
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-sky-50 text-sky-600">
-                <Share2 className="w-5 h-5" />
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 rounded-xl bg-[#e1f0fb] text-[#125e95] shadow-xs">
+                <Share2 className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-gray-900">
+                <h3 className="text-base font-bold text-[#08254f] font-heading">
                   Origem Canônica dos Leads
                 </h3>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-slate-500">
                   Canais oficiais de aquisição de leads no CRM
                 </p>
               </div>
             </div>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#08254f]/5 text-[#08254f] border border-[#08254f]/15 uppercase tracking-wider">
               SNAPSHOT
             </span>
           </div>
@@ -69,20 +69,20 @@ export const SourceAndChannelWidget: React.FC<SourceAndChannelWidgetProps> = ({
             {sources.map((s) => (
               <div key={s.source} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-gray-800">
+                  <span className="font-semibold text-slate-800">
                     {getSourceLabel(s.source)}
                   </span>
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-gray-900">{s.lead_count}</span>
-                    <span className="text-gray-400 w-12 text-right">
+                    <span className="font-bold text-[#08254f]">{s.lead_count}</span>
+                    <span className="text-slate-400 w-12 text-right">
                       {s.percentage.toFixed(1)}%
                     </span>
                   </div>
                 </div>
 
-                <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-sky-500 transition-all duration-500"
+                    className="h-full rounded-full bg-[#08254f] transition-all duration-500"
                     style={{ width: `${Math.max(s.percentage, 0)}%` }}
                   />
                 </div>
@@ -91,49 +91,49 @@ export const SourceAndChannelWidget: React.FC<SourceAndChannelWidgetProps> = ({
           </div>
         </div>
 
-        <div className="pt-4 border-t border-gray-100 text-[11px] text-gray-400">
+        <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400">
           Canais canônicos: meta, google, form, manual, test
         </div>
       </div>
 
       {/* 2. Contact Preferences */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm flex flex-col justify-between">
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs flex flex-col justify-between">
         <div>
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-violet-50 text-violet-600">
-                <PhoneCall className="w-5 h-5" />
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 rounded-xl bg-[#e1f0fb] text-[#125e95] shadow-xs">
+                <PhoneCall className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-gray-900">
+                <h3 className="text-base font-bold text-[#08254f] font-heading">
                   Preferência de Contato
                 </h3>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-slate-500">
                   Canal declarado pelo lead (Email, SMS, Ligação)
                 </p>
               </div>
             </div>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#08254f]/5 text-[#08254f] border border-[#08254f]/15 uppercase tracking-wider">
               SNAPSHOT
             </span>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 my-2">
+          <div className="grid grid-cols-3 gap-3 my-2">
             {contact_preference.map((p) => (
               <div
                 key={p.preference}
-                className="p-4 rounded-xl border border-gray-100 bg-gray-50 flex flex-col items-center text-center justify-center"
+                className="p-4 rounded-xl border border-slate-200/80 bg-[#f8fafc] flex flex-col items-center text-center justify-center hover:bg-white hover:shadow-xs transition-all"
               >
-                <div className="p-2 rounded-full bg-white shadow-xs mb-2">
+                <div className="p-2.5 rounded-full bg-white shadow-2xs mb-2 border border-slate-100">
                   {getPreferenceIcon(p.preference)}
                 </div>
-                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
                   {p.preference}
                 </span>
-                <span className="text-xl font-bold text-gray-900 mt-1">
+                <span className="text-xl font-extrabold text-[#08254f] font-heading mt-1">
                   {p.lead_count}
                 </span>
-                <span className="text-xs text-gray-400 mt-0.5 font-medium">
+                <span className="text-[11px] text-slate-400 mt-0.5 font-semibold">
                   {p.percentage.toFixed(1)}%
                 </span>
               </div>
@@ -141,7 +141,7 @@ export const SourceAndChannelWidget: React.FC<SourceAndChannelWidgetProps> = ({
           </div>
         </div>
 
-        <div className="pt-4 border-t border-gray-100 text-[11px] text-gray-400">
+        <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400">
           Garante conformidade com as regras de contato automático
         </div>
       </div>

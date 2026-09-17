@@ -78,31 +78,33 @@ export const SalesDashboardPage: React.FC = () => {
   const boundaries = getDateRangeBoundaries(periodFilter, customStart, customEnd);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-[#f8fafc] flex">
       <Sidebar />
 
       <main className="flex-1 ml-64 p-8 overflow-y-auto">
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Top Bar: Header & Controls */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200 shadow-xs">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
             <div>
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-sm">
-                  <TrendingUp className="w-5 h-5" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-[#08254f] text-white shadow-xs">
+                  <TrendingUp className="w-5 h-5 text-[#449bd5]" />
                 </div>
-                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-                  Sales Intelligence
-                </h1>
+                <div>
+                  <h1 className="text-xl font-bold text-[#08254f] tracking-tight font-heading">
+                    Sales Intelligence Dashboard
+                  </h1>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Executive commercial performance, cohort-based funnel & automation health
+                  </p>
+                </div>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Performance comercial, funil de conversão por cohort e monitoramento de automações
-              </p>
             </div>
 
             {/* Controls */}
             <div className="flex flex-wrap items-center gap-3">
               {/* Period Filter Buttons */}
-              <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
                 {(
                   [
                     { id: 'today', label: 'Hoje' },
@@ -119,8 +121,8 @@ export const SalesDashboardPage: React.FC = () => {
                     onClick={() => setPeriodFilter(opt.id)}
                     className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                       periodFilter === opt.id
-                        ? 'bg-white text-indigo-700 shadow-xs'
-                        : 'text-gray-600 hover:text-gray-900'
+                        ? 'bg-[#08254f] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     {opt.label}

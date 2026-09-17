@@ -107,18 +107,18 @@ export function LeadConversationsCard({ lead, onLeadUpdated }: LeadConversations
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
+    <div className="card-executive overflow-hidden">
       {/* Header */}
-      <div className="p-4 sm:p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600">
+      <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-[#08254f] text-[#449bd5] flex items-center justify-center shadow-xs">
             <MessageSquare className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
+            <h2 className="text-xs font-bold font-heading text-[#08254f] uppercase tracking-wider">
               Conversations ({conversations.length})
             </h2>
-            <p className="text-[11px] text-gray-400">
+            <p className="text-[11px] text-slate-400">
               Two-way email threads & SMS message exchange
             </p>
           </div>
@@ -126,7 +126,7 @@ export function LeadConversationsCard({ lead, onLeadUpdated }: LeadConversations
 
         <div className="flex items-center gap-2">
           {/* Tabs */}
-          <div className="flex items-center bg-gray-100 p-0.5 rounded-lg text-xs">
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs">
             {(['all', 'email', 'sms'] as const).map((tab) => (
               <button
                 key={tab}
@@ -134,10 +134,10 @@ export function LeadConversationsCard({ lead, onLeadUpdated }: LeadConversations
                   setActiveTab(tab);
                   setIsComposingNew(false);
                 }}
-                className={`px-2.5 py-1 rounded-md font-medium capitalize transition-colors ${
+                className={`px-2.5 py-1 rounded-lg font-medium capitalize transition-colors ${
                   activeTab === tab
-                    ? 'bg-white text-gray-900 shadow-xs'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-[#08254f] font-bold shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 {tab}
@@ -147,7 +147,7 @@ export function LeadConversationsCard({ lead, onLeadUpdated }: LeadConversations
 
           <button
             onClick={() => setIsComposingNew(!isComposingNew)}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-xs"
+            className="btn-crimson text-xs"
           >
             <Plus className="w-3.5 h-3.5" />
             {isComposingNew ? 'View Threads' : 'New Message'}

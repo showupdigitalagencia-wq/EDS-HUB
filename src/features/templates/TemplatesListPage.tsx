@@ -145,12 +145,12 @@ export function TemplatesListPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-brand-50 text-brand-600">
-                <FileText className="h-6 w-6" />
+              <div className="p-2 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
+                <FileText className="h-5 w-5" />
               </div>
-              <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Email Templates</h1>
+              <h1 className="text-2xl font-bold font-heading text-[#08254f] tracking-tight">Email Templates</h1>
             </div>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               Reusable visual email designs for outbound marketing campaigns
             </p>
           </div>
@@ -159,7 +159,7 @@ export function TemplatesListPage() {
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="px-3 py-2 text-xs font-semibold bg-white border border-gray-200 rounded-xl shadow-xs"
+              className="px-3 py-2 text-xs font-semibold bg-white border border-slate-200/80 rounded-xl shadow-xs text-slate-700"
             >
               <option value="">All Categories</option>
               <option value="general">General</option>
@@ -169,7 +169,7 @@ export function TemplatesListPage() {
             </select>
             <button
               onClick={handleOpenCreate}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs transition-colors"
+              className="btn-crimson text-xs"
             >
               <Plus className="h-4 w-4" />
               New Template
@@ -191,19 +191,19 @@ export function TemplatesListPage() {
             {templates.map((tpl) => (
               <div
                 key={tpl.id}
-                className="bg-white rounded-2xl border border-gray-200 shadow-xs hover:shadow-md transition-all p-5 flex flex-col justify-between space-y-4"
+                className="card-executive p-5 hover:border-[#449bd5]/50 transition-all flex flex-col justify-between space-y-4"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-md bg-brand-50 text-brand-700 border border-brand-200">
+                    <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-md bg-[#08254f]/8 text-[#08254f] border border-[#08254f]/20 font-heading">
                       {tpl.category}
                     </span>
-                    <span className="text-[11px] text-gray-400">
+                    <span className="text-[11px] text-slate-400">
                       {new Date(tpl.created_at).toLocaleDateString()}
                     </span>
                   </div>
-                  <h3 className="text-base font-bold text-gray-900 tracking-tight">{tpl.name}</h3>
-                  <p className="text-xs text-gray-500 line-clamp-2">
+                  <h3 className="text-base font-bold font-heading text-[#08254f] tracking-tight">{tpl.name}</h3>
+                  <p className="text-xs text-slate-500 line-clamp-2">
                     {tpl.description || 'No description provided.'}
                   </p>
                 </div>

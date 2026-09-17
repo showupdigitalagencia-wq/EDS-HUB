@@ -530,22 +530,22 @@ export function FormBuilderPage() {
     <Layout title={isNew ? 'New Form' : `Edit Form: ${name || 'Untitled'}`}>
       <div className="space-y-6">
         {/* Top Header Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => navigate('/forms')}
-              className="p-2 text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors"
+              className="p-2 text-slate-500 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition-colors"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-gray-900 tracking-tight">
+                <h1 className="text-lg font-bold font-heading text-[#08254f] tracking-tight">
                   {isNew ? 'Create Capture Form' : name || 'Untitled Form'}
                 </h1>
                 {!isNew && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-[#08254f]/10 text-[#08254f] border border-[#08254f]/20">
                     v{currentVersion}
                   </span>
                 )}
@@ -553,13 +553,13 @@ export function FormBuilderPage() {
                   className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                     status === 'active'
                       ? 'bg-emerald-50 text-emerald-700'
-                      : 'bg-gray-100 text-gray-600'
+                      : 'bg-slate-100 text-slate-600'
                   }`}
                 >
                   {status === 'active' ? 'Active' : 'Inactive'}
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mt-0.5 font-mono">
+              <p className="text-xs text-slate-400 mt-0.5 font-mono">
                 {slug ? `/f/${slug}` : 'URL slug will be generated'}
               </p>
             </div>
@@ -567,14 +567,14 @@ export function FormBuilderPage() {
 
           <div className="flex items-center gap-2">
             {/* View Mode Tabs */}
-            <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+            <div className="inline-flex rounded-xl border border-slate-200/80 p-0.5 bg-slate-50">
               <button
                 type="button"
                 onClick={() => setActiveTab('builder')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   activeTab === 'builder'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-[#08254f] font-semibold shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 <Sliders className="h-3.5 w-3.5" />
@@ -583,10 +583,10 @@ export function FormBuilderPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('settings')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   activeTab === 'settings'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-[#08254f] font-semibold shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 <Settings className="h-3.5 w-3.5" />
@@ -595,10 +595,10 @@ export function FormBuilderPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('preview')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   activeTab === 'preview'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-[#08254f] font-semibold shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 <Eye className="h-3.5 w-3.5" />
@@ -611,9 +611,9 @@ export function FormBuilderPage() {
                 href={`/f/${slug}`}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 shadow-2xs transition-colors"
+                className="btn-secondary text-xs"
               >
-                <ExternalLink className="h-3.5 w-3.5 text-gray-500" />
+                <ExternalLink className="h-3.5 w-3.5 text-slate-500" />
                 Open Link
               </a>
             )}
@@ -623,7 +623,7 @@ export function FormBuilderPage() {
               id="btn-save-form"
               disabled={isSaving}
               onClick={handleSave}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium shadow-sm transition-colors duration-150 disabled:opacity-50"
+              className="btn-crimson text-xs disabled:opacity-50 cursor-pointer"
             >
               {saveSuccess ? (
                 <>

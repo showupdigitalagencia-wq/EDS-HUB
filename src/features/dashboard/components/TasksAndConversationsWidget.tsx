@@ -15,120 +15,120 @@ export const TasksAndConversationsWidget: React.FC<TasksAndConversationsWidgetPr
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* 1. Tasks Management */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm flex flex-col justify-between">
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs flex flex-col justify-between">
         <div>
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
-                <CheckSquare className="w-5 h-5" />
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 rounded-xl bg-[#e1f0fb] text-[#125e95] shadow-xs">
+                <CheckSquare className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-gray-900">
+                <h3 className="text-base font-bold text-[#08254f] font-heading">
                   Gestão de Tarefas Operacionais
                 </h3>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-slate-500">
                   Status de tarefas manuais e automatizadas
                 </p>
               </div>
             </div>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#08254f]/5 text-[#08254f] border border-[#08254f]/15 uppercase tracking-wider">
               SNAPSHOT
             </span>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-2">
-            <div className="p-3 rounded-lg border border-gray-100 bg-gray-50">
-              <p className="text-[11px] text-gray-500 font-medium">Pendentes</p>
-              <p className="text-xl font-bold text-gray-900 mt-1">
+            <div className="p-3.5 rounded-xl border border-slate-200/80 bg-[#f8fafc]">
+              <p className="text-[11px] text-slate-500 font-medium">Pendentes</p>
+              <p className="text-xl font-extrabold text-[#08254f] font-heading mt-1">
                 {tasks.pending_tasks}
               </p>
             </div>
 
-            <div className="p-3 rounded-lg border border-amber-100 bg-amber-50/50">
-              <p className="text-[11px] text-amber-700 font-medium">Vencem Hoje</p>
-              <p className="text-xl font-bold text-amber-900 mt-1">
+            <div className="p-3.5 rounded-xl border border-amber-200/80 bg-amber-50/40">
+              <p className="text-[11px] text-amber-800 font-semibold">Vencem Hoje</p>
+              <p className="text-xl font-extrabold text-amber-900 font-heading mt-1">
                 {tasks.due_today}
               </p>
             </div>
 
-            <div className="p-3 rounded-lg border border-red-100 bg-red-50/50">
-              <p className="text-[11px] text-red-700 font-medium flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />
+            <div className="p-3.5 rounded-xl border border-rose-200/80 bg-rose-50/40">
+              <p className="text-[11px] text-[#8a1c1c] font-semibold flex items-center gap-1">
+                <AlertCircle className="w-3 h-3 text-[#8a1c1c]" />
                 Atrasadas
               </p>
-              <p className="text-xl font-bold text-red-700 mt-1">
+              <p className="text-xl font-extrabold text-[#8a1c1c] font-heading mt-1">
                 {tasks.overdue}
               </p>
             </div>
 
-            <div className="p-3 rounded-lg border border-emerald-100 bg-emerald-50/50">
-              <p className="text-[11px] text-emerald-700 font-medium">Concluídas</p>
-              <p className="text-xl font-bold text-emerald-800 mt-1">
+            <div className="p-3.5 rounded-xl border border-emerald-200/80 bg-emerald-50/40">
+              <p className="text-[11px] text-emerald-800 font-semibold">Concluídas</p>
+              <p className="text-xl font-extrabold text-emerald-800 font-heading mt-1">
                 {tasks.completed_all_time}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="pt-4 border-t border-gray-100 text-[11px] text-gray-400">
+        <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400">
           Statuses reais inspecionados: pending, completed, cancelled
         </div>
       </div>
 
       {/* 2. Conversations Status */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm flex flex-col justify-between">
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs flex flex-col justify-between">
         <div>
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-purple-50 text-purple-600">
-                <MessageSquare className="w-5 h-5" />
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
+                <MessageSquare className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-gray-900">
+                <h3 className="text-base font-bold text-[#08254f] font-heading">
                   Inbox Conversacional CRM
                 </h3>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-slate-500">
                   Atendimento unificado multicanal (Email e SMS)
                 </p>
               </div>
             </div>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#08254f]/5 text-[#08254f] border border-[#08254f]/15 uppercase tracking-wider">
               SNAPSHOT
             </span>
           </div>
 
           <div className="grid grid-cols-2 gap-4 my-2">
-            <div className="p-4 rounded-xl border border-gray-100 bg-gray-50 flex items-center justify-between">
+            <div className="p-4 rounded-xl border border-slate-200/80 bg-[#f8fafc] flex items-center justify-between hover:bg-white hover:shadow-xs transition-all">
               <div>
-                <p className="text-xs text-gray-500 font-medium">Conversas Abertas</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
+                <p className="text-xs text-slate-500 font-medium">Conversas Abertas</p>
+                <p className="text-2xl font-extrabold text-[#08254f] font-heading mt-1">
                   {snapshot.open_conversations}
                 </p>
               </div>
-              <MessageSquare className="w-8 h-8 text-gray-300" />
+              <MessageSquare className="w-7 h-7 text-slate-300" />
             </div>
 
-            <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/50 flex items-center justify-between">
+            <div className="p-4 rounded-xl border border-[#b4cdeb] bg-[#e1f0fb]/40 flex items-center justify-between hover:bg-white hover:shadow-xs transition-all">
               <div>
-                <p className="text-xs text-indigo-700 font-medium">Não Lidas</p>
-                <p className="text-2xl font-bold text-indigo-900 mt-1">
+                <p className="text-xs text-[#08254f] font-bold">Não Lidas</p>
+                <p className="text-2xl font-extrabold text-[#08254f] font-heading mt-1">
                   {snapshot.unread_conversations}
                 </p>
               </div>
-              <div className="p-2 rounded-full bg-indigo-100 text-indigo-700">
-                <AlertCircle className="w-5 h-5" />
+              <div className="p-2 rounded-full bg-[#08254f] text-white">
+                <AlertCircle className="w-4 h-4 text-[#449bd5]" />
               </div>
             </div>
           </div>
         </div>
 
-        <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
-          <span className="text-[11px] text-gray-400">
+        <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+          <span className="text-[11px] text-slate-400">
             Atualização em tempo real das mensagens recebidas
           </span>
           <Link
             to="/inbox"
-            className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold"
+            className="inline-flex items-center gap-1 text-xs text-[#08254f] hover:text-[#8a1c1c] font-semibold transition-colors"
           >
             Acessar Inbox
             <ExternalLink className="w-3 h-3" />

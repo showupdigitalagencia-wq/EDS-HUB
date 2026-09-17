@@ -175,14 +175,13 @@ export function PipelineKanbanPage() {
 
   const getStageHeaderColor = (sortOrder: number) => {
     switch (sortOrder) {
-      case 1: return 'border-sky-500 bg-sky-50/70 text-sky-800';
-      case 2: return 'border-amber-500 bg-amber-50/70 text-amber-800';
-      case 3: return 'border-purple-500 bg-purple-50/70 text-purple-800';
-      case 4: return 'border-indigo-500 bg-indigo-50/70 text-indigo-800';
-      case 5: return 'border-emerald-500 bg-emerald-50/70 text-emerald-800';
-      case 6: return 'border-blue-500 bg-blue-50/70 text-blue-800';
-      case 7: return 'border-gray-500 bg-gray-50/70 text-gray-800';
-      default: return 'border-gray-400 bg-gray-50 text-gray-800';
+      case 1: return 'border-t-[#08254f] bg-slate-50 text-[#08254f]';
+      case 2: return 'border-t-[#449bd5] bg-[#449bd5]/5 text-[#08254f]';
+      case 3: return 'border-t-indigo-600 bg-indigo-50/50 text-indigo-900';
+      case 4: return 'border-t-amber-600 bg-amber-50/50 text-amber-900';
+      case 5: return 'border-t-emerald-600 bg-emerald-50/50 text-emerald-900';
+      case 6: return 'border-t-[#8a1c1c] bg-[#8a1c1c]/5 text-[#8a1c1c]';
+      default: return 'border-t-slate-400 bg-slate-50 text-slate-800';
     }
   };
 
@@ -193,12 +192,12 @@ export function PipelineKanbanPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-brand-50 text-brand-600">
-                <Kanban className="h-6 w-6" />
+              <div className="p-2.5 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
+                <Kanban className="h-5 w-5" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Commercial Pipeline</h1>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">Commercial Pipeline</h1>
+                <p className="text-xs text-slate-500 mt-0.5">
                   Interactive drag-and-drop Kanban powered by {stages.length} official pipeline stages
                 </p>
               </div>
@@ -206,21 +205,21 @@ export function PipelineKanbanPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-gray-700 shadow-xs">
-              Total Leads: <strong className="text-brand-600">{totalLeads}</strong>
+            <span className="text-xs font-semibold px-3 py-1.5 bg-white border border-slate-200/80 rounded-xl text-slate-700 shadow-xs">
+              Total Leads: <strong className="text-[#08254f]">{totalLeads}</strong>
             </span>
             <button
               onClick={loadPipelineData}
               title="Refresh board"
-              className="p-2 text-gray-500 hover:text-gray-800 hover:bg-white border border-gray-200 rounded-xl shadow-xs transition-colors"
+              className="p-2 text-slate-500 hover:text-slate-800 hover:bg-white border border-slate-200/80 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <RotateCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
             <button
               onClick={() => setIsNewLeadOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs transition-colors"
+              className="btn-crimson text-xs"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
               New Lead
             </button>
           </div>
@@ -244,22 +243,22 @@ export function PipelineKanbanPage() {
                     onDragOver={(e) => handleDragOver(e, stage.id)}
                     onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, stage.id)}
-                    className={`flex-1 min-w-[220px] max-w-[260px] rounded-2xl flex flex-col bg-gray-100/70 border transition-all duration-200 ${
+                    className={`flex-1 min-w-[220px] max-w-[260px] rounded-2xl flex flex-col bg-slate-100/70 border transition-all duration-200 ${
                       isDropTarget
-                        ? 'border-brand-500 bg-brand-50/40 ring-2 ring-brand-500/20 shadow-md'
-                        : 'border-gray-200'
+                        ? 'border-[#449bd5] bg-[#449bd5]/10 ring-2 ring-[#449bd5]/30 shadow-md'
+                        : 'border-slate-200/80'
                     }`}
                   >
                     {/* Column Header */}
                     <div
-                      className={`px-3.5 py-3 rounded-t-2xl border-t-4 flex items-center justify-between ${getStageHeaderColor(
+                      className={`px-3.5 py-3 rounded-t-2xl border-t-4 flex items-center justify-between font-heading ${getStageHeaderColor(
                         stage.sort_order,
                       )}`}
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold tracking-tight">{stage.name}</span>
                       </div>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white shadow-xs text-gray-700">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white shadow-xs text-slate-700 border border-slate-200/50">
                         {stageLeads.length}
                       </span>
                     </div>
@@ -278,37 +277,43 @@ export function PipelineKanbanPage() {
                             draggable
                             onDragStart={() => handleDragStart(lead.id)}
                             onClick={() => navigate(`/leads/${lead.id}`)}
-                            className={`p-3 bg-white rounded-xl border border-gray-200/90 shadow-xs hover:shadow-md transition-all duration-150 cursor-grab active:cursor-grabbing space-y-2 group ${
-                              isDragging ? 'opacity-40 scale-95 border-dashed border-brand-400' : ''
+                            className={`p-3.5 bg-white rounded-xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#449bd5]/40 transition-all duration-150 cursor-grab active:cursor-grabbing space-y-2 group ${
+                              isDragging ? 'opacity-40 scale-95 border-dashed border-[#449bd5]' : ''
                             }`}
                           >
                             <div className="flex items-start justify-between gap-1">
-                              <h4 className="text-xs font-bold text-gray-900 leading-tight line-clamp-1 group-hover:text-brand-600 transition-colors">
+                              <h4 className="text-xs font-bold font-heading text-[#08254f] leading-tight line-clamp-1 group-hover:text-[#449bd5] transition-colors">
                                 {fullName}
                               </h4>
                               <div className="flex items-center gap-1 shrink-0">
                                 {lead.lead_score !== undefined && lead.lead_score !== null && (
                                   <span
                                     title={`Lead Score: ${lead.lead_score}`}
-                                    className="px-1.5 py-0.5 rounded text-[10px] font-extrabold font-mono bg-amber-50 text-amber-700 border border-amber-200"
+                                    className="px-1.5 py-0.5 rounded text-[10px] font-extrabold font-mono bg-[#449bd5]/10 text-[#08254f] border border-[#449bd5]/20"
                                   >
                                     ⚡ {lead.lead_score}
                                   </span>
                                 )}
-                                <GripVertical className="h-3.5 w-3.5 text-gray-300 group-hover:text-gray-500 shrink-0" />
+                                <GripVertical className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500 shrink-0" />
                               </div>
                             </div>
 
+                            {lead.course_interest && (
+                              <div className="text-[10px] font-medium text-slate-600 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 truncate">
+                                {lead.course_interest}
+                              </div>
+                            )}
+
                             {lead.email && (
-                              <div className="flex items-center gap-1.5 text-[11px] text-gray-500 truncate">
-                                <Mail className="h-3 w-3 text-gray-400 shrink-0" />
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate">
+                                <Mail className="h-3 w-3 text-slate-400 shrink-0" />
                                 <span className="truncate">{lead.email}</span>
                               </div>
                             )}
 
                             {lead.phone_raw && (
-                              <div className="flex items-center gap-1.5 text-[11px] text-gray-500 truncate">
-                                <Phone className="h-3 w-3 text-gray-400 shrink-0" />
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate">
+                                <Phone className="h-3 w-3 text-slate-400 shrink-0" />
                                 <span className="truncate">{lead.phone_raw}</span>
                               </div>
                             )}
@@ -316,16 +321,16 @@ export function PipelineKanbanPage() {
                             {/* Tags pill */}
                             {tags.length > 0 && (
                               <div className="flex flex-wrap gap-1 pt-1">
-                                {tags.slice(0, 3).map((t) => (
+                                {tags.slice(0, 2).map((t) => (
                                   <span
                                     key={t.id}
-                                    className="px-1.5 py-0.5 text-[9px] font-medium bg-gray-100 text-gray-600 rounded"
+                                    className="px-1.5 py-0.5 text-[9px] font-medium bg-slate-100 text-slate-600 rounded"
                                   >
                                     #{t.name}
                                   </span>
                                 ))}
-                                {tags.length > 3 && (
-                                  <span className="text-[9px] text-gray-400">+{tags.length - 3}</span>
+                                {tags.length > 2 && (
+                                  <span className="text-[9px] text-slate-400">+{tags.length - 2}</span>
                                 )}
                               </div>
                             )}
@@ -347,7 +352,7 @@ export function PipelineKanbanPage() {
                             )}
 
                             {/* Footer info */}
-                            <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">
+                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
                               <span className="capitalize">{lead.source}</span>
                               <span className="flex items-center gap-1">
                                 <Clock className="h-2.5 w-2.5" />
@@ -362,8 +367,8 @@ export function PipelineKanbanPage() {
                       })}
 
                       {stageLeads.length === 0 && (
-                        <div className="h-24 flex items-center justify-center border-2 border-dashed border-gray-200/60 rounded-xl text-[11px] text-gray-400">
-                          Empty stage
+                        <div className="h-24 flex items-center justify-center border-2 border-dashed border-slate-200/80 rounded-xl text-[11px] text-slate-400 font-medium">
+                          No leads in stage
                         </div>
                       )}
                     </div>

@@ -43,31 +43,31 @@ export const PriorityLeadsWidget: React.FC<PriorityLeadsWidgetProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm flex flex-col justify-between">
+    <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs flex flex-col justify-between">
       <div>
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-orange-50 text-orange-600">
-              <Star className="w-5 h-5" />
+          <div className="flex items-center gap-2.5">
+            <div className="p-2.5 rounded-xl bg-[#fdf2f2] text-[#8a1c1c] shadow-xs">
+              <Star className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-gray-900">
+              <h3 className="text-base font-bold text-[#08254f] font-heading">
                 Leads Prioritários
               </h3>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-slate-500">
                 Classificados por score comercial dinâmico
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#08254f]/5 text-[#08254f] border border-[#08254f]/15 uppercase tracking-wider">
               SNAPSHOT
             </span>
             {onExportCsv && (
               <button
                 type="button"
                 onClick={onExportCsv}
-                className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                className="flex items-center gap-1 text-xs font-semibold text-[#8a1c1c] hover:text-[#701414] transition-colors cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 CSV
@@ -78,23 +78,23 @@ export const PriorityLeadsWidget: React.FC<PriorityLeadsWidgetProps> = ({
 
         {leads.length === 0 ? (
           <div className="py-12 text-center">
-            <Flame className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm font-medium text-gray-500">Nenhum lead com score calculado</p>
-            <p className="text-xs text-gray-400 mt-1">Calcule scores nas configurações de Lead Scoring</p>
+            <Flame className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-slate-600">Nenhum lead com score calculado</p>
+            <p className="text-xs text-slate-400 mt-1">Calcule scores nas configurações de Lead Scoring</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-gray-100 text-gray-400 uppercase tracking-wider font-semibold">
-                  <th className="pb-2">Lead</th>
-                  <th className="pb-2">Score</th>
-                  <th className="pb-2">Estágio</th>
-                  <th className="pb-2">Interesse</th>
-                  <th className="pb-2 text-right">Ação</th>
+                <tr className="border-b border-slate-100 text-slate-400 uppercase tracking-wider font-semibold text-[10px]">
+                  <th className="pb-2.5">Lead</th>
+                  <th className="pb-2.5">Score</th>
+                  <th className="pb-2.5">Estágio</th>
+                  <th className="pb-2.5">Interesse</th>
+                  <th className="pb-2.5 text-right">Ação</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-slate-100/70">
                 {leads.map((lead) => {
                   const fullName =
                     [lead.first_name, lead.last_name].filter(Boolean).join(' ') ||
@@ -102,16 +102,16 @@ export const PriorityLeadsWidget: React.FC<PriorityLeadsWidgetProps> = ({
                     'Lead sem nome';
 
                   return (
-                    <tr key={lead.id} className="hover:bg-gray-50/80 transition-colors">
+                    <tr key={lead.id} className="hover:bg-slate-50/80 transition-colors group">
                       <td className="py-3 pr-2">
-                        <div className="font-semibold text-gray-900">{fullName}</div>
-                        <div className="text-[11px] text-gray-400 truncate max-w-[160px]">
+                        <div className="font-semibold text-slate-900 group-hover:text-[#08254f] transition-colors">{fullName}</div>
+                        <div className="text-[11px] text-slate-400 truncate max-w-[160px]">
                           {lead.email || lead.phone_e164 || '—'}
                         </div>
                       </td>
                       <td className="py-3 px-2">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-gray-900 text-sm">
+                          <span className="font-bold text-[#08254f] text-sm font-heading">
                             {lead.lead_score ?? '—'}
                           </span>
                           <span
@@ -124,17 +124,17 @@ export const PriorityLeadsWidget: React.FC<PriorityLeadsWidgetProps> = ({
                         </div>
                       </td>
                       <td className="py-3 px-2">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-700">
                           {lead.stage_name}
                         </span>
                       </td>
-                      <td className="py-3 px-2 text-gray-600 max-w-[120px] truncate">
+                      <td className="py-3 px-2 text-slate-600 max-w-[120px] truncate">
                         {lead.course_interest || '—'}
                       </td>
                       <td className="py-3 pl-2 text-right">
                         <Link
                           to={`/leads/${lead.id}`}
-                          className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                          className="inline-flex items-center gap-1 text-xs text-[#08254f] hover:text-[#8a1c1c] font-semibold transition-colors"
                         >
                           Ver
                           <ExternalLink className="w-3 h-3" />
@@ -149,10 +149,10 @@ export const PriorityLeadsWidget: React.FC<PriorityLeadsWidgetProps> = ({
         )}
       </div>
 
-      <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
         <span>Exibindo os top {leads.length} leads prioritários</span>
-        <Link to="/leads" className="text-indigo-600 hover:underline font-medium">
-          Ver todos os leads
+        <Link to="/leads" className="text-[#08254f] hover:text-[#8a1c1c] font-semibold transition-colors">
+          Ver todos os leads →
         </Link>
       </div>
     </div>

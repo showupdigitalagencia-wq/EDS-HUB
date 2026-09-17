@@ -200,61 +200,66 @@ export function AutomationsListPage() {
     <Layout title="Automations">
       <div className="space-y-6">
         {/* Page Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Automations</h1>
-            <p className="text-xs text-gray-500 mt-1">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
+                <Zap className="h-5 w-5" />
+              </div>
+              <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">Automations</h1>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
               Event-driven workflow engine with strict contact preference guards and server-side delays.
             </p>
           </div>
           <button
             onClick={() => navigate('/automations/new')}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors"
+            className="btn-crimson text-xs"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5" />
             Create Automation
           </button>
         </div>
 
         {/* Metrics Row */}
-        <div className="grid grid-cols-4 gap-4">
-          <div className="p-4 bg-white rounded-2xl border border-gray-200 shadow-2xs">
-            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
               Total Automations
             </span>
-            <span className="text-2xl font-bold text-gray-900">{totalAutomations}</span>
+            <span className="text-2xl font-extrabold text-[#08254f] font-heading">{totalAutomations}</span>
           </div>
-          <div className="p-4 bg-white rounded-2xl border border-gray-200 shadow-2xs">
-            <span className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider block mb-1">
+          <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
+            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block mb-1">
               Active Workflows
             </span>
-            <span className="text-2xl font-bold text-emerald-600">{activeAutomations}</span>
+            <span className="text-2xl font-extrabold text-emerald-600 font-heading">{activeAutomations}</span>
           </div>
-          <div className="p-4 bg-white rounded-2xl border border-gray-200 shadow-2xs">
-            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">
+          <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
               Total Enrolled Leads
             </span>
-            <span className="text-2xl font-bold text-gray-900">{totalEnrolled}</span>
+            <span className="text-2xl font-extrabold text-[#08254f] font-heading">{totalEnrolled}</span>
           </div>
-          <div className="p-4 bg-white rounded-2xl border border-gray-200 shadow-2xs">
-            <span className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider block mb-1">
+          <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
+            <span className="text-[10px] font-bold text-[#125e95] uppercase tracking-wider block mb-1">
               Active / Waiting Runs
             </span>
-            <span className="text-2xl font-bold text-blue-600">{totalActiveRuns}</span>
+            <span className="text-2xl font-extrabold text-[#125e95] font-heading">{totalActiveRuns}</span>
           </div>
         </div>
 
         {/* Filter Bar */}
-        <div className="flex items-center justify-between gap-4 bg-white p-3 rounded-2xl border border-gray-200 shadow-2xs">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
             {['all', 'active', 'draft', 'paused', 'archived'].map((st) => (
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-all ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                   statusFilter === st
-                    ? 'bg-brand-50 text-brand-700 shadow-2xs'
-                    : 'text-gray-600 hover:bg-gray-50'
+                    ? 'bg-[#08254f] text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 {st.charAt(0).toUpperCase() + st.slice(1)}

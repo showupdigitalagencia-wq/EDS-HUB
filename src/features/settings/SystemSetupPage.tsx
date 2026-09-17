@@ -121,14 +121,14 @@ export function SystemSetupPage() {
     <Layout title="Settings">
       <div className="max-w-3xl space-y-6">
         {/* Settings Navigation Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-slate-800 gap-6">
+        <div className="flex border-b border-slate-200 gap-6">
           <button
             type="button"
             onClick={() => setActiveTab('general')}
-            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading ${
               activeTab === 'general'
-                ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400'
-                : 'border-transparent text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
+                ? 'border-[#08254f] text-[#08254f]'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
             <Sliders className="h-4 w-4" />
@@ -137,10 +137,10 @@ export function SystemSetupPage() {
           <button
             type="button"
             onClick={() => setActiveTab('data-management')}
-            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading ${
               activeTab === 'data-management'
-                ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400'
-                : 'border-transparent text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
+                ? 'border-[#08254f] text-[#08254f]'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
             <Database className="h-4 w-4" />
@@ -152,15 +152,15 @@ export function SystemSetupPage() {
         {/* TAB 1: GENERAL SETTINGS                                         */}
         {/* =============================================================== */}
         {activeTab === 'general' && (
-          <div className="bg-white dark:bg-slate-900 rounded-[var(--radius-card)] shadow-[var(--shadow-card)] border border-gray-100 dark:border-slate-800">
-            <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">General Settings</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Configure your EDS HUB instance parameters.</p>
+          <div className="card-executive">
+            <div className="px-6 py-5 border-b border-slate-100">
+              <h2 className="text-base font-bold font-heading text-[#08254f]">General Settings</h2>
+              <p className="text-xs text-slate-500 mt-1">Configure your EDS HUB instance parameters.</p>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
               <div>
-                <label htmlFor="settings-company-name" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                <label htmlFor="settings-company-name" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Company Name
                 </label>
                 <input
@@ -168,12 +168,12 @@ export function SystemSetupPage() {
                   type="text"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  className="w-full rounded-[var(--radius-input)] border border-gray-300 dark:border-slate-700 dark:bg-slate-800 px-3.5 py-2.5 text-xs text-gray-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] outline-none"
                 />
               </div>
 
               <div>
-                <label htmlFor="settings-salutation" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                <label htmlFor="settings-salutation" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Default Salutation
                 </label>
                 <input
@@ -181,14 +181,14 @@ export function SystemSetupPage() {
                   type="text"
                   value={defaultSalutation}
                   onChange={(e) => setDefaultSalutation(e.target.value)}
-                  className="w-full rounded-[var(--radius-input)] border border-gray-300 dark:border-slate-700 dark:bg-slate-800 px-3.5 py-2.5 text-xs text-gray-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] outline-none"
                   placeholder="Doc"
                 />
-                <p className="text-[11px] text-gray-400 mt-1">Used when no lead name is available.</p>
+                <p className="text-[11px] text-slate-400 mt-1">Used when no lead name is available.</p>
               </div>
 
               <div>
-                <label htmlFor="settings-timezone" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                <label htmlFor="settings-timezone" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Timezone
                 </label>
                 <input
@@ -196,16 +196,16 @@ export function SystemSetupPage() {
                   type="text"
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
-                  className="w-full rounded-[var(--radius-input)] border border-gray-300 dark:border-slate-700 dark:bg-slate-800 px-3.5 py-2.5 text-xs text-gray-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] outline-none"
                   placeholder="America/New_York"
                 />
-                <p className="text-[11px] text-gray-400 mt-1">IANA timezone identifier (e.g., America/New_York).</p>
+                <p className="text-[11px] text-slate-400 mt-1">IANA timezone identifier (e.g., America/New_York).</p>
               </div>
 
-              <hr className="border-gray-100 dark:border-slate-800" />
+              <hr className="border-slate-100" />
 
               <div>
-                <label htmlFor="settings-email-from" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                <label htmlFor="settings-email-from" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Email From Name
                 </label>
                 <input
@@ -213,13 +213,13 @@ export function SystemSetupPage() {
                   type="text"
                   value={emailFromName}
                   onChange={(e) => setEmailFromName(e.target.value)}
-                  className="w-full rounded-[var(--radius-input)] border border-gray-300 dark:border-slate-700 dark:bg-slate-800 px-3.5 py-2.5 text-xs text-gray-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] outline-none"
                   placeholder="Expert Dental Solutions"
                 />
               </div>
 
               <div>
-                <label htmlFor="settings-email-domain" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                <label htmlFor="settings-email-domain" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Email Sending Domain
                 </label>
                 <input
@@ -227,14 +227,14 @@ export function SystemSetupPage() {
                   type="text"
                   value={emailSendingDomain}
                   onChange={(e) => setEmailSendingDomain(e.target.value)}
-                  className="w-full rounded-[var(--radius-input)] border border-gray-300 dark:border-slate-700 dark:bg-slate-800 px-3.5 py-2.5 text-xs text-gray-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] outline-none"
                   placeholder="mail.yourdomain.com"
                 />
-                <p className="text-[11px] text-gray-400 mt-1">Subdomain configured in Resend for email sending.</p>
+                <p className="text-[11px] text-slate-400 mt-1">Subdomain configured in Resend for email sending.</p>
               </div>
 
               {error && (
-                <div className="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 px-4 py-3 text-xs text-red-700 dark:text-red-300">
+                <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs text-red-700">
                   {error}
                 </div>
               )}
@@ -244,7 +244,7 @@ export function SystemSetupPage() {
                   id="settings-save"
                   type="submit"
                   disabled={isSaving}
-                  className="flex items-center gap-2 rounded-[var(--radius-button)] bg-brand-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-brand-700 disabled:opacity-50 cursor-pointer"
+                  className="btn-crimson text-xs disabled:opacity-50 cursor-pointer"
                 >
                   {isSaving ? (
                     <>
@@ -260,7 +260,7 @@ export function SystemSetupPage() {
                 </button>
 
                 {saveSuccess && (
-                  <span className="flex items-center gap-1.5 text-xs text-emerald-600">
+                  <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
                     <CheckCircle2 className="h-4 w-4" />
                     Saved successfully
                   </span>

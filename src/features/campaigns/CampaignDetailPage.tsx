@@ -605,20 +605,20 @@ export function CampaignDetailPage() {
     <Layout title={`Campaign: ${campaign.name}`}>
       <div className="space-y-6 max-w-7xl mx-auto pb-12">
         {/* Top Breadcrumb & Status Action Bar */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-5 rounded-2xl border border-gray-200 shadow-xs">
+        <div className="card-executive p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3">
             <Link
               to="/campaigns"
-              className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+              className="p-2 rounded-xl border border-slate-200/80 text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
             >
               <ArrowLeft className="h-5 w-5" />
             </Link>
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold text-gray-900">{campaign.name}</h1>
+                <h1 className="text-xl font-bold font-heading text-[#08254f]">{campaign.name}</h1>
                 {getStatusBadge(campaign.status)}
               </div>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Channel: Email • Created {new Date(campaign.created_at).toLocaleDateString()}
               </p>
             </div>
@@ -629,7 +629,7 @@ export function CampaignDetailPage() {
             {campaign.status === 'draft' && (
               <button
                 onClick={() => handleTransitionStatus('pending_approval')}
-                className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-1.5 cursor-pointer font-heading"
               >
                 <Clock className="h-3.5 w-3.5" /> Submit for Approval
               </button>
@@ -638,16 +638,16 @@ export function CampaignDetailPage() {
             {(campaign.status === 'draft' || campaign.status === 'pending_approval') && (
               <button
                 onClick={() => handleTransitionStatus('approved')}
-                className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-blue-600 text-white hover:bg-blue-700 shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="btn-secondary text-xs"
               >
-                <ShieldCheck className="h-3.5 w-3.5" /> Approve Campaign
+                <ShieldCheck className="h-3.5 w-3.5 text-[#449bd5]" /> Approve Campaign
               </button>
             )}
 
             <button
               onClick={handleSaveCampaign}
               disabled={isSaving}
-              className="px-4 py-2 text-xs font-semibold rounded-xl bg-brand-600 text-white hover:bg-brand-700 shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="btn-crimson text-xs disabled:opacity-50"
             >
               <Save className="h-3.5 w-3.5" />
               {isSaving ? 'Saving...' : 'Save & Snapshot Version'}

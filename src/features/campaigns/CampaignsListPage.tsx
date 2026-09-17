@@ -157,12 +157,12 @@ export function CampaignsListPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-brand-50 text-brand-600">
-                <Mail className="h-6 w-6" />
+              <div className="p-2 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
+                <Mail className="h-5 w-5" />
               </div>
-              <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Campaigns</h1>
+              <h1 className="text-2xl font-bold font-heading text-[#08254f] tracking-tight">Campaigns</h1>
             </div>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               Email marketing campaigns with mandatory approval, A/B testing and batch dispatching
             </p>
           </div>
@@ -171,7 +171,7 @@ export function CampaignsListPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 text-xs font-semibold bg-white border border-gray-200 rounded-xl shadow-xs"
+              className="px-3 py-2 text-xs font-semibold bg-white border border-slate-200/80 rounded-xl shadow-xs text-slate-700"
             >
               <option value="">All Statuses</option>
               <option value="draft">Drafts</option>
@@ -184,13 +184,13 @@ export function CampaignsListPage() {
             <button
               onClick={fetchCampaigns}
               title="Refresh campaigns"
-              className="p-2 text-gray-500 hover:text-gray-800 hover:bg-white border border-gray-200 rounded-xl shadow-xs transition-colors"
+              className="p-2 text-slate-500 hover:text-slate-800 hover:bg-white border border-slate-200/80 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <RotateCw className="h-4 w-4" />
             </button>
             <button
               onClick={() => setIsCreateOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs transition-colors"
+              className="btn-crimson text-xs"
             >
               <Plus className="h-4 w-4" />
               New Campaign
@@ -209,17 +209,17 @@ export function CampaignsListPage() {
             message="Create your first marketing campaign with visual blocks, target audience filters, and approval workflows."
           />
         ) : (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
-            <div className="divide-y divide-gray-100">
+          <div className="card-executive overflow-hidden">
+            <div className="divide-y divide-slate-100">
               {campaigns.map((camp) => (
                 <div
                   key={camp.id}
                   onClick={() => navigate(`/campaigns/${camp.id}`)}
-                  className="p-5 hover:bg-brand-50/20 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+                  className="p-5 hover:bg-slate-50/70 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-3">
-                      <h3 className="text-base font-bold text-gray-900">{camp.name}</h3>
+                      <h3 className="text-base font-bold font-heading text-[#08254f]">{camp.name}</h3>
                       {getStatusBadge(camp.status)}
                     </div>
                     <p className="text-xs text-gray-500 flex items-center gap-2">

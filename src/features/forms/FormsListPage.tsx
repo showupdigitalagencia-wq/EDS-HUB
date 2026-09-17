@@ -172,27 +172,31 @@ export function FormsListPage() {
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
-              <ClipboardList className="h-7 w-7 text-brand-600" />
-              Lead Capture Forms
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
+                <ClipboardList className="h-5 w-5" />
+              </div>
+              <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">
+                Lead Capture Forms
+              </h1>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
               Create, version, and manage high-converting capture forms connected to EDS intake automation.
             </p>
           </div>
           <button
             id="btn-create-form"
             onClick={() => navigate('/forms/new')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium shadow-sm transition-colors duration-150"
+            className="btn-crimson text-xs"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5" />
             Create Form
           </button>
         </div>
 
         {/* Action message alert */}
         {actionMessage && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-sm flex items-center gap-2 animate-fadeIn">
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl text-xs font-medium flex items-center gap-2 animate-fadeIn">
             <Check className="h-4 w-4 text-emerald-600 flex-shrink-0" />
             <span>{actionMessage}</span>
           </div>
@@ -200,25 +204,25 @@ export function FormsListPage() {
 
         {/* Metrics Summary */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Forms</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{totalForms}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{activeForms} active</p>
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Forms</p>
+            <p className="text-2xl font-extrabold text-[#08254f] font-heading mt-1">{totalForms}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">{activeForms} active</p>
           </div>
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Forms</p>
-            <p className="text-2xl font-bold text-emerald-600 mt-1">{activeForms}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Ready for public submissions</p>
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Forms</p>
+            <p className="text-2xl font-extrabold text-emerald-600 font-heading mt-1">{activeForms}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Ready for public submissions</p>
           </div>
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Submissions</p>
-            <p className="text-2xl font-bold text-brand-600 mt-1">{totalSubmissions}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Across all active versions</p>
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Submissions</p>
+            <p className="text-2xl font-extrabold text-[#08254f] font-heading mt-1">{totalSubmissions}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Across all active versions</p>
           </div>
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Leads Generated</p>
-            <p className="text-2xl font-bold text-indigo-600 mt-1">{totalLeads}</p>
-            <p className="text-xs text-gray-400 mt-0.5">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Leads Generated</p>
+            <p className="text-2xl font-extrabold text-[#125e95] font-heading mt-1">{totalLeads}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
               {totalSubmissions > 0 ? `${Math.round((totalLeads / totalSubmissions) * 100)}% lead capture rate` : '0%'}
             </p>
           </div>

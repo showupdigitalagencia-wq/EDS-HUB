@@ -1,75 +1,190 @@
 @import "tailwindcss";
 
 /* ============================================================
-   EDS HUB — Design System Foundation
+   EDS HUB — Expert Dental Solutions Design System Tokens
    ============================================================ */
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-sans: "Poppins", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-heading: "Manrope", "Poppins", ui-sans-serif, system-ui, sans-serif;
 
-  /* Brand Colors */
-  --color-brand-50: oklch(0.97 0.01 250);
-  --color-brand-100: oklch(0.93 0.03 250);
-  --color-brand-200: oklch(0.87 0.06 250);
-  --color-brand-300: oklch(0.78 0.09 250);
-  --color-brand-400: oklch(0.68 0.13 250);
-  --color-brand-500: oklch(0.58 0.16 250);
-  --color-brand-600: oklch(0.50 0.17 250);
-  --color-brand-700: oklch(0.43 0.15 250);
-  --color-brand-800: oklch(0.37 0.12 250);
-  --color-brand-900: oklch(0.31 0.09 250);
-  --color-brand-950: oklch(0.22 0.06 250);
+  /* Primary Authority Scale (Deep Navy from site #08254f / #0a1f44) */
+  --color-brand-50: #f0f5fb;
+  --color-brand-100: #dce7f6;
+  --color-brand-200: #b4cdeb;
+  --color-brand-300: #7fa8dc;
+  --color-brand-400: #467fc8;
+  --color-brand-500: #1d5cb0;
+  --color-brand-600: #0f448c;
+  --color-brand-700: #0a336c;
+  --color-brand-800: #08254f;
+  --color-brand-900: #0a1f44;
+  --color-brand-950: #041126;
 
-  /* Surfaces */
-  --color-surface-0: oklch(1 0 0);
-  --color-surface-50: oklch(0.985 0.002 250);
-  --color-surface-100: oklch(0.97 0.004 250);
-  --color-surface-200: oklch(0.94 0.006 250);
+  /* Signature Accent Scale (Dental Crimson CTA from site #8a1c1c) */
+  --color-crimson-50: #fdf2f2;
+  --color-crimson-100: #fce4e4;
+  --color-crimson-200: #f8c8c8;
+  --color-crimson-300: #f19f9f;
+  --color-crimson-400: #e26363;
+  --color-crimson-500: #a72323;
+  --color-crimson-600: #8a1c1c;
+  --color-crimson-700: #701414;
+  --color-crimson-800: #550d0d;
+  --color-crimson-900: #3b0909;
 
-  /* Semantic */
-  --color-success-500: oklch(0.65 0.18 145);
-  --color-warning-500: oklch(0.75 0.17 70);
-  --color-danger-500: oklch(0.60 0.20 25);
+  /* Clinical Dental Blue & Ice Scale (from site header pill & gradients) */
+  --color-dental-50: #f0f7fd;
+  --color-dental-100: #e1f0fb;
+  --color-dental-200: #b4cdeb;
+  --color-dental-300: #7bb5e5;
+  --color-dental-400: #449bd5;
+  --color-dental-500: #1b7dbf;
+  --color-dental-600: #125e95;
 
-  /* Shadows */
-  --shadow-card: 0 1px 3px oklch(0 0 0 / 0.06), 0 1px 2px oklch(0 0 0 / 0.04);
-  --shadow-card-hover: 0 4px 12px oklch(0 0 0 / 0.08), 0 2px 4px oklch(0 0 0 / 0.04);
+  /* Surfaces & Canvas */
+  --color-surface-0: #ffffff;
+  --color-surface-50: #f8fafc;
+  --color-surface-100: #f1f5f9;
+  --color-surface-200: #e2e8f0;
 
-  /* Radius */
-  --radius-card: 0.75rem;
+  /* Semantic Feedback */
+  --color-success-500: #10b981;
+  --color-warning-500: #f59e0b;
+  --color-danger-500: #ef4444;
+
+  /* Executive Shadows */
+  --shadow-card: 0 1px 3px rgba(10, 31, 68, 0.04), 0 1px 2px rgba(10, 31, 68, 0.02);
+  --shadow-card-hover: 0 8px 24px rgba(10, 31, 68, 0.07), 0 2px 6px rgba(10, 31, 68, 0.03);
+  --shadow-dropdown: 0 10px 30px rgba(8, 37, 79, 0.12);
+
+  /* Radius Tokens */
+  --radius-card: 0.875rem;
   --radius-button: 0.5rem;
   --radius-input: 0.5rem;
 }
 
-/* Base Styles */
+/* Base Body Styles */
 body {
-  @apply bg-surface-50 text-gray-900 antialiased;
+  background-color: var(--color-surface-50);
+  color: var(--color-brand-900);
+  font-family: var(--font-sans);
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Smooth transitions on interactive elements */
+/* Headings use Manrope */
+h1, h2, h3, h4, h5, h6, .font-heading {
+  font-family: var(--font-heading);
+}
+
+/* Smooth transitions */
 button, a, input, select, textarea {
-  @apply transition-colors duration-150;
+  transition: all 0.15s ease-in-out;
 }
 
-/* Focus ring */
+/* Accessible focus ring */
 *:focus-visible {
-  @apply outline-2 outline-offset-2 outline-brand-500 rounded-sm;
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
 }
 
-/* Scrollbar styling */
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full;
+  background: #cbd5e1;
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400;
+  background: #94a3b8;
+}
+
+/* ============================================================
+   Component Utilities: Buttons & Cards
+   ============================================================ */
+
+/* Primary CTA Button — Dental Crimson */
+.btn-crimson {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background-color: #8a1c1c;
+  color: #ffffff;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--radius-button);
+  box-shadow: 0 1px 2px rgba(138, 28, 28, 0.2);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn-crimson:hover:not(:disabled) {
+  background-color: #701414;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(138, 28, 28, 0.25);
+}
+
+.btn-crimson:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-crimson:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Secondary Button — Executive Outline */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background-color: #ffffff;
+  color: #08254f;
+  border: 1px solid #cbd5e1;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.625rem 1.125rem;
+  border-radius: var(--radius-button);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  cursor: pointer;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #f8fafc;
+  border-color: #94a3b8;
+  color: #041126;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Executive Card Container */
+.card-executive {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.card-executive:hover {
+  box-shadow: var(--shadow-card-hover);
+  border-color: #cbd5e1;
 }

@@ -311,21 +311,21 @@ export function LeadDetailPage() {
           <div className="flex items-center gap-3">
             <Link
               to="/leads"
-              className="p-2 rounded-xl border border-gray-200 hover:bg-white text-gray-500 hover:text-gray-800 transition-colors shadow-xs"
+              className="p-2 rounded-xl border border-slate-200/80 hover:bg-white text-slate-500 hover:text-slate-800 transition-colors shadow-xs"
             >
               <ArrowLeft className="h-5 w-5" />
             </Link>
             <div>
               <div className="flex items-center gap-2.5">
-                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">{fullName}</h1>
+                <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">{fullName}</h1>
                 {currentStage && (
-                  <span className="px-2.5 py-0.5 text-xs font-semibold rounded-lg bg-brand-50 text-brand-700 border border-brand-200">
+                  <span className="px-2.5 py-0.5 text-xs font-semibold rounded-lg bg-[#08254f]/8 text-[#08254f] border border-[#08254f]/20">
                     {currentStage.name}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Lead ID: <span className="font-mono text-gray-600">{lead.id}</span> • Source: <span className="capitalize font-medium text-gray-700">{lead.source}</span>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Lead ID: <span className="font-mono text-slate-600">{lead.id}</span> • Source: <span className="capitalize font-medium text-slate-700">{lead.source}</span>
               </p>
             </div>
           </div>
@@ -334,15 +334,15 @@ export function LeadDetailPage() {
             {!isEditing ? (
               <button
                 onClick={() => setIsEditing(true)}
-                className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl shadow-xs transition-colors"
+                className="btn-secondary text-xs"
               >
-                <Edit2 className="h-4 w-4 text-gray-500" />
+                <Edit2 className="h-4 w-4 text-slate-500" />
                 Edit Lead
               </button>
             ) : (
               <button
                 onClick={handleSaveContact}
-                className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs transition-colors"
+                className="btn-crimson text-xs"
               >
                 <Save className="h-4 w-4" />
                 Save Changes
@@ -356,17 +356,17 @@ export function LeadDetailPage() {
           {/* Left Column: Contact Details, Tags, Notes, Tasks */}
           <div className="lg:col-span-2 space-y-6">
             {/* Contact Information Card */}
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-xs p-6">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <User className="h-4 w-4 text-brand-600" />
+            <div className="card-executive p-6">
+              <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider mb-4 flex items-center gap-2">
+                <User className="h-4 w-4 text-[#449bd5]" />
                 Contact Details
               </h2>
 
               {!isEditing ? (
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <span className="text-xs text-gray-400 block mb-0.5">First Name</span>
-                    <span className="font-medium text-gray-800">{lead.first_name || '—'}</span>
+                    <span className="text-xs text-slate-500 block mb-0.5">First Name</span>
+                    <span className="font-medium text-slate-800">{lead.first_name || '—'}</span>
                   </div>
                   <div>
                     <span className="text-xs text-gray-400 block mb-0.5">Last Name</span>
@@ -510,9 +510,9 @@ export function LeadDetailPage() {
             </div>
 
             {/* Tags Management Card */}
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-xs p-6">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <TagIcon className="h-4 w-4 text-brand-600" />
+            <div className="card-executive p-6">
+              <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider mb-3 flex items-center gap-2">
+                <TagIcon className="h-4 w-4 text-[#449bd5]" />
                 Tags & Segments
               </h2>
 
@@ -521,7 +521,7 @@ export function LeadDetailPage() {
                   leadTags.map((t) => (
                     <span
                       key={t.id}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-brand-50 text-brand-700 border border-brand-200 rounded-lg"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-[#449bd5]/10 text-[#08254f] border border-[#449bd5]/20 rounded-lg"
                     >
                       #{t.name}
                       <button
@@ -534,12 +534,12 @@ export function LeadDetailPage() {
                     </span>
                   ))
                 ) : (
-                  <p className="text-xs text-gray-400 italic">No tags assigned to this lead.</p>
+                  <p className="text-xs text-slate-400 italic">No tags assigned to this lead.</p>
                 )}
               </div>
 
-              <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-100 items-center">
-                <span className="text-xs font-medium text-gray-500">Attach existing:</span>
+              <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-100 items-center">
+                <span className="text-xs font-medium text-slate-500">Attach existing:</span>
                 {allTags
                   .filter((t) => !leadTags.some((lt) => lt.id === t.id))
                   .slice(0, 6)
@@ -547,7 +547,7 @@ export function LeadDetailPage() {
                     <button
                       key={t.id}
                       onClick={() => handleAttachTag(t.id)}
-                      className="px-2 py-0.5 text-xs rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                      className="px-2 py-0.5 text-xs rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
                     >
                       + {t.name}
                     </button>
@@ -559,11 +559,11 @@ export function LeadDetailPage() {
                     value={newTagName}
                     onChange={(e) => setNewTagName(e.target.value)}
                     placeholder="New tag..."
-                    className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#449bd5]"
                   />
                   <button
                     onClick={handleCreateAndAttachTag}
-                    className="px-2.5 py-1 text-xs font-medium bg-brand-600 text-white rounded-lg hover:bg-brand-700"
+                    className="btn-crimson px-2.5 py-1 text-xs"
                   >
                     Add
                   </button>
@@ -572,9 +572,9 @@ export function LeadDetailPage() {
             </div>
 
             {/* Lead Notes Card */}
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-xs p-6 space-y-4">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                <FileText className="h-4 w-4 text-brand-600" />
+            <div className="card-executive p-6 space-y-4">
+              <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider flex items-center gap-2">
+                <FileText className="h-4 w-4 text-[#449bd5]" />
                 Notes ({notes.length})
               </h2>
 
@@ -584,13 +584,13 @@ export function LeadDetailPage() {
                   value={newNoteContent}
                   onChange={(e) => setNewNoteContent(e.target.value)}
                   placeholder="Add a confidential note or conversation summary..."
-                  className="w-full px-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5]"
                 />
                 <div className="flex justify-end">
                   <button
                     type="submit"
                     disabled={isAddingNote || !newNoteContent.trim()}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-xl disabled:opacity-50 transition-colors"
+                    className="btn-crimson text-xs disabled:opacity-50"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Save Note
@@ -600,31 +600,31 @@ export function LeadDetailPage() {
 
               <div className="space-y-3 pt-2">
                 {notes.map((note) => (
-                  <div key={note.id} className="p-3.5 bg-gray-50 border border-gray-100 rounded-xl space-y-1.5">
-                    <div className="flex items-center justify-between text-xs text-gray-400">
+                  <div key={note.id} className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
                       <span>{new Date(note.created_at).toLocaleString()}</span>
                       <button
                         onClick={() => handleDeleteNote(note.id)}
-                        className="text-gray-400 hover:text-red-600 transition-colors"
+                        className="text-slate-400 hover:text-red-600 transition-colors"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <p className="text-xs text-gray-800 whitespace-pre-wrap">{note.content}</p>
+                    <p className="text-xs text-slate-800 whitespace-pre-wrap">{note.content}</p>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Tasks Card */}
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-xs p-6 space-y-3">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                <Clock className="h-4 w-4 text-brand-600" />
+            <div className="card-executive p-6 space-y-3">
+              <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider flex items-center gap-2">
+                <Clock className="h-4 w-4 text-[#449bd5]" />
                 Follow-up Tasks ({tasks.length})
               </h2>
 
               {tasks.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">No tasks assigned to this lead.</p>
+                <p className="text-xs text-slate-400 italic">No tasks assigned to this lead.</p>
               ) : (
                 <div className="space-y-2">
                   {tasks.map((task) => {
@@ -633,7 +633,7 @@ export function LeadDetailPage() {
                       <div
                         key={task.id}
                         className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
-                          isCompleted ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-200'
+                          isCompleted ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-200/80'
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -642,21 +642,21 @@ export function LeadDetailPage() {
                             className={`p-1 rounded-lg border transition-colors ${
                               isCompleted
                                 ? 'bg-emerald-500 text-white border-emerald-500'
-                                : 'border-gray-300 text-transparent hover:border-brand-500'
+                                : 'border-slate-300 text-transparent hover:border-[#449bd5]'
                             }`}
                           >
                             <CheckCircle2 className="h-4 w-4" />
                           </button>
                           <div>
-                            <p className={`text-xs font-semibold ${isCompleted ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                            <p className={`text-xs font-semibold ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
                               {task.title}
                             </p>
                             {task.description && (
-                              <p className="text-[11px] text-gray-500">{task.description}</p>
+                              <p className="text-[11px] text-slate-500">{task.description}</p>
                             )}
                           </div>
                         </div>
-                        <span className="px-2 py-0.5 text-[10px] uppercase font-semibold rounded bg-gray-100 text-gray-600">
+                        <span className="px-2 py-0.5 text-[10px] uppercase font-semibold rounded bg-slate-100 text-slate-600">
                           {task.task_type}
                         </span>
                       </div>
@@ -687,25 +687,25 @@ export function LeadDetailPage() {
 
           {/* Right Column: Complete Timeline (Append-Only Lead Activities) */}
           <div className="space-y-6">
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-xs p-6 sticky top-6">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Activity className="h-4 w-4 text-brand-600" />
+            <div className="card-executive p-6 sticky top-6">
+              <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Activity className="h-4 w-4 text-[#449bd5]" />
                 Audit Timeline ({activities.length})
               </h2>
 
-              <div className="relative pl-6 space-y-5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-200">
+              <div className="relative pl-6 space-y-5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
                 {activities.map((act) => (
                   <div key={act.id} className="relative text-xs">
-                    <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-white border-2 border-brand-500 flex items-center justify-center" />
+                    <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-white border-2 border-[#449bd5] flex items-center justify-center" />
                     <div className="space-y-0.5">
-                      <div className="flex items-center justify-between text-[11px] text-gray-400">
-                        <span className="font-semibold text-gray-700 capitalize">
+                      <div className="flex items-center justify-between text-[11px] text-slate-400">
+                        <span className="font-semibold text-slate-700 capitalize">
                           {act.activity_type.replace(/_/g, ' ')}
                         </span>
                         <span>{new Date(act.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
-                      <p className="text-gray-600 leading-normal">{act.summary}</p>
-                      <span className="text-[10px] text-gray-400">
+                      <p className="text-slate-600 leading-normal">{act.summary}</p>
+                      <span className="text-[10px] text-slate-400">
                         {new Date(act.created_at).toLocaleDateString()}
                       </span>
                     </div>

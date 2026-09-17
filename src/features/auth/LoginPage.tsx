@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
-import { Loader2, ShieldCheck } from 'lucide-react';
+import { Loader2, Lock, Mail, ShieldCheck } from 'lucide-react';
+import edsLogo from '../../assets/eds-logo.png';
 
 export function LoginPage() {
   const { signIn, isAuthorized, isLoading: authLoading } = useAuth();
@@ -13,8 +14,8 @@ export function LoginPage() {
   // If already authenticated and authorized, redirect to home
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-50">
-        <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
+      <div className="min-h-screen flex items-center justify-center bg-[#08254f]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#449bd5]" />
       </div>
     );
   }
@@ -36,58 +37,101 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 via-surface-50 to-brand-100 px-4">
-      <div className="w-full max-w-md">
-        {/* Logo/Brand */}
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#041126] via-[#08254f] to-[#061e40] px-4 relative overflow-hidden">
+      {/* Subtle Background Glows */}
+      <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full bg-[#449bd5]/10 blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-96 h-96 rounded-full bg-[#8a1c1c]/10 blur-3xl pointer-events-none" />
+
+      <div className="w-full max-w-md relative z-10">
+        {/* Brand Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 shadow-lg mb-4">
-            <ShieldCheck className="h-8 w-8 text-white" />
+          <div className="inline-block p-4 rounded-2xl bg-white shadow-lg mb-4 border border-white/20">
+            <img
+              src={edsLogo}
+              alt="Expert Dental Solutions"
+              className="h-10 w-auto max-w-[220px] object-contain"
+            />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">EDS HUB</h1>
-          <p className="text-sm text-gray-500 mt-1">Intelligent Deliverability CRM</p>
+          <h1 className="text-xl font-bold text-white tracking-tight font-heading">
+            EDS HUB
+          </h1>
+          <p className="text-xs text-blue-200/80 mt-1 max-w-sm mx-auto">
+            Hands-on Dental Training with Real Patients • Deliverability CRM
+          </p>
         </div>
 
         {/* Login Card */}
-        <div className="bg-white rounded-[var(--radius-card)] shadow-[var(--shadow-card)] border border-gray-100 p-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-6">Sign in to your account</h2>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="bg-white rounded-2xl shadow-xl border border-white/10 p-8">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
             <div>
-              <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 mb-1.5">
+              <h2 className="text-base font-bold text-[#08254f] font-heading">
+                Sign in to your account
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Enter your credentials to access the workspace
+              </p>
+            </div>
+            <div className="p-2 rounded-lg bg-blue-50 text-[#08254f]">
+              <ShieldCheck className="w-5 h-5 text-[#1b7dbf]" />
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label
+                htmlFor="login-email"
+                className="block text-xs font-semibold text-slate-700 mb-1"
+              >
                 Email address
               </label>
-              <input
-                id="login-email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-[var(--radius-input)] border border-gray-300 px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
-                placeholder="you@example.com"
-                disabled={isSubmitting}
-              />
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Mail className="h-4 w-4" />
+                </div>
+                <input
+                  id="login-email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-[#08254f] focus:ring-1 focus:ring-[#08254f] outline-none"
+                  placeholder="name@expdentalsolutions.com"
+                  disabled={isSubmitting}
+                />
+              </div>
             </div>
 
             <div>
-              <label htmlFor="login-password" className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label
+                htmlFor="login-password"
+                className="block text-xs font-semibold text-slate-700 mb-1"
+              >
                 Password
               </label>
-              <input
-                id="login-password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-[var(--radius-input)] border border-gray-300 px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
-                placeholder="••••••••"
-                disabled={isSubmitting}
-              />
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Lock className="h-4 w-4" />
+                </div>
+                <input
+                  id="login-password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-[#08254f] focus:ring-1 focus:ring-[#08254f] outline-none"
+                  placeholder="••••••••"
+                  disabled={isSubmitting}
+                />
+              </div>
             </div>
 
             {error && (
-              <div id="login-error" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+              <div
+                id="login-error"
+                className="rounded-lg bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs text-red-700 font-medium"
+              >
                 {error}
               </div>
             )}
@@ -96,7 +140,7 @@ export function LoginPage() {
               id="login-submit"
               type="submit"
               disabled={isSubmitting}
-              className="w-full flex items-center justify-center gap-2 rounded-[var(--radius-button)] bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 focus-visible:outline-brand-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#8a1c1c] hover:bg-[#701414] px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {isSubmitting ? (
                 <>
@@ -110,8 +154,8 @@ export function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-xs text-gray-400 mt-6">
-          Access is restricted to authorized users only.
+        <p className="text-center text-[11px] text-blue-200/60 mt-6">
+          Expert Dental Solutions • Deliverability CRM Platform
         </p>
       </div>
     </div>

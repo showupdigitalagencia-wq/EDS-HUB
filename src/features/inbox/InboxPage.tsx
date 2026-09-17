@@ -190,36 +190,36 @@ export function InboxPage() {
     <Layout title="Global Inbox">
       <div className="h-[calc(100vh-5rem)] flex flex-col -m-6">
         {/* Top Mini Header / Metrics Bar */}
-        <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+        <div className="bg-white border-b border-slate-200/80 px-6 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600">
+            <div className="w-9 h-9 rounded-xl bg-[#08254f] text-[#449bd5] flex items-center justify-center shadow-xs">
               <Inbox className="w-4 h-4" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-gray-900 leading-none">Global Inbox</h1>
-              <p className="text-xs text-gray-400 mt-0.5">Conversational CRM for Inbound Emails and SMS</p>
+              <h1 className="text-base font-bold text-[#08254f] leading-none font-heading">Global Inbox</h1>
+              <p className="text-xs text-slate-500 mt-1">Conversational CRM for Inbound Emails and SMS</p>
             </div>
           </div>
 
           <div className="flex items-center gap-4 text-xs">
             <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200/80 text-[10px] uppercase tracking-wider">
                 {metrics.totalOpen} Open
               </span>
               {metrics.totalUnread > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold border border-amber-200">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#fdf2f2] text-[#8a1c1c] font-bold border border-red-200 text-[10px] uppercase tracking-wider">
                   {metrics.totalUnread} Unread
                 </span>
               )}
             </div>
-            <div className="h-4 w-px bg-gray-200" />
+            <div className="h-4 w-px bg-slate-200" />
             <button
               onClick={loadConversations}
               disabled={isLoading}
-              className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
               title="Refresh conversations"
             >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-[#08254f]' : ''}`} />
             </button>
           </div>
         </div>
@@ -227,17 +227,17 @@ export function InboxPage() {
         {/* 3-Column Workspace */}
         <div className="flex-1 flex overflow-hidden">
           {/* Column 1: Conversations List */}
-          <div className="w-80 lg:w-96 border-r border-gray-200 bg-white flex flex-col">
+          <div className="w-80 lg:w-96 border-r border-slate-200/80 bg-white flex flex-col">
             {/* Search and Filters */}
-            <div className="p-3 border-b border-gray-100 space-y-2">
+            <div className="p-3 border-b border-slate-100 space-y-2">
               <div className="relative">
-                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search sender, email, message..."
-                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 focus:bg-white transition-all"
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5] focus:bg-white transition-all"
                 />
               </div>
 
@@ -255,10 +255,10 @@ export function InboxPage() {
                   <button
                     key={tab.id}
                     onClick={() => setActiveFilter(tab.id)}
-                    className={`px-2.5 py-1 rounded-md font-medium whitespace-nowrap transition-colors ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                       activeFilter === tab.id
-                        ? 'bg-brand-50 text-brand-700'
-                        : 'text-gray-500 hover:bg-gray-50'
+                        ? 'bg-[#08254f] text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
                     {tab.label}
@@ -268,12 +268,12 @@ export function InboxPage() {
             </div>
 
             {/* Conversation Rows */}
-            <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
               {isLoading && conversations.length === 0 ? (
-                <div className="p-8 text-center text-xs text-gray-400">Loading inbox...</div>
+                <div className="p-8 text-center text-xs text-slate-400">Loading inbox...</div>
               ) : filteredConversations.length === 0 ? (
-                <div className="p-8 text-center text-xs text-gray-400 space-y-2">
-                  <Inbox className="w-8 h-8 text-gray-300 mx-auto" />
+                <div className="p-8 text-center text-xs text-slate-400 space-y-2">
+                  <Inbox className="w-8 h-8 text-slate-300 mx-auto" />
                   <p>No conversations found</p>
                 </div>
               ) : (
@@ -290,26 +290,26 @@ export function InboxPage() {
                     <button
                       key={conv.id}
                       onClick={() => handleSelectConversation(conv)}
-                      className={`w-full text-left p-3.5 transition-all flex flex-col gap-1.5 ${
+                      className={`w-full text-left p-3.5 transition-all flex flex-col gap-1.5 cursor-pointer ${
                         isSelected
-                          ? 'bg-brand-50/70 border-l-4 border-l-brand-600'
-                          : 'hover:bg-gray-50'
+                          ? 'bg-[#f0f5fb] border-l-4 border-l-[#8a1c1c]'
+                          : 'hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           {conv.channel === 'email' ? (
-                            <span className="p-1 rounded bg-blue-50 text-blue-600 flex-shrink-0">
+                            <span className="p-1 rounded-md bg-[#e1f0fb] text-[#125e95] flex-shrink-0">
                               <Mail className="w-3.5 h-3.5" />
                             </span>
                           ) : (
-                            <span className="p-1 rounded bg-emerald-50 text-emerald-600 flex-shrink-0">
+                            <span className="p-1 rounded-md bg-emerald-50 text-emerald-700 flex-shrink-0">
                               <MessageSquare className="w-3.5 h-3.5" />
                             </span>
                           )}
                           <span
                             className={`text-xs truncate ${
-                              hasUnread ? 'font-bold text-gray-900' : 'font-semibold text-gray-800'
+                              hasUnread ? 'font-bold text-[#08254f]' : 'font-semibold text-slate-800'
                             }`}
                           >
                             {leadName}
@@ -318,9 +318,9 @@ export function InboxPage() {
 
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           {hasUnread && (
-                            <span className="w-2 h-2 rounded-full bg-brand-600" title="Unread message" />
+                            <span className="w-2 h-2 rounded-full bg-[#8a1c1c]" title="Unread message" />
                           )}
-                          <span className="text-[10px] text-gray-400">
+                          <span className="text-[10px] text-slate-400">
                             {new Date(conv.last_message_at).toLocaleDateString([], {
                               month: 'short',
                               day: 'numeric',
@@ -330,16 +330,16 @@ export function InboxPage() {
                       </div>
 
                       {conv.subject && (
-                        <p className="text-[11px] font-medium text-gray-700 truncate">
+                        <p className="text-[11px] font-medium text-slate-700 truncate">
                           {conv.subject}
                         </p>
                       )}
 
-                      <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                      <div className="flex items-center gap-1 text-[11px] text-slate-500">
                         {conv.last_message_direction === 'outbound' ? (
-                          <ArrowUpRight className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                          <ArrowUpRight className="w-3 h-3 text-slate-400 flex-shrink-0" />
                         ) : (
-                          <ArrowDownLeft className="w-3 h-3 text-brand-500 flex-shrink-0" />
+                          <ArrowDownLeft className="w-3 h-3 text-[#125e95] flex-shrink-0" />
                         )}
                         <span className="truncate">
                           {conv.last_message_preview || 'No preview available'}
@@ -356,11 +356,11 @@ export function InboxPage() {
                             {getQualificationStatusLabel(conv.lead.qualification_status)}
                           </span>
                         ) : (
-                          <span className="text-[10px] text-gray-400">No qualification</span>
+                          <span className="text-[10px] text-slate-400">No qualification</span>
                         )}
 
                         {conv.status === 'closed' && (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-gray-400">
+                          <span className="inline-flex items-center gap-1 text-[10px] text-slate-400">
                             <Archive className="w-2.5 h-2.5" />
                             Closed
                           </span>

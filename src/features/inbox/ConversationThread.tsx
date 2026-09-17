@@ -229,10 +229,10 @@ export function ConversationThread({
                 <div
                   className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-1 shadow-2xs ${
                     isInbound
-                      ? 'bg-gray-200 text-gray-700'
+                      ? 'bg-slate-200 text-slate-700'
                       : msg.is_manual_reply
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-indigo-600 text-white'
+                      ? 'bg-[#8a1c1c] text-white'
+                      : 'bg-[#08254f] text-white'
                   }`}
                 >
                   {isInbound ? (
@@ -248,16 +248,16 @@ export function ConversationThread({
                 <div
                   className={`rounded-2xl p-3.5 text-xs shadow-2xs space-y-2 ${
                     isInbound
-                      ? 'bg-white text-gray-900 border border-gray-200/80 rounded-tl-xs'
-                      : 'bg-brand-700 text-white rounded-tr-xs'
+                      ? 'bg-white text-slate-900 border border-slate-200/80 rounded-tl-xs'
+                      : 'bg-[#08254f] text-white rounded-tr-xs shadow-xs'
                   }`}
                 >
                   {/* Metadata Header */}
-                  <div className="flex items-center justify-between gap-3 text-[10px] opacity-75">
+                  <div className="flex items-center justify-between gap-3 text-[10px] opacity-80">
                     <span className="font-semibold truncate">
-                      {isInbound ? msg.sender : msg.is_manual_reply ? 'Staff (Manual)' : 'Automated'}
+                      {isInbound ? msg.sender : msg.is_manual_reply ? 'Staff (Manual)' : 'Automated Sequence'}
                     </span>
-                    <span className="shrink-0">
+                    <span className="shrink-0 font-mono">
                       {new Date(msg.timestamp).toLocaleTimeString([], {
                         hour: '2-digit',
                         minute: '2-digit',
@@ -268,8 +268,8 @@ export function ConversationThread({
                   {/* Email Subject Snapshot */}
                   {msg.subject && (
                     <p
-                      className={`text-xs font-bold border-b pb-1.5 ${
-                        isInbound ? 'border-gray-100 text-gray-900' : 'border-brand-600/60 text-white'
+                      className={`text-xs font-bold border-b pb-1.5 font-heading ${
+                        isInbound ? 'border-slate-100 text-slate-900' : 'border-white/15 text-white'
                       }`}
                     >
                       {msg.subject}

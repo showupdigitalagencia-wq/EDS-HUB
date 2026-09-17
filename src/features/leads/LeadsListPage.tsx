@@ -216,12 +216,12 @@ export function LeadsListPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-brand-50 text-brand-600">
-                <Users className="h-6 w-6" />
+              <div className="p-2.5 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
+                <Users className="h-5 w-5" />
               </div>
-              <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Leads & Contacts</h1>
+              <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">Leads & Contacts</h1>
             </div>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               Centralized CRM database with real-time segmentation and tagging
             </p>
           </div>
@@ -229,16 +229,16 @@ export function LeadsListPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsImportOpen(true)}
-              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl shadow-xs transition-colors"
+              className="btn-secondary text-xs"
             >
-              <Upload className="h-4 w-4 text-gray-500" />
+              <Upload className="h-3.5 w-3.5 text-slate-500" />
               Import CSV
             </button>
             <button
               onClick={() => setIsNewLeadOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs transition-colors"
+              className="btn-crimson text-xs"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
               New Lead
             </button>
           </div>
@@ -373,8 +373,8 @@ export function LeadsListPage() {
           </div>
 
           {/* Presets Bar */}
-          <div className="flex items-center gap-2 pt-2 border-t border-gray-100 text-xs">
-            <span className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider mr-1">
+          <div className="flex items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+            <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mr-1">
               Views:
             </span>
             <button
@@ -385,10 +385,10 @@ export function LeadsListPage() {
                 setSearchParams({});
                 setCurrentPage(1);
               }}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 sortBy === 'created_at' && !scoreFilter
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? 'bg-[#08254f] text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
               All Contacts
@@ -400,10 +400,10 @@ export function LeadsListPage() {
                 setSearchParams({ sort: 'score' });
                 setCurrentPage(1);
               }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 sortBy === 'lead_score'
-                  ? 'bg-amber-500 text-white shadow-xs font-semibold'
-                  : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                  ? 'bg-[#8a1c1c] text-white shadow-xs'
+                  : 'bg-[#fdf2f2] text-[#8a1c1c] border border-red-200 hover:bg-red-100'
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -423,10 +423,10 @@ export function LeadsListPage() {
             message="Create your first lead manually or import contacts from a CSV file."
           />
         ) : (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
-                <thead className="bg-gray-50/75 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                <thead className="bg-[#f8fafc] text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/80">
                   <tr>
                     <th className="px-5 py-3.5">Lead Name</th>
                     <th
@@ -466,12 +466,12 @@ export function LeadsListPage() {
                       <tr
                         key={lead.id}
                         onClick={() => navigate(`/leads/${lead.id}`)}
-                        className="hover:bg-brand-50/30 transition-colors cursor-pointer"
+                        className="hover:bg-[#f0f5fb]/60 transition-colors cursor-pointer group"
                       >
                         <td className="px-5 py-3.5 whitespace-nowrap">
-                          <div className="font-semibold text-gray-900">{fullName}</div>
+                          <div className="font-semibold text-slate-900 group-hover:text-[#08254f] transition-colors">{fullName}</div>
                           {lead.external_lead_id && (
-                            <div className="text-[11px] text-gray-400">ID: {lead.external_lead_id}</div>
+                            <div className="text-[11px] text-slate-400">ID: {lead.external_lead_id}</div>
                           )}
                         </td>
                         <td className="px-5 py-3.5 whitespace-nowrap">

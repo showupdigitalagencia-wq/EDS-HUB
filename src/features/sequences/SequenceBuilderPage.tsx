@@ -357,20 +357,20 @@ export function SequenceBuilderPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate('/sequences')}
-              className="p-2 text-gray-400 hover:text-gray-700 hover:bg-white rounded-xl border border-gray-200 shadow-2xs transition-colors"
+              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-white rounded-xl border border-slate-200/80 shadow-2xs transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-gray-900 tracking-tight">
+                <h1 className="text-xl font-bold font-heading text-[#08254f] tracking-tight">
                   {isNew ? 'Create Follow-up Sequence' : name}
                 </h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#08254f]/10 text-[#08254f] border border-[#08254f]/20">
                   v{currentVersion} • {status}
                 </span>
               </div>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 WHEN (Trigger) → STOP IF (Conditions) → THEN (Scheduled outreach actions)
               </p>
             </div>
@@ -379,27 +379,27 @@ export function SequenceBuilderPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsTestModalOpen(true)}
-              className="px-3.5 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-1.5 transition-colors"
+              className="btn-secondary text-xs"
             >
-              <Sparkles className="w-4 h-4 text-purple-600" />
+              <Sparkles className="w-3.5 h-3.5 text-[#449bd5]" />
               Test Sequence
             </button>
 
             <button
               onClick={() => handleSave(false)}
               disabled={isSaving}
-              className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-1.5 transition-colors"
+              className="btn-secondary text-xs disabled:opacity-50"
             >
-              <Save className="w-4 h-4 text-gray-400" />
+              <Save className="w-3.5 h-3.5 text-slate-400" />
               {isSaving ? 'Saving...' : 'Save Draft'}
             </button>
 
             <button
               onClick={() => handleSave(true)}
               disabled={isSaving}
-              className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors"
+              className="btn-crimson text-xs disabled:opacity-50"
             >
-              <Play className="w-4 h-4 fill-current" />
+              <Play className="w-3.5 h-3.5 fill-current" />
               Publish & Activate
             </button>
           </div>

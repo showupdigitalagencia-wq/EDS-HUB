@@ -109,21 +109,21 @@ export function LeadScoreCard({ lead, onLeadUpdated }: LeadScoreCardProps) {
   const engagementPts = calculation?.engagement_subtotal ?? 0;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
+    <div className="card-executive overflow-hidden">
       {/* Header */}
-      <div className="p-4 sm:p-5 border-b border-gray-100 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
+      <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-[#08254f] text-[#449bd5] flex items-center justify-center shadow-xs">
             <Sparkles className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+            <h2 className="text-xs font-bold font-heading text-[#08254f] uppercase tracking-wider flex items-center gap-2">
               Lead Priority Score
               <span className={`px-2 py-0.5 text-xs rounded-full border ${badge.bg} ${badge.text} ${badge.border}`}>
                 {badge.label}
               </span>
             </h2>
-            <p className="text-[11px] text-gray-400">
+            <p className="text-[11px] text-slate-400">
               Deterministic priority calculation (Fit, Intent & Engagement)
             </p>
           </div>
@@ -132,7 +132,7 @@ export function LeadScoreCard({ lead, onLeadUpdated }: LeadScoreCardProps) {
         <button
           onClick={handleRecalculateNow}
           disabled={isRecalculating || isLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200 rounded-xl hover:bg-brand-100 transition-colors shadow-xs disabled:opacity-50"
+          className="btn-secondary text-xs disabled:opacity-50"
           title="Recalculate lead score"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isRecalculating ? 'animate-spin' : ''}`} />
@@ -141,14 +141,14 @@ export function LeadScoreCard({ lead, onLeadUpdated }: LeadScoreCardProps) {
       </div>
 
       {/* Main Score Display */}
-      <div className="p-5 bg-gradient-to-br from-gray-50/50 via-white to-gray-50/30">
+      <div className="p-5 bg-gradient-to-br from-slate-50/70 via-white to-slate-50/40">
         <div className="flex flex-col sm:flex-row items-center gap-6">
           {/* Circular/Large Numeric Gauge */}
-          <div className="relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl bg-white border border-gray-200 shadow-sm">
-            <span className="text-4xl font-extrabold text-gray-900 tracking-tight">
+          <div className="relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+            <span className="text-4xl font-extrabold font-heading text-[#08254f] tracking-tight">
               {currentScore}
             </span>
-            <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">
+            <span className="text-[10px] uppercase font-bold font-heading text-slate-400 tracking-wider">
               / 100 PTS
             </span>
           </div>

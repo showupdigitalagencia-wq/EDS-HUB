@@ -96,11 +96,13 @@ export function SequencesListPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2.5">
-              <GitFork className="h-7 w-7 text-brand-600" />
+            <h1 className="text-2xl font-bold font-heading text-[#08254f] tracking-tight flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
+                <GitFork className="h-5 w-5" />
+              </div>
               Follow-up Sequences
             </h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               Automated multi-touch cadences that continue outreach until a lead responds or status changes.
             </p>
           </div>
@@ -108,16 +110,16 @@ export function SequencesListPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsTemplateModalOpen(true)}
-              className="px-4 py-2.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-xl text-xs font-semibold transition-colors flex items-center gap-2 shadow-2xs"
+              className="btn-secondary text-xs"
             >
-              <Sparkles className="w-4 h-4 text-brand-600" />
+              <Sparkles className="w-3.5 h-3.5 text-[#449bd5]" />
               Browse Templates
             </button>
             <button
               onClick={() => navigate('/sequences/new')}
-              className="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-semibold transition-colors flex items-center gap-2 shadow-xs"
+              className="btn-crimson text-xs"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               New Sequence
             </button>
           </div>
@@ -126,43 +128,43 @@ export function SequencesListPage() {
         {/* Aggregated KPI Metrics Bar */}
         {metrics && (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-            <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-2xs">
-              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Active</div>
-              <div className="text-xl font-bold text-blue-600 mt-1">{metrics.active_runs}</div>
+            <div className="card-executive p-3.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Active</div>
+              <div className="text-xl font-bold font-heading text-blue-600 mt-1">{metrics.active_runs}</div>
             </div>
-            <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-2xs">
-              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Waiting</div>
-              <div className="text-xl font-bold text-indigo-600 mt-1">{metrics.waiting_runs}</div>
+            <div className="card-executive p-3.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Waiting</div>
+              <div className="text-xl font-bold font-heading text-indigo-600 mt-1">{metrics.waiting_runs}</div>
             </div>
-            <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-2xs">
-              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Paused</div>
-              <div className="text-xl font-bold text-amber-600 mt-1">{metrics.paused_runs}</div>
+            <div className="card-executive p-3.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Paused</div>
+              <div className="text-xl font-bold font-heading text-amber-600 mt-1">{metrics.paused_runs}</div>
             </div>
-            <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-2xs">
-              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Completed</div>
-              <div className="text-xl font-bold text-emerald-600 mt-1">{metrics.completed_runs}</div>
+            <div className="card-executive p-3.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Completed</div>
+              <div className="text-xl font-bold font-heading text-emerald-600 mt-1">{metrics.completed_runs}</div>
             </div>
-            <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-2xs">
-              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Stopped</div>
-              <div className="text-xl font-bold text-purple-600 mt-1">{metrics.stopped_by_condition_runs}</div>
+            <div className="card-executive p-3.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Stopped</div>
+              <div className="text-xl font-bold font-heading text-purple-600 mt-1">{metrics.stopped_by_condition_runs}</div>
             </div>
-            <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-2xs">
-              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+            <div className="card-executive p-3.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading flex items-center gap-1">
                 <Mail className="w-3 h-3 text-blue-500" /> Emails
               </div>
-              <div className="text-xl font-bold text-gray-800 mt-1">{metrics.emails_sent}</div>
+              <div className="text-xl font-bold font-heading text-slate-800 mt-1">{metrics.emails_sent}</div>
             </div>
-            <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-2xs">
-              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+            <div className="card-executive p-3.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading flex items-center gap-1">
                 <MessageSquare className="w-3 h-3 text-emerald-500" /> SMS
               </div>
-              <div className="text-xl font-bold text-gray-800 mt-1">{metrics.sms_sent}</div>
+              <div className="text-xl font-bold font-heading text-slate-800 mt-1">{metrics.sms_sent}</div>
             </div>
-            <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-2xs">
-              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+            <div className="card-executive p-3.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading flex items-center gap-1">
                 <ListTodo className="w-3 h-3 text-purple-500" /> Tasks
               </div>
-              <div className="text-xl font-bold text-gray-800 mt-1">{metrics.tasks_created}</div>
+              <div className="text-xl font-bold font-heading text-slate-800 mt-1">{metrics.tasks_created}</div>
             </div>
           </div>
         )}
@@ -235,15 +237,15 @@ export function SequencesListPage() {
                 <div
                   key={seq.id}
                   onClick={() => navigate(`/sequences/${seq.id}`)}
-                  className="bg-white border border-gray-200 rounded-3xl p-5 shadow-2xs hover:shadow-md hover:border-brand-200 transition-all cursor-pointer flex flex-col justify-between group"
+                  className="card-executive p-5 hover:border-[#449bd5]/50 transition-all cursor-pointer flex flex-col justify-between group"
                 >
                   <div className="space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
-                        <h3 className="font-bold text-gray-900 text-sm group-hover:text-brand-600 transition-colors">
+                        <h3 className="font-bold font-heading text-[#08254f] text-sm group-hover:text-[#449bd5] transition-colors">
                           {seq.name}
                         </h3>
-                        <div className="text-[11px] text-gray-400 font-mono flex items-center gap-2">
+                        <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
                           <span>v{seq.current_version}</span>
                           <span>•</span>
                           <span>Trigger: {seq.trigger_type}</span>

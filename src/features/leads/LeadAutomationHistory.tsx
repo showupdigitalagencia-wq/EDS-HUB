@@ -251,18 +251,18 @@ export function LeadAutomationHistory({ leadId, leadName = 'Lead' }: LeadAutomat
   const completedRuns = runs.filter((r) => ['completed', 'stopped_by_condition', 'cancelled', 'failed'].includes(r.status));
 
   return (
-    <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs p-6 space-y-6">
+    <div className="card-executive p-6 space-y-6">
       {/* Header with Enroll in Sequence Button */}
-      <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600">
+          <div className="w-10 h-10 rounded-2xl bg-[#08254f] text-[#449bd5] flex items-center justify-center shadow-xs">
             <GitFork className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
+            <h2 className="text-xs font-bold font-heading uppercase tracking-wider text-[#08254f]">
               Automations & Sequences
             </h2>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-slate-500">
               {activeRuns.length} active • {completedRuns.length} historical
             </p>
           </div>
@@ -271,13 +271,13 @@ export function LeadAutomationHistory({ leadId, leadName = 'Lead' }: LeadAutomat
         <div className="flex items-center gap-2">
           <button
             onClick={loadAutomationRuns}
-            className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+            className="btn-secondary text-xs"
           >
             Refresh
           </button>
           <button
             onClick={() => setIsEnrollModalOpen(true)}
-            className="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+            className="btn-crimson text-xs"
           >
             <Plus className="w-3.5 h-3.5" />
             Enroll in Sequence
