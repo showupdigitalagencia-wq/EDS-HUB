@@ -14,6 +14,9 @@ import { FormsListPage } from './features/forms/FormsListPage';
 import { FormBuilderPage } from './features/forms/FormBuilderPage';
 import { FormSubmissionsPage } from './features/forms/FormSubmissionsPage';
 import { PublicFormPage } from './features/forms/public/PublicFormPage';
+import { AutomationsListPage } from './features/automations/AutomationsListPage';
+import { AutomationBuilderPage } from './features/automations/AutomationBuilderPage';
+import { AutomationRunsPage } from './features/automations/AutomationRunsPage';
 
 export default function App() {
   return (
@@ -86,6 +89,38 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <FormSubmissionsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/automations"
+            element={
+              <ProtectedRoute>
+                <AutomationsListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/automations/new"
+            element={
+              <ProtectedRoute>
+                <AutomationBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/automations/:id"
+            element={
+              <ProtectedRoute>
+                <AutomationBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/automations/:id/runs"
+            element={
+              <ProtectedRoute>
+                <AutomationRunsPage />
               </ProtectedRoute>
             }
           />

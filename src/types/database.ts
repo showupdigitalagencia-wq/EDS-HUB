@@ -8,7 +8,7 @@ export type MessageChannel = 'email' | 'sms' | 'call';
 export type MessageProvider = 'resend' | 'twilio';
 export type MessageStatus = 'pending' | 'sent' | 'failed';
 export type IntakeStatus = 'received' | 'processing' | 'processed' | 'failed' | 'duplicate';
-export type TaskType = 'call' | 'data_review';
+export type TaskType = 'call' | 'data_review' | 'general';
 export type TaskStatus = 'pending' | 'completed' | 'cancelled';
 export type TaskCreatedBy = 'system' | 'user';
 export type ActivityType =
@@ -30,7 +30,10 @@ export type ActivityType =
   | 'channel_skipped'
   | 'csv_status_unmapped'
   | 'qualification_status_changed'
-  | 'form_submitted';
+  | 'form_submitted'
+  | 'automation_started'
+  | 'automation_completed'
+  | 'automation_failed';
 export type ActorType = 'system' | 'user';
 export type StageChangeReason = 'initial_assignment' | 'auto_after_intake' | 'manual' | 'csv_import_stage_mapping';
 export type DomainVerificationStatus = 'unknown' | 'pending' | 'passed' | 'verified' | 'failed';
@@ -148,6 +151,8 @@ export interface OutboundMessage {
   error_code: string | null;
   error_message: string | null;
   sent_at: string | null;
+  automation_run_id?: string | null;
+  automation_run_step_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -156,6 +161,8 @@ export interface Task {
   id: string;
   lead_id: string;
   intake_event_id: string | null;
+  automation_run_id?: string | null;
+  automation_run_step_id?: string | null;
   task_type: TaskType;
   title: string;
   description: string | null;
@@ -484,4 +491,244 @@ export interface PublicFormDefinition {
   redirect_url: string | null;
   fields: PublicFormField[];
 }
+
+// =============================================================================
+// Phase 3 Block 2: Automation Engine Types
+// =============================================================================
+
+export type AutomationTriggerType =
+  | 'form_submitted'
+  | 'lead_created'
+  | 'qualification_status_changed'
+  | 'pipeline_stage_changed'
+  | 'tag_added';
+
+export type AutomationStatus = 'draft' | 'active' | 'paused' | 'archived';
+export type AutomationVersionStatus = 'draft' | 'published' | 'archived';
+export type AutomationStepType = 'condition' | 'action' | 'wait';
+
+export type AutomationActionType =
+  | 'send_email'
+  | 'send_sms'
+  | 'create_call_task'
+  | 'create_task'
+  | 'add_tag'
+  | 'remove_tag'
+  | 'move_pipeline_stage'
+  | 'update_qualification_status'
+  | 'wait'
+  | 'stop_automation';
+
+export type AutomationRunStatus =
+  | 'pending'
+  | 'running'
+  | 'waiting'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type AutomationStepRunStatus =
+  | 'pending'
+  | 'running'
+  | 'waiting'
+  | 'completed'
+  | 'skipped'
+  | 'failed'
+  | 'cancelled';
+
+export type AutomationJobStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type ConditionField =
+  | 'contact_preference'
+  | 'course_interest'
+  | 'qualification_status'
+  | 'pipeline_stage'
+  | 'source'
+  | 'source_detail'
+  | 'tag'
+  | 'email exists'
+  | 'phone exists'
+  | 'form_id';
+
+export type ConditionOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'contains'
+  | 'exists'
+  | 'not_exists'
+  | 'in';
+
+export interface ConditionRule {
+  field: ConditionField;
+  operator: ConditionOperator;
+  value?: string;
+}
+
+export interface AutomationStepConfig {
+  // Condition config
+  field?: ConditionField;
+  operator?: ConditionOperator;
+  value?: string;
+  // Send email config
+  template_type?: 'custom' | 'transactional' | 'marketing';
+  template_id?: string | null;
+  subject?: string;
+  body?: string;
+  // Send SMS config
+  message?: string;
+  // Task config
+  title?: string;
+  description?: string;
+  task_type?: TaskType;
+  // Tag config
+  tag_id?: string;
+  tag_name?: string;
+  // Stage config
+  pipeline_stage_id?: string;
+  // Qualification config
+  qualification_status?: QualificationStatus;
+  // Wait config
+  duration_value?: number;
+  duration_unit?: 'minutes' | 'hours' | 'days';
+  // Stop config
+  stop_reason?: string;
+  stop_on_qualification_status?: QualificationStatus[];
+}
+
+export interface Automation {
+  id: string;
+  name: string;
+  description: string | null;
+  trigger_type: AutomationTriggerType;
+  trigger_config: Record<string, unknown>;
+  status: AutomationStatus;
+  current_version: number;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  // Aggregated metrics
+  metrics?: {
+    enrolled: number;
+    active: number;
+    completed: number;
+    failed: number;
+  };
+}
+
+export interface AutomationVersion {
+  id: string;
+  automation_id: string;
+  version: number;
+  status: AutomationVersionStatus;
+  definition: Record<string, unknown>;
+  published_at: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationStep {
+  id: string;
+  automation_version_id: string;
+  step_order: number;
+  step_type: AutomationStepType;
+  action_type: AutomationActionType | null;
+  config: AutomationStepConfig;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationEvent {
+  id: string;
+  event_type: AutomationTriggerType;
+  lead_id: string;
+  source_table: string;
+  source_record_id: string;
+  source_event_key: string;
+  payload: Record<string, unknown>;
+  status: 'pending' | 'processing' | 'processed' | 'ignored' | 'failed';
+  error_message: string | null;
+  created_at: string;
+  processed_at: string | null;
+}
+
+export interface AutomationRun {
+  id: string;
+  automation_id: string;
+  automation_version_id: string;
+  lead_id: string;
+  trigger_event_id: string | null;
+  idempotency_key: string;
+  parent_run_id: string | null;
+  caused_by_automation_run_id: string | null;
+  automation_depth: number;
+  status: AutomationRunStatus;
+  current_step_order: number;
+  stop_reason: string | null;
+  last_error: string | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  automation?: {
+    name: string;
+    trigger_type: AutomationTriggerType;
+  };
+  lead?: {
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+    phone_raw: string | null;
+    contact_preference: ContactPreference;
+  };
+}
+
+export interface AutomationRunStep {
+  id: string;
+  automation_run_id: string;
+  automation_step_id: string | null;
+  step_order: number;
+  step_type: AutomationStepType;
+  action_type: AutomationActionType | null;
+  status: AutomationStepRunStatus;
+  skip_reason_code: string | null;
+  skip_reason_message: string | null;
+  condition_input: Record<string, unknown> | null;
+  condition_result: boolean | null;
+  input_data: Record<string, unknown>;
+  output_data: Record<string, unknown>;
+  error_code: string | null;
+  error_message: string | null;
+  provider: string | null;
+  retry_count: number;
+  scheduled_resume_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined step info
+  automation_step?: AutomationStep;
+}
+
+export interface AutomationJob {
+  id: string;
+  automation_run_id: string;
+  automation_run_step_id: string;
+  lead_id: string;
+  run_at: string;
+  status: AutomationJobStatus;
+  claimed_at: string | null;
+  claimed_by: string | null;
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 

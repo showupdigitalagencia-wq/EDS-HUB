@@ -6,6 +6,7 @@ import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import type { Lead, PipelineStage, Tag, LeadNote, Task, LeadActivity, ContactPreference, QualificationStatus } from '../../types';
 import { getQualificationStatusBadge, getQualificationStatusLabel } from './utils/qualificationMapping';
+import { LeadAutomationHistory } from './LeadAutomationHistory';
 import {
   ArrowLeft,
   Mail,
@@ -662,6 +663,9 @@ export function LeadDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Automation History Card */}
+            <LeadAutomationHistory leadId={lead.id} />
           </div>
 
           {/* Right Column: Complete Timeline (Append-Only Lead Activities) */}
