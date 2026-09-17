@@ -17,6 +17,8 @@ import { PublicFormPage } from './features/forms/public/PublicFormPage';
 import { AutomationsListPage } from './features/automations/AutomationsListPage';
 import { AutomationBuilderPage } from './features/automations/AutomationBuilderPage';
 import { AutomationRunsPage } from './features/automations/AutomationRunsPage';
+import { SequencesListPage } from './features/sequences/SequencesListPage';
+import { SequenceBuilderPage } from './features/sequences/SequenceBuilderPage';
 
 export default function App() {
   return (
@@ -118,6 +120,38 @@ export default function App() {
           />
           <Route
             path="/automations/:id/runs"
+            element={
+              <ProtectedRoute>
+                <AutomationRunsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sequences"
+            element={
+              <ProtectedRoute>
+                <SequencesListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sequences/new"
+            element={
+              <ProtectedRoute>
+                <SequenceBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sequences/:id"
+            element={
+              <ProtectedRoute>
+                <SequenceBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sequences/:id/runs"
             element={
               <ProtectedRoute>
                 <AutomationRunsPage />

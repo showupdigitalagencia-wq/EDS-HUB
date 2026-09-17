@@ -236,3 +236,172 @@ export function simulateAutomationExecution(
     steps_evaluated: results,
   };
 }
+
+export interface StopConditionCheckResult {
+  stopped: boolean;
+  matchedCondition?: {
+    type: string;
+    operator: string;
+    values?: string[];
+  };
+  reasonCode?: string;
+  reasonMessage?: string;
+}
+
+/**
+ * Evaluates sequence stop conditions against lead state.
+ * Returns true if any configured stop condition is met.
+ */
+export function evaluateStopConditions(
+  lead: LeadConditionContext,
+  stopConditions: Array<{ type: string; operator: string; values?: string[] }> = []
+): StopConditionCheckResult {
+  if (!stopConditions || stopConditions.length === 0) {
+    return { stopped: false };
+  }
+
+  for (const cond of stopConditions) {
+    if (cond.type === 'qualification_status') {
+      const current = lead.qualification_status;
+      if (current && cond.values && cond.values.includes(current)) {
+        return {
+          stopped: true,
+          matchedCondition: cond,
+          reasonCode: 'QUALIFICATION_STATUS_CHANGED',
+          reasonMessage: `Lead qualification status changed to "${current}"`,
+        };
+      }
+    } else if (cond.type === 'pipeline_stage') {
+      const currentStageId = lead.pipeline_stage_id;
+      if (currentStageId && cond.values && cond.values.includes(currentStageId)) {
+        return {
+          stopped: true,
+          matchedCondition: cond,
+          reasonCode: 'PIPELINE_STAGE_CHANGED',
+          reasonMessage: `Pipeline stage moved to "${lead.pipeline_stage_name || currentStageId}"`,
+        };
+      }
+    } else if (cond.type === 'tag') {
+      const leadTags = lead.tags || [];
+      if (cond.values && cond.values.some((v) => leadTags.includes(v))) {
+        return {
+          stopped: true,
+          matchedCondition: cond,
+          reasonCode: 'TAG_ADDED',
+          reasonMessage: `Stop tag added to lead`,
+        };
+      }
+    }
+  }
+
+  return { stopped: false };
+}
+
+export interface NextActionInfo {
+  actionType: string;
+  actionLabel: string;
+  scheduledAt: string | null;
+  isImmediate: boolean;
+  isPaused: boolean;
+}
+
+export function formatStepActionLabel(step: AutomationStep): string {
+  if (step.step_type === 'wait') {
+    const val = step.config?.duration_value || 1;
+    const unit = step.config?.duration_unit || 'days';
+    return `Wait ${val} ${unit}`;
+  }
+  if (step.step_type === 'condition') {
+    return `Check ${step.config?.field || 'condition'}`;
+  }
+  switch (step.action_type) {
+    case 'send_email':
+      return step.config?.subject ? `Send email: "${step.config.subject.slice(0, 30)}..."` : 'Send email';
+    case 'send_sms':
+      return 'Send SMS follow-up';
+    case 'create_call_task':
+      return 'Create call task';
+    case 'create_task':
+      return step.config?.title ? `Create task: "${step.config.title}"` : 'Create CRM task';
+    case 'add_tag':
+      return `Add tag: ${step.config?.tag_name || 'tag'}`;
+    case 'remove_tag':
+      return `Remove tag: ${step.config?.tag_name || 'tag'}`;
+    case 'move_pipeline_stage':
+      return 'Move pipeline stage';
+    case 'update_qualification_status':
+      return `Update status: ${step.config?.qualification_status || ''}`;
+    case 'stop_automation':
+      return 'Stop sequence';
+    default:
+      return 'Execute next step';
+  }
+}
+
+/**
+ * Computes deterministic next action from run and step definitions without duplicate state.
+ */
+export function computeNextAction(
+  runStatus: string,
+  runControlStatus: string,
+  currentStepOrder: number,
+  steps: AutomationStep[] = [],
+  pendingJob?: { run_at: string; status: string } | null
+): NextActionInfo {
+  // If run is paused
+  if (runStatus === 'paused' || runControlStatus === 'paused') {
+    return {
+      actionType: 'resume_sequence',
+      actionLabel: 'Resume sequence (Paused)',
+      scheduledAt: null,
+      isImmediate: false,
+      isPaused: true,
+    };
+  }
+
+  // If run is completed, failed, cancelled, or stopped_by_condition
+  if (['completed', 'failed', 'cancelled', 'stopped_by_condition'].includes(runStatus)) {
+    return {
+      actionType: 'none',
+      actionLabel: 'None (Concluded)',
+      scheduledAt: null,
+      isImmediate: false,
+      isPaused: false,
+    };
+  }
+
+  // Find next step to execute
+  const nextStep = steps.find((s) => s.step_order === currentStepOrder);
+
+  if (!nextStep) {
+    return {
+      actionType: 'conclude',
+      actionLabel: 'Completing sequence',
+      scheduledAt: null,
+      isImmediate: true,
+      isPaused: false,
+    };
+  }
+
+  const stepLabel = formatStepActionLabel(nextStep);
+
+  // If waiting
+  if (runStatus === 'waiting' && pendingJob) {
+    return {
+      actionType: nextStep.action_type || nextStep.step_type,
+      actionLabel: stepLabel,
+      scheduledAt: pendingJob.run_at,
+      isImmediate: false,
+      isPaused: false,
+    };
+  }
+
+  return {
+    actionType: nextStep.action_type || nextStep.step_type,
+    actionLabel: stepLabel,
+    scheduledAt: new Date().toISOString(),
+    isImmediate: true,
+    isPaused: false,
+  };
+}
+

@@ -94,6 +94,31 @@ Deno.serve(async (req) => {
     // 4. Process each claimed job
     for (const job of claimedJobs) {
       try {
+        // Verify run is still active
+        const { data: currentRun } = await db
+          .from('automation_runs')
+          .select('status, run_control_status')
+          .eq('id', job.automation_run_id)
+          .single();
+
+        if (currentRun?.status === 'paused' || currentRun?.run_control_status === 'paused') {
+          // Run is paused: reset job to pending so it waits for explicit resume
+          await db
+            .from('automation_jobs')
+            .update({ status: 'pending', claimed_at: null, claimed_by: null, updated_at: new Date().toISOString() })
+            .eq('id', job.job_id);
+          continue;
+        }
+
+        if (['cancelled', 'stopped_by_condition', 'failed', 'completed'].includes(currentRun?.status || '')) {
+          // Run concluded: cancel this job
+          await db
+            .from('automation_jobs')
+            .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+            .eq('id', job.job_id);
+          continue;
+        }
+
         // Complete the wait step run
         await db
           .from('automation_run_steps')

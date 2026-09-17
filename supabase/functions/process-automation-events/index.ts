@@ -9,6 +9,7 @@
 import { corsHeaders, corsResponse } from '../_shared/cors.ts';
 import { verifyAuth } from '../_shared/auth.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
+import { evaluateStopConditions, type LeadConditionContext } from '../_shared/automation-evaluator.ts';
 
 interface ProcessEventsPayload {
   limit?: number;
@@ -80,7 +81,96 @@ Deno.serve(async (req) => {
         .update({ status: 'processing' })
         .eq('id', event.id);
 
-      // Find active automations matching event_type
+      // 3.1 Event-time Stop Condition Check on Active Runs for this Lead
+      if (['qualification_status_changed', 'pipeline_stage_changed', 'tag_added'].includes(event.event_type)) {
+        const { data: activeRuns } = await db
+          .from('automation_runs')
+          .select('id, automation_id, automations(id, name, automation_type, stop_conditions), automation_versions(id, stop_conditions)')
+          .eq('lead_id', event.lead_id)
+          .in('status', ['pending', 'running', 'waiting', 'paused']);
+
+        if (activeRuns && activeRuns.length > 0) {
+          // Fetch fresh lead context
+          const { data: freshLead } = await db
+            .from('leads')
+            .select('*, pipeline_stages(id, code, name)')
+            .eq('id', event.lead_id)
+            .single();
+
+          const { data: leadTags } = await db
+            .from('lead_tags')
+            .select('tag_id, tags(id, name, slug)')
+            .eq('lead_id', event.lead_id);
+
+          const tagNamesOrSlugs = (leadTags || []).map((lt: { tag_id: string; tags?: { name?: string; slug?: string } }) =>
+            lt.tags?.slug || lt.tags?.name || lt.tag_id
+          );
+
+          if (freshLead) {
+            const ctx: LeadConditionContext = {
+              id: freshLead.id,
+              first_name: freshLead.first_name,
+              last_name: freshLead.last_name,
+              email: freshLead.email,
+              phone_raw: freshLead.phone_raw,
+              phone_e164: freshLead.phone_e164,
+              contact_preference: freshLead.contact_preference,
+              course_interest: freshLead.course_interest,
+              course_interests: freshLead.course_interests,
+              qualification_status: freshLead.qualification_status,
+              pipeline_stage_id: freshLead.pipeline_stage_id,
+              pipeline_stage_code: (freshLead.pipeline_stages as { code?: string })?.code,
+              pipeline_stage_name: (freshLead.pipeline_stages as { name?: string })?.name,
+              source: freshLead.source,
+              source_detail: freshLead.source_detail,
+              tags: tagNamesOrSlugs,
+            };
+
+            for (const r of activeRuns) {
+              const rawConds = (r.automations as any)?.stop_conditions || (r.automation_versions as any)?.stop_conditions || [];
+              const stopConds = Array.isArray(rawConds) ? rawConds : [];
+              const stopCheck = evaluateStopConditions(ctx, stopConds);
+
+              if (stopCheck.stopped) {
+                // Cancel pending jobs
+                await db
+                  .from('automation_jobs')
+                  .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+                  .eq('automation_run_id', r.id)
+                  .in('status', ['pending', 'processing']);
+
+                // Mark run as stopped_by_condition
+                await db
+                  .from('automation_runs')
+                  .update({
+                    status: 'stopped_by_condition',
+                    run_control_status: 'stopped',
+                    stop_reason: stopCheck.reasonMessage,
+                    stop_reason_code: stopCheck.reasonCode,
+                    stop_reason_message: stopCheck.reasonMessage,
+                    completed_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', r.id);
+
+                await db.from('lead_activities').insert({
+                  lead_id: freshLead.id,
+                  automation_run_id: r.id,
+                  activity_type: (r.automations as any)?.automation_type === 'sequence' ? 'sequence_stopped' : 'automation_completed',
+                  actor_type: 'system',
+                  summary: `Sequence stopped: ${(r.automations as any)?.name || 'Sequence'} (${stopCheck.reasonMessage})`,
+                  metadata: {
+                    stop_reason_code: stopCheck.reasonCode,
+                    stop_reason_message: stopCheck.reasonMessage,
+                  },
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // 3.2 Find active automations matching trigger event_type
       const { data: automations } = await db
         .from('automations')
         .select('*, automation_versions(id, version, status)')
@@ -90,12 +180,26 @@ Deno.serve(async (req) => {
       if (!automations || automations.length === 0) {
         await db
           .from('automation_events')
-          .update({ status: 'ignored', processed_at: new Date().toISOString() })
+          .update({ status: 'processed', processed_at: new Date().toISOString() })
           .eq('id', event.id);
         continue;
       }
 
       for (const auto of automations) {
+        // Guard against duplicate active enrollment
+        const { data: existingActive } = await db
+          .from('automation_runs')
+          .select('id')
+          .eq('automation_id', auto.id)
+          .eq('lead_id', event.lead_id)
+          .in('status', ['pending', 'running', 'waiting', 'paused'])
+          .maybeSingle();
+
+        if (existingActive) {
+          // Already actively enrolled in this automation/sequence
+          continue;
+        }
+
         // Evaluate trigger_config filters
         const trigCfg = auto.trigger_config || {};
         let matchesFilter = true;

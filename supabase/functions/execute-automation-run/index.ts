@@ -15,6 +15,7 @@ import { resolveSalutation } from '../_shared/salutation.ts';
 import {
   evaluateCondition,
   checkContactPreference,
+  evaluateStopConditions,
   MAX_AUTOMATION_DEPTH,
   type LeadConditionContext,
 } from '../_shared/automation-evaluator.ts';
@@ -55,7 +56,7 @@ Deno.serve(async (req) => {
     // 2. Fetch run with version and automation
     const { data: run, error: runErr } = await db
       .from('automation_runs')
-      .select('*, automations(id, name, trigger_type), automation_versions(id, version, status, definition)')
+      .select('*, automations(id, name, trigger_type, automation_type, stop_conditions), automation_versions(id, version, status, definition, stop_conditions)')
       .eq('id', runId)
       .single();
 
@@ -66,8 +67,16 @@ Deno.serve(async (req) => {
       );
     }
 
-    // If run already finished or cancelled, no-op
-    if (run.status === 'completed' || run.status === 'cancelled' || run.status === 'failed') {
+    // Explicit Run Pause Guard
+    if (run.status === 'paused' || run.run_control_status === 'paused') {
+      return new Response(
+        JSON.stringify({ success: true, message: 'Run is paused. No steps executed.', run_id: runId, is_paused: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // If run already finished, stopped or cancelled, no-op
+    if (run.status === 'completed' || run.status === 'cancelled' || run.status === 'failed' || run.status === 'stopped_by_condition') {
       return new Response(
         JSON.stringify({ success: true, message: `Run is already ${run.status}`, run_id: runId }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -154,6 +163,55 @@ Deno.serve(async (req) => {
       tags: tagNamesOrSlugs,
     };
 
+    // Stop conditions check at execution time
+    const rawStopConds = run.automations?.stop_conditions || run.automation_versions?.stop_conditions || [];
+    const stopConditions = Array.isArray(rawStopConds) ? rawStopConds : [];
+    const initialStopCheck = evaluateStopConditions(leadContext, stopConditions);
+
+    if (initialStopCheck.stopped) {
+      await db
+        .from('automation_jobs')
+        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+        .eq('automation_run_id', runId)
+        .in('status', ['pending', 'processing']);
+
+      await db
+        .from('automation_runs')
+        .update({
+          status: 'stopped_by_condition',
+          run_control_status: 'stopped',
+          stop_reason: initialStopCheck.reasonMessage,
+          stop_reason_code: initialStopCheck.reasonCode,
+          stop_reason_message: initialStopCheck.reasonMessage,
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', runId);
+
+      await db.from('lead_activities').insert({
+        lead_id: lead.id,
+        automation_run_id: runId,
+        activity_type: run.automations?.automation_type === 'sequence' ? 'sequence_stopped' : 'automation_completed',
+        actor_type: 'system',
+        summary: `Sequence stopped: ${run.automations?.name || 'Sequence'} (${initialStopCheck.reasonMessage})`,
+        metadata: {
+          stop_reason_code: initialStopCheck.reasonCode,
+          stop_reason_message: initialStopCheck.reasonMessage,
+        },
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          status: 'stopped_by_condition',
+          stop_reason_code: initialStopCheck.reasonCode,
+          message: initialStopCheck.reasonMessage,
+          run_id: runId,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // 5. Fetch steps for this version
     const { data: steps, error: stepsErr } = await db
       .from('automation_steps')
@@ -182,11 +240,12 @@ Deno.serve(async (req) => {
       await db.from('lead_activities').insert({
         lead_id: lead.id,
         automation_run_id: runId,
-        activity_type: 'automation_started',
+        activity_type: run.automations?.automation_type === 'sequence' ? 'sequence_started' : 'automation_started',
         actor_type: 'system',
-        summary: `Automation started: ${run.automations?.name || 'Automation'} (v${run.automation_versions?.version || 1})`,
+        summary: `${run.automations?.automation_type === 'sequence' ? 'Sequence' : 'Automation'} started: ${run.automations?.name || 'Automation'} (v${run.automation_versions?.version || 1})`,
         metadata: {
           automation_id: run.automation_id,
+          automation_type: run.automations?.automation_type || 'workflow',
           version: run.automation_versions?.version,
           trigger_type: run.automations?.trigger_type,
         },
@@ -207,14 +266,69 @@ Deno.serve(async (req) => {
         continue; // Already processed
       }
 
-      // Re-check stop conditions before each step
+      // Re-fetch latest lead state to ensure execution-time freshness
+      const { data: freshLead } = await db
+        .from('leads')
+        .select('*, pipeline_stages(id, code, name)')
+        .eq('id', run.lead_id)
+        .single();
+
+      if (freshLead) {
+        leadContext.qualification_status = freshLead.qualification_status;
+        leadContext.pipeline_stage_id = freshLead.pipeline_stage_id;
+        leadContext.pipeline_stage_code = (freshLead.pipeline_stages as { code?: string })?.code;
+        leadContext.pipeline_stage_name = (freshLead.pipeline_stages as { name?: string })?.name;
+      }
+
+      // Re-check stop conditions before each step (execution time)
+      const stepStopCheck = evaluateStopConditions(leadContext, stopConditions);
+      if (stepStopCheck.stopped) {
+        await db
+          .from('automation_jobs')
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .eq('automation_run_id', runId)
+          .in('status', ['pending', 'processing']);
+
+        await db
+          .from('automation_runs')
+          .update({
+            status: 'stopped_by_condition',
+            run_control_status: 'stopped',
+            stop_reason: stepStopCheck.reasonMessage,
+            stop_reason_code: stepStopCheck.reasonCode,
+            stop_reason_message: stepStopCheck.reasonMessage,
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', runId);
+
+        await db.from('lead_activities').insert({
+          lead_id: lead.id,
+          automation_run_id: runId,
+          activity_type: run.automations?.automation_type === 'sequence' ? 'sequence_stopped' : 'automation_completed',
+          actor_type: 'system',
+          summary: `Sequence stopped: ${run.automations?.name || 'Sequence'} (${stepStopCheck.reasonMessage})`,
+          metadata: {
+            stop_reason_code: stepStopCheck.reasonCode,
+            stop_reason_message: stepStopCheck.reasonMessage,
+          },
+        });
+
+        runTerminated = true;
+        break;
+      }
+
+      // Legacy step-level stop check
       if (step.config?.stop_on_qualification_status && Array.isArray(step.config.stop_on_qualification_status)) {
-        if (lead.qualification_status && step.config.stop_on_qualification_status.includes(lead.qualification_status)) {
+        if (leadContext.qualification_status && step.config.stop_on_qualification_status.includes(leadContext.qualification_status as any)) {
           await db
             .from('automation_runs')
             .update({
-              status: 'completed',
-              stop_reason: `Qualification status changed to "${lead.qualification_status}"`,
+              status: 'stopped_by_condition',
+              run_control_status: 'stopped',
+              stop_reason: `Qualification status changed to "${leadContext.qualification_status}"`,
+              stop_reason_code: 'QUALIFICATION_STATUS_CHANGED',
+              stop_reason_message: `Qualification status changed to "${leadContext.qualification_status}"`,
               completed_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
@@ -250,7 +364,7 @@ Deno.serve(async (req) => {
         });
 
         if (!evalResult.matched) {
-          // If condition fails, we conclude this run branch cleanly
+          // If condition fails, conclude cleanly
           await db
             .from('automation_runs')
             .update({
@@ -364,7 +478,7 @@ Deno.serve(async (req) => {
             step_type: 'action',
             action_type: 'stop_automation',
             status: 'completed',
-            input_data: { stop_reason: step.config?.stop_reason || 'Stopped by workflow action' },
+            input_data: { stop_reason: step.config?.stop_reason || 'Stopped by sequence action' },
             started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(),
           });
@@ -373,7 +487,7 @@ Deno.serve(async (req) => {
             .from('automation_runs')
             .update({
               status: 'completed',
-              stop_reason: step.config?.stop_reason || 'Workflow stop action executed',
+              stop_reason: step.config?.stop_reason || 'Sequence stop action executed',
               completed_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
@@ -401,7 +515,7 @@ Deno.serve(async (req) => {
 
         const stepRunId = stepRun?.id;
 
-        // 4. Action Idempotency & Provider Execution
+        // 4. Action Idempotency, Provider Reconciliation & Execution
         try {
           if (action === 'send_email') {
             const recipient = lead.email ? lead.email.trim().toLowerCase() : '';
@@ -409,21 +523,21 @@ Deno.serve(async (req) => {
               throw new Error('Lead has no valid email address');
             }
 
-            // Check if already sent
+            // Check if already sent or accepted by provider (reconciliation)
             const actionIdempotencyKey = `auto_msg:${runId}:${step.step_order}:email`;
             const { data: existingMsg } = await db
               .from('outbound_messages')
-              .select('id, status')
-              .eq('idempotency_key', actionIdempotencyKey)
-              .single();
+              .select('id, status, provider_message_id')
+              .or(`automation_run_step_id.eq.${stepRunId},idempotency_key.eq.${actionIdempotencyKey}`)
+              .maybeSingle();
 
-            if (existingMsg?.status === 'sent') {
-              // Idempotent: already sent
+            if (existingMsg && (existingMsg.status === 'sent' || existingMsg.provider_message_id)) {
+              // Reconciled with provider: do NOT resend
               await db
                 .from('automation_run_steps')
                 .update({
                   status: 'completed',
-                  output_data: { note: 'Already sent (idempotent)', message_id: existingMsg.id },
+                  output_data: { note: 'Already sent / reconciled with provider', message_id: existingMsg.id, provider_message_id: existingMsg.provider_message_id },
                   completed_at: new Date().toISOString(),
                 })
                 .eq('id', stepRunId);
@@ -462,7 +576,7 @@ Deno.serve(async (req) => {
                 attempt_count: 1,
                 sent_at: new Date().toISOString(),
                 automation_run_id: runId,
-                automation_step_run_id: stepRunId,
+                automation_run_step_id: stepRunId,
               });
 
               await db
@@ -481,20 +595,21 @@ Deno.serve(async (req) => {
               throw new Error('Lead has no valid phone number');
             }
 
+            // Check if already sent or accepted by provider (reconciliation)
             const actionIdempotencyKey = `auto_msg:${runId}:${step.step_order}:sms`;
             const { data: existingSms } = await db
               .from('outbound_messages')
-              .select('id, status')
-              .eq('idempotency_key', actionIdempotencyKey)
-              .single();
+              .select('id, status, provider_message_id')
+              .or(`automation_run_step_id.eq.${stepRunId},idempotency_key.eq.${actionIdempotencyKey}`)
+              .maybeSingle();
 
-            if (existingSms?.status === 'sent') {
-              // Idempotent: already sent
+            if (existingSms && (existingSms.status === 'sent' || existingSms.provider_message_id)) {
+              // Reconciled with provider: do NOT resend
               await db
                 .from('automation_run_steps')
                 .update({
                   status: 'completed',
-                  output_data: { note: 'Already sent (idempotent)', message_id: existingSms.id },
+                  output_data: { note: 'Already sent / reconciled with provider', message_id: existingSms.id, provider_message_id: existingSms.provider_message_id },
                   completed_at: new Date().toISOString(),
                 })
                 .eq('id', stepRunId);
@@ -526,7 +641,7 @@ Deno.serve(async (req) => {
                 attempt_count: 1,
                 sent_at: new Date().toISOString(),
                 automation_run_id: runId,
-                automation_step_run_id: stepRunId,
+                automation_run_step_id: stepRunId,
               });
 
               await db
@@ -542,14 +657,13 @@ Deno.serve(async (req) => {
           } else if (action === 'create_call_task' || action === 'create_task') {
             const taskType = action === 'create_call_task' ? 'call' : (step.config?.task_type || 'general');
             const title = step.config?.title || (action === 'create_call_task' ? 'Call Lead' : 'CRM Follow-up');
-            const description = step.config?.description || `Created by automation ${run.automations?.name || ''}`;
+            const description = step.config?.description || `Created by ${run.automations?.name || 'Sequence'}`;
 
             // Check if task already exists for this step run
             const { data: existingTask } = await db
               .from('tasks')
               .select('id')
-              .eq('automation_run_id', runId)
-              .eq('automation_step_run_id', stepRunId)
+              .or(`automation_run_step_id.eq.${stepRunId},and(automation_run_id.eq.${runId},task_type.eq.${taskType})`)
               .maybeSingle();
 
             if (!existingTask) {
@@ -563,7 +677,7 @@ Deno.serve(async (req) => {
                   status: 'pending',
                   created_by: 'system',
                   automation_run_id: runId,
-                  automation_step_run_id: stepRunId,
+                  automation_run_step_id: stepRunId,
                 })
                 .select('id')
                 .single();

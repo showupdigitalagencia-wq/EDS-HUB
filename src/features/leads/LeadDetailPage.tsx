@@ -665,7 +665,10 @@ export function LeadDetailPage() {
             </div>
 
             {/* Automation History Card */}
-            <LeadAutomationHistory leadId={lead.id} />
+            <LeadAutomationHistory
+              leadId={lead.id}
+              leadName={`${lead.first_name || ''} ${lead.last_name || ''}`.trim() || (lead.email ?? undefined)}
+            />
           </div>
 
           {/* Right Column: Complete Timeline (Append-Only Lead Activities) */}

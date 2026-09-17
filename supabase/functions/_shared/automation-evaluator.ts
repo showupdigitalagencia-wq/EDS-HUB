@@ -189,3 +189,60 @@ export function checkContactPreference(
 
   return { allowed: true };
 }
+
+export interface StopConditionCheckResult {
+  stopped: boolean;
+  matchedCondition?: {
+    type: string;
+    operator: string;
+    values?: string[];
+  };
+  reasonCode?: string;
+  reasonMessage?: string;
+}
+
+export function evaluateStopConditions(
+  lead: LeadConditionContext,
+  stopConditions: Array<{ type: string; operator: string; values?: string[] }> = []
+): StopConditionCheckResult {
+  if (!stopConditions || stopConditions.length === 0) {
+    return { stopped: false };
+  }
+
+  for (const cond of stopConditions) {
+    if (cond.type === 'qualification_status') {
+      const current = lead.qualification_status;
+      if (current && cond.values && cond.values.includes(current)) {
+        return {
+          stopped: true,
+          matchedCondition: cond,
+          reasonCode: 'QUALIFICATION_STATUS_CHANGED',
+          reasonMessage: `Lead qualification status changed to "${current}"`,
+        };
+      }
+    } else if (cond.type === 'pipeline_stage') {
+      const currentStageId = lead.pipeline_stage_id;
+      if (currentStageId && cond.values && cond.values.includes(currentStageId)) {
+        return {
+          stopped: true,
+          matchedCondition: cond,
+          reasonCode: 'PIPELINE_STAGE_CHANGED',
+          reasonMessage: `Pipeline stage moved to "${lead.pipeline_stage_name || currentStageId}"`,
+        };
+      }
+    } else if (cond.type === 'tag') {
+      const leadTags = lead.tags || [];
+      if (cond.values && cond.values.some((v) => leadTags.includes(v))) {
+        return {
+          stopped: true,
+          matchedCondition: cond,
+          reasonCode: 'TAG_ADDED',
+          reasonMessage: `Stop tag added to lead`,
+        };
+      }
+    }
+  }
+
+  return { stopped: false };
+}
+

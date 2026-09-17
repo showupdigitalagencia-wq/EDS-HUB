@@ -33,7 +33,11 @@ export type ActivityType =
   | 'form_submitted'
   | 'automation_started'
   | 'automation_completed'
-  | 'automation_failed';
+  | 'automation_failed'
+  | 'sequence_started'
+  | 'sequence_completed'
+  | 'sequence_failed'
+  | 'sequence_stopped';
 export type ActorType = 'system' | 'user';
 export type StageChangeReason = 'initial_assignment' | 'auto_after_intake' | 'manual' | 'csv_import_stage_mapping';
 export type DomainVerificationStatus = 'unknown' | 'pending' | 'passed' | 'verified' | 'failed';
@@ -501,11 +505,14 @@ export type AutomationTriggerType =
   | 'lead_created'
   | 'qualification_status_changed'
   | 'pipeline_stage_changed'
-  | 'tag_added';
+  | 'tag_added'
+  | 'manual_enrollment';
 
+export type AutomationType = 'workflow' | 'sequence';
 export type AutomationStatus = 'draft' | 'active' | 'paused' | 'archived';
 export type AutomationVersionStatus = 'draft' | 'published' | 'archived';
 export type AutomationStepType = 'condition' | 'action' | 'wait';
+export type RunControlStatus = 'active' | 'paused' | 'stopped';
 
 export type AutomationActionType =
   | 'send_email'
@@ -523,9 +530,11 @@ export type AutomationRunStatus =
   | 'pending'
   | 'running'
   | 'waiting'
+  | 'paused'
   | 'completed'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'stopped_by_condition';
 
 export type AutomationStepRunStatus =
   | 'pending'
@@ -600,13 +609,22 @@ export interface AutomationStepConfig {
   stop_on_qualification_status?: QualificationStatus[];
 }
 
+export interface SequenceStopCondition {
+  type: 'qualification_status' | 'pipeline_stage' | 'tag';
+  operator: 'in' | 'equals' | 'not_in';
+  values: string[];
+}
+
 export interface Automation {
   id: string;
   name: string;
   description: string | null;
+  automation_type: AutomationType;
   trigger_type: AutomationTriggerType;
   trigger_config: Record<string, unknown>;
   status: AutomationStatus;
+  stop_conditions: SequenceStopCondition[];
+  enrollment_rules: Record<string, unknown>;
   current_version: number;
   created_by_user_id: string | null;
   created_at: string;
@@ -626,6 +644,7 @@ export interface AutomationVersion {
   version: number;
   status: AutomationVersionStatus;
   definition: Record<string, unknown>;
+  stop_conditions?: SequenceStopCondition[];
   published_at: string | null;
   created_by_user_id: string | null;
   created_at: string;
@@ -668,8 +687,11 @@ export interface AutomationRun {
   caused_by_automation_run_id: string | null;
   automation_depth: number;
   status: AutomationRunStatus;
+  run_control_status: RunControlStatus;
   current_step_order: number;
   stop_reason: string | null;
+  stop_reason_code: string | null;
+  stop_reason_message: string | null;
   last_error: string | null;
   started_at: string;
   completed_at: string | null;
@@ -679,6 +701,7 @@ export interface AutomationRun {
   automation?: {
     name: string;
     trigger_type: AutomationTriggerType;
+    automation_type?: AutomationType;
   };
   lead?: {
     first_name: string | null;
@@ -730,5 +753,27 @@ export interface AutomationJob {
   created_at: string;
   updated_at: string;
 }
+
+export interface SequenceMetrics {
+  active_runs: number;
+  waiting_runs: number;
+  paused_runs: number;
+  completed_runs: number;
+  failed_runs: number;
+  stopped_by_condition_runs: number;
+  emails_sent: number;
+  sms_sent: number;
+  tasks_created: number;
+  actions_skipped: number;
+}
+
+export interface NextActionInfo {
+  actionType: string;
+  actionLabel: string;
+  scheduledAt: string | null;
+  isImmediate: boolean;
+  isPaused: boolean;
+}
+
 
 

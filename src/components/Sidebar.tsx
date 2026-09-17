@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   ClipboardList,
   Workflow,
+  GitFork,
 } from 'lucide-react';
 
 const navigation = [
@@ -19,6 +20,7 @@ const navigation = [
   { name: 'Pipeline', href: '/pipeline', icon: Kanban },
   { name: 'Forms', href: '/forms', icon: ClipboardList },
   { name: 'Automations', href: '/automations', icon: Workflow },
+  { name: 'Sequences', href: '/sequences', icon: GitFork },
   { name: 'Campaigns', href: '/campaigns', icon: Mail },
   { name: 'Templates', href: '/templates', icon: FileText },
   { name: 'System Setup', href: '/settings', icon: Settings },
