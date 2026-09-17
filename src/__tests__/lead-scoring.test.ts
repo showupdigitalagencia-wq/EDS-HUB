@@ -37,6 +37,11 @@ import {
   deriveScoreLabel,
   validateScoreSettings,
   DEFAULT_SCORE_SETTINGS,
+  CANONICAL_SOURCES,
+  CANONICAL_PIPELINE_STAGE_CODES,
+  CANONICAL_QUALIFICATION_STATUSES,
+  CANONICAL_CONTACT_PREFERENCES,
+  validateRuleCanonical,
 } from '../features/scoring/engine/score-evaluator';
 import { evaluateCondition } from '../features/automations/engine/condition-evaluator';
 import type {
@@ -832,6 +837,351 @@ describe('PHASE 4 — BLOCK 1: LEAD SCORING FOUNDATION', () => {
       expect(checkRpcExecution('anon', 'start_lead_score_recalculation_job').executable).toBe(false);
       expect(checkRpcExecution('anon', 'process_lead_score_recalculation_batch').executable).toBe(false);
       expect(checkRpcExecution('service_role', 'process_lead_score_recalculation_batch').executable).toBe(true);
+    });
+  });
+
+  // ===========================================================================
+  // SECTION 8: CANONICAL SCHEMA COMPLIANCE & VALIDATION (Scenarios 28-34)
+  // ===========================================================================
+  describe('8. Canonical Schema Compliance & Validation', () => {
+    const DEFAULT_SEED_RULES: LeadScoreRule[] = [
+      {
+        id: 'def-1',
+        name: 'Course Interest Declared',
+        category: 'fit',
+        field_or_event: 'course_interest',
+        operator: 'exists',
+        value: '',
+        points: 10,
+        sort_order: 10,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'def-2',
+        name: 'Phone Number Available',
+        category: 'fit',
+        field_or_event: 'phone_exists',
+        operator: 'exists',
+        value: '',
+        points: 10,
+        sort_order: 20,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'def-3',
+        name: 'Email Address Available',
+        category: 'fit',
+        field_or_event: 'email_exists',
+        operator: 'exists',
+        value: '',
+        points: 5,
+        sort_order: 30,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'def-4',
+        name: 'Contact Preference Chosen',
+        category: 'fit',
+        field_or_event: 'contact_preference',
+        operator: 'exists',
+        value: '',
+        points: 5,
+        sort_order: 40,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'def-5',
+        name: 'Direct Form Ingestion',
+        category: 'fit',
+        field_or_event: 'source',
+        operator: 'equals',
+        value: 'form',
+        points: 10,
+        sort_order: 50,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'def-6',
+        name: 'Confirmed Registration Status',
+        category: 'intent',
+        field_or_event: 'qualification_status',
+        operator: 'equals',
+        value: 'confirmed',
+        points: 40,
+        sort_order: 100,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'def-7',
+        name: 'Hot Qualification Status',
+        category: 'intent',
+        field_or_event: 'qualification_status',
+        operator: 'equals',
+        value: 'hot',
+        points: 30,
+        sort_order: 110,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'def-8',
+        name: 'Interested Qualification Status',
+        category: 'intent',
+        field_or_event: 'qualification_status',
+        operator: 'equals',
+        value: 'interested',
+        points: 20,
+        sort_order: 120,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'def-9',
+        name: 'Pipeline: Qualification Stage',
+        category: 'intent',
+        field_or_event: 'pipeline_stage',
+        operator: 'equals',
+        value: 'qualification',
+        points: 10,
+        sort_order: 145,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'def-10',
+        name: 'Pipeline: Acquisition Stage',
+        category: 'intent',
+        field_or_event: 'pipeline_stage',
+        operator: 'equals',
+        value: 'acquisition',
+        points: 20,
+        sort_order: 150,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'def-11',
+        name: 'Pipeline: Approval Stage',
+        category: 'intent',
+        field_or_event: 'pipeline_stage',
+        operator: 'equals',
+        value: 'approval',
+        points: 25,
+        sort_order: 155,
+        is_active: true,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    it('1. default rules reference only valid sources', () => {
+      const sourceRules = DEFAULT_SEED_RULES.filter((r) => r.field_or_event === 'source');
+      for (const rule of sourceRules) {
+        if (rule.operator === 'equals' || rule.operator === 'not_equals') {
+          expect(CANONICAL_SOURCES).toContain(rule.value);
+        }
+      }
+      // Explicitly check that 'referral' is never present in default rules
+      const hasReferral = DEFAULT_SEED_RULES.some(
+        (r) => r.field_or_event === 'source' && String(r.value).toLowerCase() === 'referral'
+      );
+      expect(hasReferral).toBe(false);
+    });
+
+    it('2. default rules reference only existing pipeline stage codes', () => {
+      const pipelineRules = DEFAULT_SEED_RULES.filter((r) => r.field_or_event === 'pipeline_stage');
+      for (const rule of pipelineRules) {
+        if (rule.operator === 'equals' || rule.operator === 'not_equals') {
+          expect(CANONICAL_PIPELINE_STAGE_CODES).toContain(rule.value);
+        }
+      }
+      // Confirm that non-canonical stages like 'meeting_scheduled' or 'negotiation' are absent
+      const hasInvalidStages = DEFAULT_SEED_RULES.some(
+        (r) =>
+          r.field_or_event === 'pipeline_stage' &&
+          ['meeting_scheduled', 'negotiation'].includes(String(r.value).toLowerCase())
+      );
+      expect(hasInvalidStages).toBe(false);
+    });
+
+    it('3. invalid pipeline stage cannot be saved as scoring rule value', () => {
+      const invalidRule = {
+        field_or_event: 'pipeline_stage',
+        operator: 'equals',
+        value: 'meeting_scheduled',
+      };
+      const validation = validateRuleCanonical(invalidRule);
+      expect(validation.valid).toBe(false);
+      expect(validation.error).toContain('Invalid pipeline stage');
+
+      const invalidInListRule = {
+        field_or_event: 'pipeline_stage',
+        operator: 'in',
+        value: ['qualification', 'arbitrary_stage'],
+      };
+      const validation2 = validateRuleCanonical(invalidInListRule);
+      expect(validation2.valid).toBe(false);
+      expect(validation2.error).toContain('Invalid pipeline stage');
+    });
+
+    it('4. invalid canonical source cannot be saved', () => {
+      const invalidSourceRule = {
+        field_or_event: 'source',
+        operator: 'equals',
+        value: 'referral',
+      };
+      const validation = validateRuleCanonical(invalidSourceRule);
+      expect(validation.valid).toBe(false);
+      expect(validation.error).toContain('Invalid source');
+
+      const validSourceRule = {
+        field_or_event: 'source',
+        operator: 'equals',
+        value: 'google',
+      };
+      expect(validateRuleCanonical(validSourceRule).valid).toBe(true);
+    });
+
+    it('5. qualification_status rule only accepts canonical values', () => {
+      const invalidStatusRule = {
+        field_or_event: 'qualification_status',
+        operator: 'equals',
+        value: 'unqualified', // not in canonical enum ('no_response', 'some_response', 'interested', 'hot', 'confirmed')
+      };
+      const validation = validateRuleCanonical(invalidStatusRule);
+      expect(validation.valid).toBe(false);
+      expect(validation.error).toContain('Invalid qualification status');
+
+      const validStatusRule = {
+        field_or_event: 'qualification_status',
+        operator: 'equals',
+        value: 'hot',
+      };
+      expect(CANONICAL_QUALIFICATION_STATUSES).toContain(validStatusRule.value);
+      expect(validateRuleCanonical(validStatusRule).valid).toBe(true);
+    });
+
+    it('6. contact_preference rule only accepts email/sms/call', () => {
+      const invalidPrefRule = {
+        field_or_event: 'contact_preference',
+        operator: 'equals',
+        value: 'whatsapp', // canonical is email, sms, call
+      };
+      const validation = validateRuleCanonical(invalidPrefRule);
+      expect(validation.valid).toBe(false);
+      expect(validation.error).toContain('Invalid contact preference');
+
+      const validPrefRule = {
+        field_or_event: 'contact_preference',
+        operator: 'equals',
+        value: 'sms',
+      };
+      expect(CANONICAL_CONTACT_PREFERENCES).toContain(validPrefRule.value);
+      expect(validateRuleCanonical(validPrefRule).valid).toBe(true);
+    });
+
+    it('7. score evaluator matches canonical pipeline stages correctly', () => {
+      // Test all 7 canonical stages against stage rules
+      const stagesToTest = [
+        'capture',
+        'qualification',
+        'acquisition',
+        'approval',
+        'enrollment',
+        'post_course',
+        'alumni',
+      ];
+
+      const stageRules: LeadScoreRule[] = [
+        {
+          id: 'rule-qual',
+          name: 'Stage Qualification',
+          category: 'intent',
+          field_or_event: 'pipeline_stage',
+          operator: 'equals',
+          value: 'qualification',
+          points: 10,
+          sort_order: 1,
+          is_active: true,
+          description: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        {
+          id: 'rule-acq',
+          name: 'Stage Acquisition',
+          category: 'intent',
+          field_or_event: 'pipeline_stage',
+          operator: 'equals',
+          value: 'acquisition',
+          points: 20,
+          sort_order: 2,
+          is_active: true,
+          description: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        {
+          id: 'rule-appr',
+          name: 'Stage Approval',
+          category: 'intent',
+          field_or_event: 'pipeline_stage',
+          operator: 'equals',
+          value: 'approval',
+          points: 25,
+          sort_order: 3,
+          is_active: true,
+          description: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ];
+
+      for (const stageCode of stagesToTest) {
+        const lead = createMockLead();
+        const res = calculateScore({ lead, pipelineStageCode: stageCode }, stageRules);
+
+        if (stageCode === 'qualification') {
+          expect(res.intent_subtotal).toBe(10);
+          expect(res.matched_rules.map((r) => r.name)).toContain('Stage Qualification');
+        } else if (stageCode === 'acquisition') {
+          expect(res.intent_subtotal).toBe(20);
+          expect(res.matched_rules.map((r) => r.name)).toContain('Stage Acquisition');
+        } else if (stageCode === 'approval') {
+          expect(res.intent_subtotal).toBe(25);
+          expect(res.matched_rules.map((r) => r.name)).toContain('Stage Approval');
+        } else {
+          // capture, enrollment, post_course, alumni: no points from these 3 rules
+          expect(res.intent_subtotal).toBe(0);
+        }
+      }
     });
   });
 });

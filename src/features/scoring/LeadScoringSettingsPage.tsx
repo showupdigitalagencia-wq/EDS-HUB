@@ -18,6 +18,11 @@ import { TestScoreModal } from './TestScoreModal';
 import {
   DEFAULT_SCORE_SETTINGS,
   validateScoreSettings,
+  CANONICAL_SOURCES,
+  CANONICAL_QUALIFICATION_STATUSES,
+  CANONICAL_CONTACT_PREFERENCES,
+  CANONICAL_PIPELINE_STAGES,
+  validateRuleCanonical,
 } from './engine/score-evaluator';
 import type {
   LeadScoreRule,
@@ -182,13 +187,59 @@ export function LeadScoringSettingsPage() {
     }
   };
 
+  const handleFieldChange = (newField: string) => {
+    setRuleField(newField);
+    switch (newField) {
+      case 'pipeline_stage':
+        setRuleOperator('equals');
+        setRuleValue('qualification');
+        break;
+      case 'source':
+        setRuleOperator('equals');
+        setRuleValue('form');
+        break;
+      case 'qualification_status':
+        setRuleOperator('equals');
+        setRuleValue('interested');
+        break;
+      case 'contact_preference':
+        setRuleOperator('equals');
+        setRuleValue('email');
+        break;
+      case 'phone_exists':
+      case 'email_exists':
+      case 'last_response_at':
+        setRuleOperator('exists');
+        setRuleValue('');
+        break;
+      case 'days_since_last_activity':
+        setRuleOperator('less_or_equal');
+        setRuleValue('7');
+        break;
+      case 'days_since_last_response':
+        setRuleOperator('greater_than');
+        setRuleValue('14');
+        break;
+      case 'inbound_message_count':
+        setRuleOperator('greater_or_equal');
+        setRuleValue('1');
+        break;
+      case 'course_interest':
+        setRuleOperator('exists');
+        setRuleValue('');
+        break;
+      default:
+        setRuleValue('');
+    }
+  };
+
   const handleOpenNewRule = () => {
     setEditingRule(null);
     setRuleName('');
-    setRuleCategory('fit');
-    setRuleField('qualification_status');
+    setRuleCategory('intent');
+    setRuleField('pipeline_stage');
     setRuleOperator('equals');
-    setRuleValue('');
+    setRuleValue('qualification');
     setRulePoints(10);
     setRuleDescription('');
     setRuleActive(true);
@@ -225,6 +276,18 @@ export function LeadScoringSettingsPage() {
         } catch {
           // fallback string
         }
+      }
+
+      // Enforce canonical schema validation
+      const validation = validateRuleCanonical({
+        field_or_event: ruleField,
+        operator: ruleOperator,
+        value: parsedValue,
+      });
+      if (!validation.valid) {
+        alert(validation.error || 'Invalid rule configuration.');
+        setIsSavingRule(false);
+        return;
       }
 
       if (editingRule) {
@@ -733,14 +796,14 @@ export function LeadScoringSettingsPage() {
                     <label className="font-semibold text-gray-700 block mb-1">Field / Signal</label>
                     <select
                       value={ruleField}
-                      onChange={(e) => setRuleField(e.target.value)}
+                      onChange={(e) => handleFieldChange(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white"
                     >
-                      <option value="qualification_status">Qualification Status</option>
-                      <option value="pipeline_stage">Pipeline Stage</option>
-                      <option value="source">Lead Source</option>
+                      <option value="pipeline_stage">Pipeline Stage (Canonical)</option>
+                      <option value="qualification_status">Qualification Status (Canonical)</option>
+                      <option value="source">Lead Source (Canonical)</option>
+                      <option value="contact_preference">Contact Preference (Canonical)</option>
                       <option value="course_interest">Course Interest</option>
-                      <option value="contact_preference">Contact Preference</option>
                       <option value="phone_exists">Phone Available</option>
                       <option value="email_exists">Email Available</option>
                       <option value="last_response_at">Inbound Response Received</option>
@@ -772,15 +835,84 @@ export function LeadScoringSettingsPage() {
 
                 <div>
                   <label className="font-semibold text-gray-700 block mb-1">
-                    Comparison Value (or JSON)
+                    Comparison Value
                   </label>
-                  <input
-                    type="text"
-                    value={ruleValue}
-                    onChange={(e) => setRuleValue(e.target.value)}
-                    placeholder='e.g. "confirmed" or ["acquisition", "approval"]'
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500 font-mono"
-                  />
+                  {['exists', 'not_exists'].includes(ruleOperator) ||
+                  ['phone_exists', 'email_exists', 'last_response_at'].includes(ruleField) ? (
+                    <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-500 italic">
+                      No comparison value required for existence check.
+                    </div>
+                  ) : ruleField === 'pipeline_stage' && ['equals', 'not_equals'].includes(ruleOperator) ? (
+                    <select
+                      value={ruleValue}
+                      onChange={(e) => setRuleValue(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white focus:ring-1 focus:ring-brand-500 font-medium"
+                    >
+                      {CANONICAL_PIPELINE_STAGES.map((s) => (
+                        <option key={s.code} value={s.code}>
+                          {s.name} ({s.code})
+                        </option>
+                      ))}
+                    </select>
+                  ) : ruleField === 'source' && ['equals', 'not_equals'].includes(ruleOperator) ? (
+                    <select
+                      value={ruleValue}
+                      onChange={(e) => setRuleValue(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white focus:ring-1 focus:ring-brand-500 font-medium"
+                    >
+                      {CANONICAL_SOURCES.map((src) => (
+                        <option key={src} value={src}>
+                          {src}
+                        </option>
+                      ))}
+                    </select>
+                  ) : ruleField === 'qualification_status' && ['equals', 'not_equals'].includes(ruleOperator) ? (
+                    <select
+                      value={ruleValue}
+                      onChange={(e) => setRuleValue(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white focus:ring-1 focus:ring-brand-500 font-medium"
+                    >
+                      {CANONICAL_QUALIFICATION_STATUSES.map((qs) => (
+                        <option key={qs} value={qs}>
+                          {qs}
+                        </option>
+                      ))}
+                    </select>
+                  ) : ruleField === 'contact_preference' && ['equals', 'not_equals'].includes(ruleOperator) ? (
+                    <select
+                      value={ruleValue}
+                      onChange={(e) => setRuleValue(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white focus:ring-1 focus:ring-brand-500 font-medium"
+                    >
+                      {CANONICAL_CONTACT_PREFERENCES.map((cp) => (
+                        <option key={cp} value={cp}>
+                          {cp}
+                        </option>
+                      ))}
+                    </select>
+                  ) : ['days_since_last_activity', 'days_since_last_response', 'inbound_message_count'].includes(
+                      ruleField
+                    ) ? (
+                    <input
+                      type="number"
+                      value={ruleValue}
+                      onChange={(e) => setRuleValue(e.target.value)}
+                      placeholder="e.g. 7"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={ruleValue}
+                      onChange={(e) => setRuleValue(e.target.value)}
+                      placeholder={
+                        ruleOperator === 'in'
+                          ? 'e.g. ["qualification", "acquisition"]'
+                          : 'e.g. Bootcamp or keyword'
+                      }
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500 font-mono"
+                    />
+                  )}
                 </div>
 
                 <div>

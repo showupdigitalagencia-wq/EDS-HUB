@@ -65,6 +65,107 @@ export function validateScoreSettings(settings: LeadScoreSettings): { valid: boo
   return { valid: true };
 }
 
+// =============================================================================
+// EDS HUB Canonical Schema Constants & Validation
+// =============================================================================
+
+export const CANONICAL_SOURCES = ['meta', 'google', 'manual', 'test', 'form'] as const;
+export type CanonicalSource = typeof CANONICAL_SOURCES[number];
+
+export const CANONICAL_QUALIFICATION_STATUSES = [
+  'no_response',
+  'some_response',
+  'interested',
+  'hot',
+  'confirmed',
+] as const;
+export type CanonicalQualificationStatus = typeof CANONICAL_QUALIFICATION_STATUSES[number];
+
+export const CANONICAL_CONTACT_PREFERENCES = ['email', 'sms', 'call'] as const;
+export type CanonicalContactPreference = typeof CANONICAL_CONTACT_PREFERENCES[number];
+
+export const CANONICAL_PIPELINE_STAGE_CODES = [
+  'capture',
+  'qualification',
+  'acquisition',
+  'approval',
+  'enrollment',
+  'post_course',
+  'alumni',
+] as const;
+export type CanonicalPipelineStageCode = typeof CANONICAL_PIPELINE_STAGE_CODES[number];
+
+export const CANONICAL_PIPELINE_STAGES = [
+  { code: 'capture', name: 'Captura (New Lead)' },
+  { code: 'qualification', name: 'Qualificação (Qualification)' },
+  { code: 'acquisition', name: 'Aquisição (Acquisition)' },
+  { code: 'approval', name: 'Aprovação (Approval)' },
+  { code: 'enrollment', name: 'Matrícula (Enrollment)' },
+  { code: 'post_course', name: 'Pós-curso (Post-Course)' },
+  { code: 'alumni', name: 'Alumni (Alumni)' },
+] as const;
+
+/**
+ * Validates that a scoring rule adheres to EDS HUB canonical schemas.
+ */
+export function validateRuleCanonical(rule: {
+  field_or_event: string;
+  operator: string;
+  value: unknown;
+}): { valid: boolean; error?: string } {
+  const valStr = typeof rule.value === 'string' ? rule.value : JSON.stringify(rule.value).replace(/^"|"$/g, '');
+
+  if (rule.field_or_event === 'source' && ['equals', 'not_equals'].includes(rule.operator)) {
+    if (!CANONICAL_SOURCES.includes(valStr as any)) {
+      return {
+        valid: false,
+        error: `Invalid source '${valStr}'. Allowed sources: ${CANONICAL_SOURCES.join(', ')}.`,
+      };
+    }
+  }
+
+  if (rule.field_or_event === 'pipeline_stage') {
+    if (['equals', 'not_equals'].includes(rule.operator)) {
+      if (!CANONICAL_PIPELINE_STAGE_CODES.includes(valStr as any)) {
+        return {
+          valid: false,
+          error: `Invalid pipeline stage '${valStr}'. Allowed stages: ${CANONICAL_PIPELINE_STAGE_CODES.join(', ')}.`,
+        };
+      }
+    } else if (rule.operator === 'in') {
+      const arr = Array.isArray(rule.value) ? rule.value : [];
+      for (const item of arr) {
+        if (!CANONICAL_PIPELINE_STAGE_CODES.includes(String(item) as any)) {
+          return {
+            valid: false,
+            error: `Invalid pipeline stage '${item}' in list. Allowed stages: ${CANONICAL_PIPELINE_STAGE_CODES.join(', ')}.`,
+          };
+        }
+      }
+    }
+  }
+
+  if (rule.field_or_event === 'qualification_status' && ['equals', 'not_equals'].includes(rule.operator)) {
+    if (!CANONICAL_QUALIFICATION_STATUSES.includes(valStr as any)) {
+      return {
+        valid: false,
+        error: `Invalid qualification status '${valStr}'. Allowed statuses: ${CANONICAL_QUALIFICATION_STATUSES.join(', ')}.`,
+      };
+    }
+  }
+
+  if (rule.field_or_event === 'contact_preference' && ['equals', 'not_equals'].includes(rule.operator)) {
+    if (!CANONICAL_CONTACT_PREFERENCES.includes(valStr as any)) {
+      return {
+        valid: false,
+        error: `Invalid contact preference '${valStr}'. Allowed preferences: ${CANONICAL_CONTACT_PREFERENCES.join(', ')}.`,
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
 /**
  * Derives visual label ('cold', 'warm', 'hot', 'very_hot') from score and settings.
  */
