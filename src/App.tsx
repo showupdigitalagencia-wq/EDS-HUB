@@ -3,6 +3,7 @@ import { AuthProvider } from './features/auth/AuthProvider';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoginPage } from './features/auth/LoginPage';
 import { SalesDashboardPage } from './features/dashboard/SalesDashboardPage';
+import { RevenueDashboardPage } from './features/revenue/RevenueDashboardPage';
 import { FoundationStatusPage } from './features/dashboard/FoundationStatusPage';
 import { SystemSetupPage } from './features/settings/SystemSetupPage';
 import { LeadsListPage } from './features/leads/LeadsListPage';
@@ -46,6 +47,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <SalesDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/revenue"
+            element={
+              <ProtectedRoute>
+                <RevenueDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/revenue"
+            element={
+              <ProtectedRoute>
+                <RevenueDashboardPage />
               </ProtectedRoute>
             }
           />

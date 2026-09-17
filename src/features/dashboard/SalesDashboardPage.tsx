@@ -5,7 +5,10 @@ import {
   AlertCircle,
   TrendingUp,
   Clock,
+  DollarSign,
+  ArrowRight,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Sidebar } from '../../components/Sidebar';
 import { KpiCardsSection } from './components/KpiCardsSection';
 import { SalesFunnelWidget } from './components/SalesFunnelWidget';
@@ -28,7 +31,13 @@ import {
 import type {
   SalesDashboardMetrics,
   DashboardPeriodFilter,
+  RevenueDashboardMetrics,
 } from '../../types/database';
+import {
+  fetchRevenueDashboardMetrics,
+  formatCurrency,
+  formatTicket,
+} from '../revenue/services/revenue-service';
 
 export const SalesDashboardPage: React.FC = () => {
   const [periodFilter, setPeriodFilter] = useState<DashboardPeriodFilter>('30d');
@@ -42,6 +51,7 @@ export const SalesDashboardPage: React.FC = () => {
   });
 
   const [metrics, setMetrics] = useState<SalesDashboardMetrics | null>(null);
+  const [revMetrics, setRevMetrics] = useState<RevenueDashboardMetrics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
@@ -56,11 +66,15 @@ export const SalesDashboardPage: React.FC = () => {
         customStart,
         customEnd
       );
-      const data = await fetchSalesDashboardMetrics(
-        boundaries.startDate,
-        boundaries.endDate
-      );
-      setMetrics(data);
+      const [salesData, revenueData] = await Promise.all([
+        fetchSalesDashboardMetrics(boundaries.startDate, boundaries.endDate),
+        fetchRevenueDashboardMetrics(boundaries.startDate, boundaries.endDate).catch((e) => {
+          console.warn('Revenue metrics non-fatal error:', e);
+          return null;
+        }),
+      ]);
+      setMetrics(salesData);
+      setRevMetrics(revenueData);
       setLastUpdated(new Date().toLocaleTimeString('pt-BR'));
     } catch (err: unknown) {
       console.error('Failed to load dashboard:', err);
@@ -208,6 +222,55 @@ export const SalesDashboardPage: React.FC = () => {
           {/* Loaded Dashboard Content */}
           {metrics && (
             <div className="space-y-8">
+              {/* Row 0: Commercial & Revenue Highlights Bar */}
+              {revMetrics && (
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-700 shadow-2xs">
+                      <DollarSign className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Receita & Fechamento Comercial ({boundaries.label})
+                      </span>
+                      <div className="flex flex-wrap items-center gap-4 sm:gap-6 mt-1 text-xs">
+                        <div>
+                          <span className="text-slate-400">Net Revenue:</span>{' '}
+                          <strong className="text-emerald-700 font-extrabold text-sm">
+                            {formatCurrency(revMetrics.kpis.net_revenue, revMetrics.goals.default_currency)}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Matrículas:</span>{' '}
+                          <strong className="text-[#08254f] font-extrabold text-sm">
+                            {revMetrics.kpis.confirmed_enrollments_count}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Ticket Médio:</span>{' '}
+                          <strong className="text-slate-800 font-bold">
+                            {formatTicket(revMetrics.kpis.average_ticket, revMetrics.goals.default_currency)}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Approved Not Enrolled:</span>{' '}
+                          <strong className="text-amber-700 font-bold">
+                            {revMetrics.approved_not_enrolled.length}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <Link
+                    to="/dashboard/revenue"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-[#125e95] bg-[#e1f0fb] hover:bg-[#125e95] hover:text-white transition-all shrink-0"
+                  >
+                    Ver Inteligência Completa
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              )}
+
               {/* Row 1: KPI Cards */}
               <KpiCardsSection metrics={metrics} />
 

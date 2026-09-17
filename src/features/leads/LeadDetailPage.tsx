@@ -9,6 +9,7 @@ import { getQualificationStatusBadge, getQualificationStatusLabel } from './util
 import { LeadAutomationHistory } from './LeadAutomationHistory';
 import { LeadConversationsCard } from './LeadConversationsCard';
 import { LeadScoreCard } from '../scoring/LeadScoreCard';
+import { LeadEnrollmentCard } from './components/LeadEnrollmentCard';
 import {
   ArrowLeft,
   Mail,
@@ -665,6 +666,13 @@ export function LeadDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Lead Enrollment & Revenue Card (Phase 4 Block 3) */}
+            <LeadEnrollmentCard
+              leadId={lead.id}
+              leadSource={lead.source}
+              onEnrollmentChanged={loadLeadData}
+            />
 
             {/* Lead Priority Score Card (Phase 4 Sales Intelligence) */}
             <LeadScoreCard

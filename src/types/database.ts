@@ -77,6 +77,9 @@ export interface AppSettings {
   email_from_name: string | null;
   email_sending_domain: string | null;
   resend_domain_id: string | null;
+  monthly_net_revenue_target?: number;
+  monthly_enrollment_target?: number;
+  default_currency?: string;
   created_at: string;
   updated_at: string;
 }
@@ -514,7 +517,11 @@ export type AutomationTriggerType =
   | 'pipeline_stage_changed'
   | 'tag_added'
   | 'manual_enrollment'
-  | 'lead_replied';
+  | 'lead_replied'
+  | 'enrollment_created'
+  | 'enrollment_status_changed'
+  | 'payment_received'
+  | 'payment_status_changed';
 
 export type AutomationType = 'workflow' | 'sequence';
 export type AutomationStatus = 'draft' | 'active' | 'paused' | 'archived';
@@ -1169,6 +1176,180 @@ export interface SalesDashboardMetrics {
   };
   generated_at: string;
 }
+
+// =============================================================================
+// Phase 4 Block 3: Revenue & Enrollment Intelligence Types
+// =============================================================================
+
+export interface Course {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  default_price: number | null;
+  currency: string;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type EnrollmentStatus = 'pending' | 'confirmed' | 'cancelled';
+
+export interface Enrollment {
+  id: string;
+  lead_id: string;
+  course_id: string;
+  course_name_snapshot: string;
+  enrollment_status: EnrollmentStatus;
+  agreed_amount: number;
+  currency: string;
+  enrollment_date: string;
+  source: LeadSource;
+  notes: string | null;
+  idempotency_key: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  // Computed or joined
+  course?: Course | null;
+  payments?: EnrollmentPayment[];
+  paid_amount?: number;
+  remaining_balance?: number;
+}
+
+export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'cancelled';
+
+export type PaymentMethod =
+  | 'credit_card'
+  | 'wire_transfer'
+  | 'check'
+  | 'cash'
+  | 'financing'
+  | 'other';
+
+export interface EnrollmentPayment {
+  id: string;
+  enrollment_id: string;
+  amount: number;
+  currency: string;
+  payment_status: PaymentStatus;
+  payment_date: string;
+  payment_method: PaymentMethod | null;
+  external_reference: string | null;
+  notes: string | null;
+  idempotency_key: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type EnrollmentEventType =
+  | 'enrollment_created'
+  | 'enrollment_status_changed'
+  | 'course_changed'
+  | 'agreed_amount_changed'
+  | 'payment_added'
+  | 'payment_status_changed'
+  | 'notes_updated';
+
+export interface EnrollmentHistory {
+  id: string;
+  enrollment_id: string;
+  lead_id: string;
+  actor_id: string | null;
+  actor_email: string | null;
+  event_type: EnrollmentEventType;
+  old_values: Record<string, unknown> | null;
+  new_values: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface RevenueKpis {
+  booked_value: number;
+  collected_revenue: number;
+  refunded_amount: number;
+  net_revenue: number;
+  outstanding_balance: number;
+  confirmed_enrollments_count: number;
+  paid_enrollments_count: number;
+  average_ticket: number | null;
+  avg_collected_per_enrollment: number | null;
+  avg_days_to_enrollment: number | null;
+}
+
+export interface RevenueCohorts {
+  lead_to_enrollment_rate: number | null;
+  leads_created_in_period: number;
+  leads_created_enrolled: number;
+  approval_to_enrollment_rate: number | null;
+  leads_entered_approval_count: number;
+  leads_approval_enrolled: number;
+}
+
+export interface RevenueGoals {
+  monthly_net_revenue_target: number;
+  monthly_enrollment_target: number;
+  default_currency: string;
+  revenue_progress_pct: number | null;
+  enrollment_progress_pct: number | null;
+}
+
+export interface CourseRevenuePerformance {
+  course_id: string;
+  course_code: string;
+  course_name: string;
+  default_price: number | null;
+  currency: string;
+  interested_leads_count: number;
+  confirmed_enrollments_count: number;
+  booked_value: number;
+  collected_revenue: number;
+  net_revenue: number;
+  outstanding_balance: number;
+  average_ticket: number | null;
+}
+
+export interface SourceRevenuePerformance {
+  source: string;
+  total_leads: number;
+  confirmed_enrollments: number;
+  booked_value: number;
+  net_revenue: number;
+  conversion_rate: number | null;
+  average_ticket: number | null;
+}
+
+export interface ApprovedNotEnrolledLead {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone_raw: string | null;
+  course_interest: string | null;
+  lead_score: number | null;
+  qualification_status: QualificationStatus | null;
+  days_in_approval: number;
+  next_action: string | null;
+}
+
+export interface EnrollmentVelocityEntry {
+  period_start: string;
+  period_end: string;
+  confirmed_enrollments: number;
+  booked_value: number;
+}
+
+export interface RevenueDashboardMetrics {
+  kpis: RevenueKpis;
+  cohorts: RevenueCohorts;
+  goals: RevenueGoals;
+  course_performance: CourseRevenuePerformance[];
+  source_performance: SourceRevenuePerformance[];
+  approved_not_enrolled: ApprovedNotEnrolledLead[];
+  velocity: EnrollmentVelocityEntry[];
+}
+
 
 
 

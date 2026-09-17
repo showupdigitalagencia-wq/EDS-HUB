@@ -33,6 +33,9 @@ export function SystemSetupPage() {
   const [timezone, setTimezone] = useState('');
   const [emailFromName, setEmailFromName] = useState('');
   const [emailSendingDomain, setEmailSendingDomain] = useState('');
+  const [monthlyNetRevenueTarget, setMonthlyNetRevenueTarget] = useState('50000');
+  const [monthlyEnrollmentTarget, setMonthlyEnrollmentTarget] = useState('10');
+  const [defaultCurrency, setDefaultCurrency] = useState('USD');
 
   const fetchSettings = useCallback(async () => {
     setIsLoading(true);
@@ -52,6 +55,9 @@ export function SystemSetupPage() {
       setTimezone(s.timezone || '');
       setEmailFromName(s.email_from_name || '');
       setEmailSendingDomain(s.email_sending_domain || '');
+      setMonthlyNetRevenueTarget(s.monthly_net_revenue_target !== undefined ? String(s.monthly_net_revenue_target) : '50000');
+      setMonthlyEnrollmentTarget(s.monthly_enrollment_target !== undefined ? String(s.monthly_enrollment_target) : '10');
+      setDefaultCurrency(s.default_currency || 'USD');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
     } finally {
@@ -80,6 +86,9 @@ export function SystemSetupPage() {
           timezone: timezone || null,
           email_from_name: emailFromName || null,
           email_sending_domain: emailSendingDomain || null,
+          monthly_net_revenue_target: parseFloat(monthlyNetRevenueTarget) || 50000,
+          monthly_enrollment_target: parseInt(monthlyEnrollmentTarget, 10) || 10,
+          default_currency: defaultCurrency || 'USD',
           updated_at: new Date().toISOString(),
         })
         .eq('id', settings.id);
@@ -231,6 +240,66 @@ export function SystemSetupPage() {
                   placeholder="mail.yourdomain.com"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">Subdomain configured in Resend for email sending.</p>
+              </div>
+
+              {/* Commercial Goals Section */}
+              <div className="pt-4 border-t border-slate-100 space-y-4">
+                <h3 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider">
+                  Metas Comerciais & Moeda (Phase 4 Block 3)
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label htmlFor="settings-rev-target" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Meta de Receita Líquida ($)
+                    </label>
+                    <input
+                      id="settings-rev-target"
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={monthlyNetRevenueTarget}
+                      onChange={(e) => setMonthlyNetRevenueTarget(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] outline-hidden font-semibold"
+                      placeholder="50000"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">Target mensal de Net Revenue.</p>
+                  </div>
+
+                  <div>
+                    <label htmlFor="settings-enr-target" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Meta de Matrículas (Alunos)
+                    </label>
+                    <input
+                      id="settings-enr-target"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={monthlyEnrollmentTarget}
+                      onChange={(e) => setMonthlyEnrollmentTarget(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] outline-hidden font-semibold"
+                      placeholder="10"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">Target mensal de novas matrículas.</p>
+                  </div>
+
+                  <div>
+                    <label htmlFor="settings-currency" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Moeda Padrão
+                    </label>
+                    <select
+                      id="settings-currency"
+                      value={defaultCurrency}
+                      onChange={(e) => setDefaultCurrency(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] outline-hidden font-semibold bg-white"
+                    >
+                      <option value="USD">USD ($)</option>
+                      <option value="BRL">BRL (R$)</option>
+                      <option value="EUR">EUR (€)</option>
+                    </select>
+                    <p className="text-[11px] text-slate-400 mt-1">Moeda padrão da operação.</p>
+                  </div>
+                </div>
               </div>
 
               {error && (
