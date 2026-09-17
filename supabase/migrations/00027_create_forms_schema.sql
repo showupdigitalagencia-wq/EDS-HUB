@@ -345,8 +345,8 @@ BEGIN
       v_clean_phone_raw, p_phone_e164,
       v_pref, p_course_interest,
       CASE WHEN p_course_interest IS NOT NULL AND trim(p_course_interest) != '' 
-           THEN ARRAY[trim(p_course_interest)] 
-           ELSE ARRAY[]::text[] END,
+           THEN jsonb_build_array(trim(p_course_interest)) 
+           ELSE '[]'::jsonb END,
       v_form.default_pipeline_stage_id, now(), now()
     ) RETURNING id INTO v_target_lead_id;
 
@@ -383,8 +383,8 @@ BEGIN
         contact_preference = CASE WHEN p_contact_preference IN ('email', 'sms', 'call') THEN p_contact_preference ELSE contact_preference END,
         course_interest = COALESCE(p_course_interest, course_interest),
         course_interests = CASE 
-          WHEN p_course_interest IS NOT NULL AND trim(p_course_interest) != '' AND NOT (course_interests @> ARRAY[trim(p_course_interest)])
-          THEN array_append(course_interests, trim(p_course_interest))
+          WHEN p_course_interest IS NOT NULL AND trim(p_course_interest) != '' AND NOT (course_interests @> jsonb_build_array(trim(p_course_interest)))
+          THEN course_interests || jsonb_build_array(trim(p_course_interest))
           ELSE course_interests
         END,
         updated_at = now()
