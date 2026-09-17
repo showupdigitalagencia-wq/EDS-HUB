@@ -8,6 +8,7 @@ import type { Lead, PipelineStage, Tag, LeadNote, Task, LeadActivity, ContactPre
 import { getQualificationStatusBadge, getQualificationStatusLabel } from './utils/qualificationMapping';
 import { LeadAutomationHistory } from './LeadAutomationHistory';
 import { LeadConversationsCard } from './LeadConversationsCard';
+import { LeadScoreCard } from '../scoring/LeadScoreCard';
 import {
   ArrowLeft,
   Mail,
@@ -664,6 +665,12 @@ export function LeadDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Lead Priority Score Card (Phase 4 Sales Intelligence) */}
+            <LeadScoreCard
+              lead={lead}
+              onLeadUpdated={loadLeadData}
+            />
 
             {/* Lead Conversations Card (Inbound & Outbound CRM) */}
             <LeadConversationsCard

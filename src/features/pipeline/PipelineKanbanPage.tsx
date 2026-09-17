@@ -286,7 +286,17 @@ export function PipelineKanbanPage() {
                               <h4 className="text-xs font-bold text-gray-900 leading-tight line-clamp-1 group-hover:text-brand-600 transition-colors">
                                 {fullName}
                               </h4>
-                              <GripVertical className="h-3.5 w-3.5 text-gray-300 group-hover:text-gray-500 shrink-0" />
+                              <div className="flex items-center gap-1 shrink-0">
+                                {lead.lead_score !== undefined && lead.lead_score !== null && (
+                                  <span
+                                    title={`Lead Score: ${lead.lead_score}`}
+                                    className="px-1.5 py-0.5 rounded text-[10px] font-extrabold font-mono bg-amber-50 text-amber-700 border border-amber-200"
+                                  >
+                                    ⚡ {lead.lead_score}
+                                  </span>
+                                )}
+                                <GripVertical className="h-3.5 w-3.5 text-gray-300 group-hover:text-gray-500 shrink-0" />
+                              </div>
                             </div>
 
                             {lead.email && (

@@ -13,6 +13,7 @@ import {
   Workflow,
   GitFork,
   Inbox,
+  Target,
 } from 'lucide-react';
 
 const navigation = [
@@ -25,6 +26,7 @@ const navigation = [
   { name: 'Sequences', href: '/sequences', icon: GitFork },
   { name: 'Campaigns', href: '/campaigns', icon: Mail },
   { name: 'Templates', href: '/templates', icon: FileText },
+  { name: 'Lead Scoring', href: '/scoring', icon: Target },
   { name: 'System Setup', href: '/settings', icon: Settings },
 ];
 

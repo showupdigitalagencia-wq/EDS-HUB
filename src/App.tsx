@@ -20,6 +20,7 @@ import { AutomationRunsPage } from './features/automations/AutomationRunsPage';
 import { SequencesListPage } from './features/sequences/SequencesListPage';
 import { SequenceBuilderPage } from './features/sequences/SequenceBuilderPage';
 import { InboxPage } from './features/inbox/InboxPage';
+import { LeadScoringSettingsPage } from './features/scoring/LeadScoringSettingsPage';
 
 export default function App() {
   return (
@@ -196,6 +197,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <SystemSetupPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/scoring"
+            element={
+              <ProtectedRoute>
+                <LeadScoringSettingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/lead-scoring"
+            element={
+              <ProtectedRoute>
+                <LeadScoringSettingsPage />
               </ProtectedRoute>
             }
           />

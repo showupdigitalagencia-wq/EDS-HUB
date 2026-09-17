@@ -19,6 +19,7 @@ export interface LeadConditionContext {
   tags?: string[] | null; // tag names, slugs, or IDs
   form_id?: string | null;
   form_slug?: string | null;
+  lead_score?: number | null;
 }
 
 export function evaluateCondition(
@@ -58,6 +59,9 @@ export function evaluateCondition(
       break;
     case 'form_id':
       actualValue = lead.form_id || lead.form_slug || '';
+      break;
+    case 'lead_score':
+      actualValue = lead.lead_score ?? 0;
       break;
     default:
       actualValue = undefined;
@@ -126,6 +130,44 @@ export function evaluateCondition(
       const normalizedActual = String(actualValue ?? '').trim().toLowerCase();
       return {
         matched: allowedItems.includes(normalizedActual),
+        actualValue,
+        expectedValue: value,
+      };
+    }
+    case 'greater_than': {
+      const numActual = Number(actualValue);
+      const numExpected = Number(value);
+      return {
+        matched: !isNaN(numActual) && !isNaN(numExpected) && numActual > numExpected,
+        actualValue,
+        expectedValue: value,
+      };
+    }
+    case 'greater_or_equal':
+    case 'greater_than_or_equal': {
+      const numActual = Number(actualValue);
+      const numExpected = Number(value);
+      return {
+        matched: !isNaN(numActual) && !isNaN(numExpected) && numActual >= numExpected,
+        actualValue,
+        expectedValue: value,
+      };
+    }
+    case 'less_than': {
+      const numActual = Number(actualValue);
+      const numExpected = Number(value);
+      return {
+        matched: !isNaN(numActual) && !isNaN(numExpected) && numActual < numExpected,
+        actualValue,
+        expectedValue: value,
+      };
+    }
+    case 'less_or_equal':
+    case 'less_than_or_equal': {
+      const numActual = Number(actualValue);
+      const numExpected = Number(value);
+      return {
+        matched: !isNaN(numActual) && !isNaN(numExpected) && numActual <= numExpected,
         actualValue,
         expectedValue: value,
       };

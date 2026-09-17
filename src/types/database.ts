@@ -109,6 +109,8 @@ export interface Lead {
   pipeline_stage_id: string;
   source_created_at: string | null;
   last_response_at?: string | null;
+  lead_score?: number;
+  lead_score_updated_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -568,7 +570,8 @@ export type ConditionField =
   | 'tag'
   | 'email exists'
   | 'phone exists'
-  | 'form_id';
+  | 'form_id'
+  | 'lead_score';
 
 export type ConditionOperator =
   | 'equals'
@@ -576,7 +579,13 @@ export type ConditionOperator =
   | 'contains'
   | 'exists'
   | 'not_exists'
-  | 'in';
+  | 'in'
+  | 'greater_than'
+  | 'greater_or_equal'
+  | 'greater_than_or_equal'
+  | 'less_than'
+  | 'less_or_equal'
+  | 'less_than_or_equal';
 
 export interface ConditionRule {
   field: ConditionField;
@@ -875,6 +884,110 @@ export interface ConversationMetrics {
   open_conversations: number;
   unread_conversations: number;
 }
+
+// --- Phase 4 Block 1: Lead Scoring Foundation Types ---
+
+export type LeadScoreCategory = 'fit' | 'intent' | 'engagement';
+
+export type LeadScoreOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'in'
+  | 'not_in'
+  | 'exists'
+  | 'not_exists'
+  | 'greater_than'
+  | 'greater_or_equal'
+  | 'less_than'
+  | 'less_or_equal';
+
+export type LeadScoreLabel = 'cold' | 'warm' | 'hot' | 'very_hot';
+
+export interface LeadScoreRule {
+  id: string;
+  name: string;
+  category: LeadScoreCategory;
+  field_or_event: string;
+  operator: LeadScoreOperator;
+  value: unknown;
+  points: number;
+  sort_order: number;
+  is_active: boolean;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeadScoreSettings {
+  id: string;
+  cold_min: number;
+  cold_max: number;
+  warm_min: number;
+  warm_max: number;
+  hot_min: number;
+  hot_max: number;
+  very_hot_min: number;
+  very_hot_max: number;
+  updated_at: string;
+}
+
+export interface LeadScoreHistory {
+  id: string;
+  lead_id: string;
+  old_score: number;
+  new_score: number;
+  delta: number;
+  reason: string;
+  trigger_event_id: string | null;
+  matched_rules_snapshot: Array<{
+    rule_id: string;
+    name: string;
+    category: LeadScoreCategory;
+    points: number;
+    description?: string | null;
+  }>;
+  created_at: string;
+}
+
+export interface LeadScoreRecalculationJob {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  total_leads: number;
+  processed_leads: number;
+  failed_leads: number;
+  batch_size: number;
+  last_processed_id: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeadScoreCalculationResult {
+  lead_id: string;
+  raw_total: number;
+  score: number;
+  label: LeadScoreLabel;
+  fit_subtotal: number;
+  intent_subtotal: number;
+  engagement_subtotal: number;
+  matched_rules: Array<{
+    rule_id: string;
+    name: string;
+    category: LeadScoreCategory;
+    points: number;
+    description?: string | null;
+  }>;
+  unmatched_rules: Array<{
+    rule_id: string;
+    name: string;
+    category: LeadScoreCategory;
+    points: number;
+  }>;
+}
+
 
 
 
