@@ -1219,6 +1219,7 @@ export interface Enrollment {
 }
 
 export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'cancelled';
+export type PaymentType = 'payment' | 'refund';
 
 export type PaymentMethod =
   | 'credit_card'
@@ -1234,12 +1235,14 @@ export interface EnrollmentPayment {
   amount: number;
   currency: string;
   payment_status: PaymentStatus;
+  payment_type: PaymentType;
+  parent_payment_id: string | null;
   payment_date: string;
   payment_method: PaymentMethod | null;
   external_reference: string | null;
   notes: string | null;
   idempotency_key: string | null;
-  created_by_user_id: string | null;
+  created_by_user_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1267,7 +1270,8 @@ export interface EnrollmentHistory {
 
 export interface RevenueKpis {
   booked_value: number;
-  collected_revenue: number;
+  gross_collected: number;
+  collected_revenue?: number;
   refunded_amount: number;
   net_revenue: number;
   outstanding_balance: number;

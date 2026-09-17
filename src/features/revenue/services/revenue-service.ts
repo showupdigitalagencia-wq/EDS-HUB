@@ -47,11 +47,20 @@ export interface RecordPaymentPayload {
   enrollmentId: string;
   amount: number;
   currency?: string;
-  paymentStatus: PaymentStatus;
+  paymentStatus?: PaymentStatus;
   paymentDate?: string;
   paymentMethod?: PaymentMethod | null;
   externalReference?: string;
   notes?: string;
+  idempotencyKey?: string;
+  paymentType?: 'payment' | 'refund';
+  parentPaymentId?: string | null;
+}
+
+export interface RecordRefundPayload {
+  parentPaymentId: string;
+  amount: number;
+  reason?: string;
   idempotencyKey?: string;
 }
 
@@ -76,14 +85,16 @@ export async function fetchRevenueDashboardMetrics(
 }
 
 /**
- * Fetches all active courses from canonical catalog
+ * Fetches all courses from catalog (can include inactive if specified)
  */
-export async function fetchCourses(): Promise<Course[]> {
-  const { data, error } = await supabase
-    .from('courses')
-    .select('*')
-    .eq('active', true)
-    .order('sort_order', { ascending: true });
+export async function fetchCourses(includeInactive = false): Promise<Course[]> {
+  let query = supabase.from('courses').select('*').order('code', { ascending: true });
+
+  if (!includeInactive) {
+    query = query.eq('active', true);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('Failed to fetch courses:', error);
@@ -91,6 +102,31 @@ export async function fetchCourses(): Promise<Course[]> {
   }
 
   return (data || []) as Course[];
+}
+
+/**
+ * Updates a course pricing, currency or active status
+ */
+export async function updateCourse(
+  courseId: string,
+  updates: {
+    default_price?: number | null;
+    currency?: string;
+    active?: boolean;
+  }
+): Promise<void> {
+  const { error } = await supabase
+    .from('courses')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', courseId);
+
+  if (error) {
+    console.error('Failed to update course:', error);
+    throw error;
+  }
 }
 
 /**
@@ -118,7 +154,7 @@ export async function fetchLeadEnrollments(leadId: string): Promise<Enrollment[]
     const balances = deriveEnrollmentBalances(e.agreed_amount, e.payments);
     return {
       ...e,
-      paid_amount: balances.paidAmount,
+      paid_amount: balances.netPaid,
       remaining_balance: balances.balance,
     };
   });
@@ -129,22 +165,20 @@ export async function fetchLeadEnrollments(leadId: string): Promise<Enrollment[]
  */
 export async function createEnrollment(
   payload: CreateEnrollmentPayload
-): Promise<{ enrollment_id: string; stage_moved: boolean; idempotent_replay?: boolean }> {
+): Promise<string> {
   const { data, error } = await supabase.rpc('create_enrollment_transaction', {
     p_lead_id: payload.leadId,
     p_course_id: payload.courseId,
-    p_enrollment_status: payload.enrollmentStatus,
     p_agreed_amount: payload.agreedAmount,
     p_currency: payload.currency || 'USD',
+    p_enrollment_status: payload.enrollmentStatus,
     p_enrollment_date: payload.enrollmentDate || new Date().toISOString().split('T')[0],
     p_source: payload.source || 'manual',
     p_notes: payload.notes || null,
-    p_idempotency_key: payload.idempotencyKey || null,
     p_initial_payment_amount: payload.initialPaymentAmount || null,
-    p_initial_payment_status: payload.initialPaymentStatus || 'paid',
     p_initial_payment_method: payload.initialPaymentMethod || null,
-    p_initial_payment_date: payload.initialPaymentDate || new Date().toISOString().split('T')[0],
     p_initial_payment_ref: payload.initialPaymentRef || null,
+    p_idempotency_key: payload.idempotencyKey || null,
   });
 
   if (error) {
@@ -152,7 +186,7 @@ export async function createEnrollment(
     throw error;
   }
 
-  return data as { enrollment_id: string; stage_moved: boolean; idempotent_replay?: boolean };
+  return data as string;
 }
 
 /**
@@ -160,7 +194,7 @@ export async function createEnrollment(
  */
 export async function updateEnrollment(
   payload: UpdateEnrollmentPayload
-): Promise<{ enrollment_id: string; stage_moved: boolean }> {
+): Promise<string> {
   const { data, error } = await supabase.rpc('update_enrollment_transaction', {
     p_enrollment_id: payload.enrollmentId,
     p_enrollment_status: payload.enrollmentStatus,
@@ -175,7 +209,7 @@ export async function updateEnrollment(
     throw error;
   }
 
-  return data as { enrollment_id: string; stage_moved: boolean };
+  return data as string;
 }
 
 /**
@@ -183,17 +217,19 @@ export async function updateEnrollment(
  */
 export async function recordPayment(
   payload: RecordPaymentPayload
-): Promise<{ payment_id: string; idempotent_replay?: boolean }> {
+): Promise<string> {
   const { data, error } = await supabase.rpc('record_enrollment_payment', {
     p_enrollment_id: payload.enrollmentId,
     p_amount: payload.amount,
     p_currency: payload.currency || 'USD',
-    p_payment_status: payload.paymentStatus,
+    p_payment_method: payload.paymentMethod || 'credit_card',
     p_payment_date: payload.paymentDate || new Date().toISOString().split('T')[0],
-    p_payment_method: payload.paymentMethod || null,
-    p_external_reference: payload.externalReference || null,
+    p_payment_status: payload.paymentStatus || 'paid',
+    p_external_ref: payload.externalReference || null,
     p_notes: payload.notes || null,
     p_idempotency_key: payload.idempotencyKey || null,
+    p_payment_type: payload.paymentType || 'payment',
+    p_parent_payment_id: payload.parentPaymentId || null,
   });
 
   if (error) {
@@ -201,7 +237,28 @@ export async function recordPayment(
     throw error;
   }
 
-  return data as { payment_id: string; idempotent_replay?: boolean };
+  return data as string;
+}
+
+/**
+ * Records refund via dedicated helper RPC record_enrollment_refund
+ */
+export async function recordRefund(
+  payload: RecordRefundPayload
+): Promise<string> {
+  const { data, error } = await supabase.rpc('record_enrollment_refund', {
+    p_parent_payment_id: payload.parentPaymentId,
+    p_amount: payload.amount,
+    p_reason: payload.reason || null,
+    p_idempotency_key: payload.idempotencyKey || null,
+  });
+
+  if (error) {
+    console.error('Failed to record enrollment refund:', error);
+    throw error;
+  }
+
+  return data as string;
 }
 
 /**
@@ -226,17 +283,18 @@ export async function updatePaymentStatus(
 
 /**
  * Derives financial balances from payments
- * - paidAmount: total payments with status 'paid'
- * - refunded: total payments with status 'refunded'
- * - netPaid: paidAmount - refunded
+ * - grossPaid: total payments of type 'payment' with status 'paid'
+ * - refunded: total payments of type 'refund' with status 'paid' (or payments with status 'refunded')
+ * - netPaid: grossPaid - refunded
  * - balance: Math.max(agreedAmount - netPaid, 0)
  */
 export function deriveEnrollmentBalances(
   agreedAmount: number,
   payments?: EnrollmentPayment[]
-): { paidAmount: number; refunded: number; netPaid: number; balance: number } {
+): { grossPaid: number; paidAmount: number; refunded: number; netPaid: number; balance: number } {
   if (!payments || payments.length === 0) {
     return {
+      grossPaid: 0,
       paidAmount: 0,
       refunded: 0,
       netPaid: 0,
@@ -244,22 +302,35 @@ export function deriveEnrollmentBalances(
     };
   }
 
-  let paidAmount = 0;
+  let grossPaid = 0;
   let refunded = 0;
 
   for (const p of payments) {
     const amt = Number(p.amount) || 0;
+    const isRefundType = p.payment_type === 'refund';
+
     if (p.payment_status === 'paid') {
-      paidAmount += amt;
+      if (isRefundType) {
+        refunded += amt;
+      } else {
+        grossPaid += amt;
+      }
     } else if (p.payment_status === 'refunded') {
+      // Fallback for any legacy status representation
       refunded += amt;
     }
   }
 
-  const netPaid = paidAmount - refunded;
+  const netPaid = grossPaid - refunded;
   const balance = Math.max(agreedAmount - netPaid, 0);
 
-  return { paidAmount, refunded, netPaid, balance };
+  return {
+    grossPaid,
+    paidAmount: grossPaid,
+    refunded,
+    netPaid,
+    balance,
+  };
 }
 
 /**

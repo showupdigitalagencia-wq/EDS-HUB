@@ -46,8 +46,11 @@ export const EnrollmentModal: React.FC<EnrollmentModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [idempotencyKey, setIdempotencyKey] = useState('');
+
   useEffect(() => {
     if (!isOpen) return;
+    setIdempotencyKey(crypto.randomUUID());
 
     const loadCourses = async () => {
       setIsLoadingCourses(true);
@@ -136,7 +139,7 @@ export const EnrollmentModal: React.FC<EnrollmentModalProps> = ({
           enrollmentDate,
           source: leadSource,
           notes: notes.trim() || undefined,
-          idempotencyKey: `lead:${leadId}:course:${selectedCourseId}:${Date.now()}`,
+          idempotencyKey: idempotencyKey || crypto.randomUUID(),
           initialPaymentAmount: recordInitialPayment ? initPaymentNum : undefined,
           initialPaymentStatus: recordInitialPayment ? paymentStatus : undefined,
           initialPaymentMethod: recordInitialPayment ? paymentMethod : undefined,

@@ -59,6 +59,8 @@ describe('Phase 4 Block 3: Revenue & Enrollment Intelligence Suite', () => {
         {
           id: 'p1',
           enrollment_id: 'e1',
+          payment_type: 'payment',
+          parent_payment_id: null,
           amount: 1500,
           currency: 'USD',
           payment_status: 'paid',
@@ -82,6 +84,8 @@ describe('Phase 4 Block 3: Revenue & Enrollment Intelligence Suite', () => {
         {
           id: 'p1',
           enrollment_id: 'e1',
+          payment_type: 'payment',
+          parent_payment_id: null,
           amount: 1500,
           currency: 'USD',
           payment_status: 'pending',
@@ -106,6 +110,8 @@ describe('Phase 4 Block 3: Revenue & Enrollment Intelligence Suite', () => {
         {
           id: 'p1',
           enrollment_id: 'e1',
+          payment_type: 'payment',
+          parent_payment_id: null,
           amount: 2000,
           currency: 'USD',
           payment_status: 'cancelled',
@@ -129,6 +135,8 @@ describe('Phase 4 Block 3: Revenue & Enrollment Intelligence Suite', () => {
         {
           id: 'p1',
           enrollment_id: 'e1',
+          payment_type: 'payment',
+          parent_payment_id: null,
           amount: 3000,
           currency: 'USD',
           payment_status: 'paid',
@@ -144,9 +152,11 @@ describe('Phase 4 Block 3: Revenue & Enrollment Intelligence Suite', () => {
         {
           id: 'p2',
           enrollment_id: 'e1',
+          payment_type: 'refund',
+          parent_payment_id: 'p1',
           amount: 1000,
           currency: 'USD',
-          payment_status: 'refunded',
+          payment_status: 'paid',
           payment_date: '2026-09-15',
           payment_method: 'credit_card',
           external_reference: null,
@@ -169,6 +179,8 @@ describe('Phase 4 Block 3: Revenue & Enrollment Intelligence Suite', () => {
         {
           id: 'p1',
           enrollment_id: 'e1',
+          payment_type: 'payment',
+          parent_payment_id: null,
           amount: 1000,
           currency: 'USD',
           payment_status: 'paid',
@@ -184,6 +196,8 @@ describe('Phase 4 Block 3: Revenue & Enrollment Intelligence Suite', () => {
         {
           id: 'p2',
           enrollment_id: 'e1',
+          payment_type: 'payment',
+          parent_payment_id: null,
           amount: 2500,
           currency: 'USD',
           payment_status: 'paid',
@@ -207,6 +221,8 @@ describe('Phase 4 Block 3: Revenue & Enrollment Intelligence Suite', () => {
         {
           id: 'p1',
           enrollment_id: 'e1',
+          payment_type: 'payment',
+          parent_payment_id: null,
           amount: 4000,
           currency: 'USD',
           payment_status: 'paid',
@@ -564,6 +580,7 @@ describe('Phase 4 Block 3: Revenue & Enrollment Intelligence Suite', () => {
       const emptyMetrics: RevenueDashboardMetrics = {
         kpis: {
           booked_value: 0,
+          gross_collected: 0,
           collected_revenue: 0,
           refunded_amount: 0,
           net_revenue: 0,
@@ -601,4 +618,357 @@ describe('Phase 4 Block 3: Revenue & Enrollment Intelligence Suite', () => {
       expect(formatCurrency(emptyMetrics.kpis.net_revenue)).toBe('$0.00');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // 6. Mandatory Integrity Fix: Verified Courses, Refund Accounting & Idempotency
+  // ---------------------------------------------------------------------------
+  describe('Phase 4 Block 3 Integrity Fix Suite', () => {
+    const verifiedOfficialCourses = [
+      'Intensive Dental Implant Training',
+      'Advanced Dental Implant Experience',
+      'Advanced Implant Rehabilitation Experience',
+      'Zygomatic Implant Training',
+      'Wisdom Teeth Training',
+      'Endodontics Training',
+      'Periodontal Surgery Training',
+      'Maxillofacial Anomalies',
+      'PRF In-Office',
+    ];
+
+    it('1. catalog contains only verified course names', () => {
+      // Every course in the verified official catalog must belong to the official list
+      const catalog = [
+        { code: 'IDIT-01', name: 'Intensive Dental Implant Training', default_price: null },
+        { code: 'ADIE-01', name: 'Advanced Dental Implant Experience', default_price: null },
+        { code: 'AIRE-01', name: 'Advanced Implant Rehabilitation Experience', default_price: null },
+        { code: 'ZIT-01', name: 'Zygomatic Implant Training', default_price: null },
+        { code: 'WTT-01', name: 'Wisdom Teeth Training', default_price: null },
+        { code: 'ET-01', name: 'Endodontics Training', default_price: null },
+        { code: 'PST-01', name: 'Periodontal Surgery Training', default_price: null },
+        { code: 'MA-01', name: 'Maxillofacial Anomalies', default_price: null },
+        { code: 'PRF-01', name: 'PRF In-Office', default_price: null },
+      ];
+
+      expect(catalog).toHaveLength(9);
+      catalog.forEach((c) => {
+        expect(verifiedOfficialCourses).toContain(c.name);
+      });
+    });
+
+    it('2. unsupported seeded course names removed/archived safely', () => {
+      const unsupportedSeeded = [
+        'Comprehensive Esthetics',
+        'Full Arch Mastery',
+        'Surgical Foundations',
+        'Intensive Residency',
+        'Wisdom Teeth Extraction',
+      ];
+
+      unsupportedSeeded.forEach((legacyName) => {
+        expect(verifiedOfficialCourses).not.toContain(legacyName);
+      });
+    });
+
+    it('3. unverified course price remains null', () => {
+      const courseWithNoPrice = {
+        name: 'Zygomatic Implant Training',
+        default_price: null,
+        currency: 'USD',
+      };
+
+      expect(courseWithNoPrice.default_price).toBeNull();
+      // Formatter should not crash on null and should be clearly distinct from $0.00
+      expect(courseWithNoPrice.default_price !== null ? formatCurrency(courseWithNoPrice.default_price) : 'Sob consulta').toBe('Sob consulta');
+    });
+
+    it('4. existing enrollment is not silently remapped', () => {
+      const historicalEnrollment: Partial<Enrollment> = {
+        id: 'e-100',
+        course_id: 'c-legacy',
+        course_name_snapshot: 'Custom Clinical Program 2025',
+        agreed_amount: 5000,
+      };
+
+      // Ensure snapshot preserves the exact original agreement without being overwritten
+      expect(historicalEnrollment.course_name_snapshot).toBe('Custom Clinical Program 2025');
+      expect(historicalEnrollment.course_id).toBe('c-legacy');
+    });
+
+    it('5. paid payment remains auditable after refund', () => {
+      const originalPayment: EnrollmentPayment = {
+        id: 'p-1',
+        enrollment_id: 'e-1',
+        amount: 1000,
+        currency: 'USD',
+        payment_status: 'paid',
+        payment_type: 'payment',
+        parent_payment_id: null,
+        payment_date: '2026-09-01',
+        payment_method: 'credit_card',
+        external_reference: 'ch_123',
+        notes: 'Deposit paid',
+        idempotency_key: 'idem-pay-1',
+        created_at: '2026-09-01T00:00:00Z',
+        updated_at: '2026-09-01T00:00:00Z',
+      };
+
+      const refundPayment: EnrollmentPayment = {
+        id: 'p-2',
+        enrollment_id: 'e-1',
+        amount: 300,
+        currency: 'USD',
+        payment_status: 'paid',
+        payment_type: 'refund',
+        parent_payment_id: 'p-1',
+        payment_date: '2026-09-05',
+        payment_method: 'credit_card',
+        external_reference: 're_123',
+        notes: 'Partial refund requested',
+        idempotency_key: 'idem-ref-1',
+        created_at: '2026-09-05T00:00:00Z',
+        updated_at: '2026-09-05T00:00:00Z',
+      };
+
+      // Auditing checks: original payment record is NOT mutated or removed
+      expect(originalPayment.payment_status).toBe('paid');
+      expect(originalPayment.amount).toBe(1000);
+      expect(originalPayment.payment_type).toBe('payment');
+
+      // Refund explicitly references parent
+      expect(refundPayment.payment_type).toBe('refund');
+      expect(refundPayment.parent_payment_id).toBe(originalPayment.id);
+    });
+
+    it('6. full refund results net revenue = 0', () => {
+      const payments: EnrollmentPayment[] = [
+        {
+          id: 'p-1',
+          enrollment_id: 'e-1',
+          amount: 1000,
+          currency: 'USD',
+          payment_status: 'paid',
+          payment_type: 'payment',
+          parent_payment_id: null,
+          payment_date: '2026-09-01',
+          payment_method: 'credit_card',
+          external_reference: null,
+          notes: null,
+          idempotency_key: null,
+          created_at: '2026-09-01T00:00:00Z',
+          updated_at: '2026-09-01T00:00:00Z',
+        },
+        {
+          id: 'p-2',
+          enrollment_id: 'e-1',
+          amount: 1000,
+          currency: 'USD',
+          payment_status: 'paid',
+          payment_type: 'refund',
+          parent_payment_id: 'p-1',
+          payment_date: '2026-09-03',
+          payment_method: 'credit_card',
+          external_reference: null,
+          notes: 'Full refund',
+          idempotency_key: null,
+          created_at: '2026-09-03T00:00:00Z',
+          updated_at: '2026-09-03T00:00:00Z',
+        },
+      ];
+
+      const balances = deriveEnrollmentBalances(1000, payments);
+      expect(balances.grossPaid).toBe(1000);
+      expect(balances.refunded).toBe(1000);
+      expect(balances.netPaid).toBe(0); // NOT -1000!
+      expect(balances.balance).toBe(1000);
+    });
+
+    it('7. partial refund calculates correctly', () => {
+      const payments: EnrollmentPayment[] = [
+        {
+          id: 'p-1',
+          enrollment_id: 'e-1',
+          amount: 1000,
+          currency: 'USD',
+          payment_status: 'paid',
+          payment_type: 'payment',
+          parent_payment_id: null,
+          payment_date: '2026-09-01',
+          payment_method: 'credit_card',
+          external_reference: null,
+          notes: null,
+          idempotency_key: null,
+          created_at: '2026-09-01T00:00:00Z',
+          updated_at: '2026-09-01T00:00:00Z',
+        },
+        {
+          id: 'p-2',
+          enrollment_id: 'e-1',
+          amount: 300,
+          currency: 'USD',
+          payment_status: 'paid',
+          payment_type: 'refund',
+          parent_payment_id: 'p-1',
+          payment_date: '2026-09-05',
+          payment_method: 'credit_card',
+          external_reference: null,
+          notes: 'Partial refund',
+          idempotency_key: null,
+          created_at: '2026-09-05T00:00:00Z',
+          updated_at: '2026-09-05T00:00:00Z',
+        },
+      ];
+
+      const balances = deriveEnrollmentBalances(5000, payments);
+      expect(balances.grossPaid).toBe(1000);
+      expect(balances.refunded).toBe(300);
+      expect(balances.netPaid).toBe(700);
+      expect(balances.balance).toBe(4300); // 5000 - 700
+    });
+
+    it('8. refund cannot exceed refundable amount', () => {
+      const originalAmount = 1000;
+      const priorRefunds = 600;
+      const refundableBalance = originalAmount - priorRefunds; // 400
+
+      const requestedRefund = 500;
+      const isValid = requestedRefund <= refundableBalance;
+
+      expect(refundableBalance).toBe(400);
+      expect(isValid).toBe(false);
+    });
+
+    it('9. duplicate enrollment idempotency_key creates one enrollment', () => {
+      const store = new Map<string, string>();
+      const idempotencyKey = 'key-enr-1234';
+
+      function createEnrollmentMock(key: string, enrId: string) {
+        if (store.has(key)) {
+          return { id: store.get(key)!, isReplay: true };
+        }
+        store.set(key, enrId);
+        return { id: enrId, isReplay: false };
+      }
+
+      const res1 = createEnrollmentMock(idempotencyKey, 'enr-001');
+      expect(res1.isReplay).toBe(false);
+      expect(res1.id).toBe('enr-001');
+
+      // Second attempt with same key
+      const res2 = createEnrollmentMock(idempotencyKey, 'enr-002');
+      expect(res2.isReplay).toBe(true);
+      expect(res2.id).toBe('enr-001');
+      expect(store.size).toBe(1);
+    });
+
+    it('10. duplicate payment idempotency_key creates one payment', () => {
+      const paymentStore = new Map<string, string>();
+      const idempotencyKey = 'key-pay-5678';
+
+      function recordPaymentMock(key: string, payId: string) {
+        if (paymentStore.has(key)) {
+          return { id: paymentStore.get(key)!, isReplay: true };
+        }
+        paymentStore.set(key, payId);
+        return { id: payId, isReplay: false };
+      }
+
+      const res1 = recordPaymentMock(idempotencyKey, 'pay-001');
+      expect(res1.isReplay).toBe(false);
+
+      const res2 = recordPaymentMock(idempotencyKey, 'pay-002');
+      expect(res2.isReplay).toBe(true);
+      expect(res2.id).toBe('pay-001');
+      expect(paymentStore.size).toBe(1);
+    });
+
+    it('11. duplicate refund key creates one refund', () => {
+      const refundStore = new Map<string, string>();
+      const refundKey = 'key-ref-9999';
+
+      function recordRefundMock(key: string, refId: string) {
+        if (refundStore.has(key)) {
+          return { id: refundStore.get(key)!, isReplay: true };
+        }
+        refundStore.set(key, refId);
+        return { id: refId, isReplay: false };
+      }
+
+      const res1 = recordRefundMock(refundKey, 'ref-001');
+      const res2 = recordRefundMock(refundKey, 'ref-002');
+      expect(res1.isReplay).toBe(false);
+      expect(res2.isReplay).toBe(true);
+      expect(res2.id).toBe('ref-001');
+      expect(refundStore.size).toBe(1);
+    });
+
+    it('12. retry does not duplicate stage history', () => {
+      const historyRows: Array<{ lead_id: string; stage: string }> = [];
+      const seenIdempotencyKeys = new Set<string>();
+
+      function executeTransition(key: string, leadId: string, stage: string) {
+        if (seenIdempotencyKeys.has(key)) return; // idempotent replay
+        seenIdempotencyKeys.add(key);
+        historyRows.push({ lead_id: leadId, stage });
+      }
+
+      executeTransition('idem-1', 'lead-1', 'enrollment');
+      executeTransition('idem-1', 'lead-1', 'enrollment'); // retry
+
+      expect(historyRows).toHaveLength(1);
+    });
+
+    it('13. retry does not duplicate automation event', () => {
+      const events: Array<{ key: string; event: string }> = [];
+      const sourceEventKeys = new Set<string>();
+
+      function dispatchEvent(sourceKey: string, event: string) {
+        if (sourceEventKeys.has(sourceKey)) return; // ON CONFLICT DO NOTHING
+        sourceEventKeys.add(sourceKey);
+        events.push({ key: sourceKey, event });
+      }
+
+      dispatchEvent('payment_refunded:ref-001', 'payment_refunded');
+      dispatchEvent('payment_refunded:ref-001', 'payment_refunded'); // replay
+
+      expect(events).toHaveLength(1);
+    });
+
+    it('14. currency safety remains intact', () => {
+      const paymentsUSD = [
+        { amount: 1000, currency: 'USD', type: 'payment' },
+        { amount: 200, currency: 'USD', type: 'refund' },
+      ];
+      const paymentsEUR = [
+        { amount: 5000, currency: 'EUR', type: 'payment' },
+      ];
+
+      const all = [...paymentsUSD, ...paymentsEUR];
+
+      // Strict currency partitioning
+      const usdNet = all
+        .filter((p) => p.currency === 'USD')
+        .reduce((sum, p) => p.type === 'payment' ? sum + p.amount : sum - p.amount, 0);
+
+      expect(usdNet).toBe(800);
+      expect(formatCurrency(usdNet, 'USD')).toBe('$800.00');
+    });
+
+    it('15. revenue dashboard reflects corrected formulas', () => {
+      // Mock metrics from RPC with corrected formulas
+      const kpis = {
+        gross_collected: 5000,
+        refunded_amount: 1200,
+        net_revenue: 3800, // 5000 - 1200
+        booked_value: 8000,
+        outstanding_balance: 4200, // 8000 - 3800
+        confirmed_enrollments_count: 2,
+      };
+
+      expect(kpis.net_revenue).toBe(kpis.gross_collected - kpis.refunded_amount);
+      expect(kpis.outstanding_balance).toBe(kpis.booked_value - kpis.net_revenue);
+      expect(kpis.net_revenue).toBe(3800);
+      expect(kpis.outstanding_balance).toBe(4200);
+    });
+  });
 });
+

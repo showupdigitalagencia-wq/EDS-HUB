@@ -14,7 +14,7 @@ import {
   AlertCircle,
   Loader2,
 } from 'lucide-react';
-import type { Enrollment, LeadSource, PaymentStatus } from '../../../types/database';
+import type { Enrollment, EnrollmentPayment, LeadSource, PaymentStatus } from '../../../types/database';
 import {
   fetchLeadEnrollments,
   formatCurrency,
@@ -40,12 +40,6 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
   // Modals state
   const [isEnrollmentModalOpen, setIsEnrollmentModalOpen] = useState(false);
   const [editingEnrollment, setEditingEnrollment] = useState<Enrollment | null>(null);
-
-  const [paymentModalEnrollment, setPaymentModalEnrollment] = useState<{
-    id: string;
-    courseName: string;
-    suggestedAmount: number;
-  } | null>(null);
 
   // Expanded accordions for payments
   const [expandedEnrollmentIds, setExpandedEnrollmentIds] = useState<Record<string, boolean>>({});
@@ -85,11 +79,33 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
     setIsEnrollmentModalOpen(true);
   };
 
+  // Payment Modal State
+  const [paymentModalEnrollment, setPaymentModalEnrollment] = useState<{
+    id: string;
+    courseName: string;
+    suggestedAmount: number;
+    mode?: 'payment' | 'refund';
+    parentPayment?: EnrollmentPayment | null;
+    maxRefundableAmount?: number;
+  } | null>(null);
+
   const handleOpenAddPayment = (e: Enrollment) => {
     setPaymentModalEnrollment({
       id: e.id,
       courseName: e.course_name_snapshot,
       suggestedAmount: e.remaining_balance || 0,
+      mode: 'payment',
+    });
+  };
+
+  const handleOpenRefund = (e: Enrollment, parentPayment: EnrollmentPayment, maxRefund: number) => {
+    setPaymentModalEnrollment({
+      id: e.id,
+      courseName: e.course_name_snapshot,
+      suggestedAmount: maxRefund,
+      mode: 'refund',
+      parentPayment,
+      maxRefundableAmount: maxRefund,
     });
   };
 
@@ -336,32 +352,65 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
                               <thead className="bg-[#f8fafc] text-slate-500 font-semibold border-b border-slate-200/80">
                                 <tr>
                                   <th className="py-2 px-3">Data</th>
+                                  <th className="py-2 px-3">Tipo</th>
                                   <th className="py-2 px-3">Valor</th>
                                   <th className="py-2 px-3">Status</th>
                                   <th className="py-2 px-3">Método</th>
                                   <th className="py-2 px-3">Ref / Notas</th>
+                                  <th className="py-2 px-3 text-right">Ações</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 text-slate-700">
-                                {payments.map((p) => (
-                                  <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
-                                    <td className="py-2 px-3 whitespace-nowrap font-medium text-slate-600">
-                                      {p.payment_date}
-                                    </td>
-                                    <td className="py-2 px-3 whitespace-nowrap font-bold text-slate-900">
-                                      {formatCurrency(p.amount, p.currency)}
-                                    </td>
-                                    <td className="py-2 px-3 whitespace-nowrap">
-                                      {getPaymentStatusBadge(p.payment_status)}
-                                    </td>
-                                    <td className="py-2 px-3 whitespace-nowrap capitalize text-slate-500 text-[11px]">
-                                      {p.payment_method?.replace(/_/g, ' ') || '—'}
-                                    </td>
-                                    <td className="py-2 px-3 text-[11px] text-slate-500 max-w-[200px] truncate">
-                                      {[p.external_reference, p.notes].filter(Boolean).join(' - ') || '—'}
-                                    </td>
-                                  </tr>
-                                ))}
+                                {payments.map((p) => {
+                                  const isRefund = p.payment_type === 'refund';
+                                  const refundsForThis = payments.filter(
+                                    (r) => r.payment_type === 'refund' && r.parent_payment_id === p.id && r.payment_status === 'paid'
+                                  );
+                                  const totalRefunded = refundsForThis.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                                  const refundableRemaining = Math.max((Number(p.amount) || 0) - totalRefunded, 0);
+
+                                  return (
+                                    <tr key={p.id} className={`hover:bg-slate-50/60 transition-colors ${isRefund ? 'bg-amber-50/30' : ''}`}>
+                                      <td className="py-2 px-3 whitespace-nowrap font-medium text-slate-600">
+                                        {p.payment_date}
+                                      </td>
+                                      <td className="py-2 px-3 whitespace-nowrap">
+                                        {isRefund ? (
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                            Reembolso
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
+                                            Pagamento
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className={`py-2 px-3 whitespace-nowrap font-bold ${isRefund ? 'text-amber-700' : 'text-slate-900'}`}>
+                                        {isRefund ? `-${formatCurrency(p.amount, p.currency)}` : formatCurrency(p.amount, p.currency)}
+                                      </td>
+                                      <td className="py-2 px-3 whitespace-nowrap">
+                                        {getPaymentStatusBadge(p.payment_status)}
+                                      </td>
+                                      <td className="py-2 px-3 whitespace-nowrap capitalize text-slate-500 text-[11px]">
+                                        {p.payment_method?.replace(/_/g, ' ') || '—'}
+                                      </td>
+                                      <td className="py-2 px-3 text-[11px] text-slate-500 max-w-[200px] truncate">
+                                        {[p.external_reference, p.notes].filter(Boolean).join(' - ') || '—'}
+                                      </td>
+                                      <td className="py-2 px-3 text-right">
+                                        {!isRefund && p.payment_status === 'paid' && refundableRemaining > 0 && (
+                                          <button
+                                            onClick={() => handleOpenRefund(enr, p, refundableRemaining)}
+                                            title="Registrar Reembolso Integral ou Parcial"
+                                            className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 hover:underline"
+                                          >
+                                            Reembolsar
+                                          </button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
@@ -393,6 +442,9 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
           enrollmentId={paymentModalEnrollment.id}
           courseName={paymentModalEnrollment.courseName}
           suggestedAmount={paymentModalEnrollment.suggestedAmount}
+          mode={paymentModalEnrollment.mode || 'payment'}
+          parentPayment={paymentModalEnrollment.parentPayment}
+          maxRefundableAmount={paymentModalEnrollment.maxRefundableAmount}
           onSuccess={handleMutationSuccess}
         />
       )}

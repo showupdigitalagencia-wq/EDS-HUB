@@ -20,7 +20,7 @@ export const RevenueKpisWidget: React.FC<RevenueKpisWidgetProps> = ({
     {
       title: 'Net Revenue (Receita Líquida)',
       value: formatCurrency(kpis.net_revenue, currency),
-      subtitle: `Coletado: ${formatCurrency(kpis.collected_revenue, currency)} • Reembolsos: ${formatCurrency(kpis.refunded_amount, currency)}`,
+      subtitle: `Bruto Coletado: ${formatCurrency(kpis.gross_collected ?? kpis.collected_revenue, currency)} • Reembolsos: ${formatCurrency(kpis.refunded_amount, currency)}`,
       icon: DollarSign,
       iconBg: 'bg-emerald-50 text-emerald-600',
       borderAccent: 'border-emerald-200/80',
