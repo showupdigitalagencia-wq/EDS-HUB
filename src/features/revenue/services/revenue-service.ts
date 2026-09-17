@@ -138,6 +138,8 @@ export async function fetchLeadEnrollments(leadId: string): Promise<Enrollment[]
     .select(`
       *,
       course:courses(*),
+      session:course_sessions(*),
+      participation:course_participations(*),
       payments:enrollment_payments(*)
     `)
     .eq('lead_id', leadId)

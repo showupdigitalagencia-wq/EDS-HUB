@@ -13,6 +13,7 @@ import {
   CreditCard,
   AlertCircle,
   Loader2,
+  Award,
 } from 'lucide-react';
 import type { Enrollment, EnrollmentPayment, LeadSource, PaymentStatus } from '../../../types/database';
 import {
@@ -21,6 +22,7 @@ import {
 } from '../../revenue/services/revenue-service';
 import { EnrollmentModal } from './EnrollmentModal';
 import { PaymentModal } from './PaymentModal';
+import { AssignSessionModal } from '../../courses/components/AssignSessionModal';
 
 interface LeadEnrollmentCardProps {
   leadId: string;
@@ -109,6 +111,32 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
     });
   };
 
+  const [assignSessionEnrollment, setAssignSessionEnrollment] = useState<{
+    id: string;
+    courseId: string;
+    sessionId?: string | null;
+  } | null>(null);
+
+  const isRepeatStudent = enrollments.filter((e) => e.enrollment_status === 'confirmed').length >= 2;
+
+  const sortedEnrollments = [...enrollments].sort((a, b) => {
+    const aIsActive =
+      a.enrollment_status === 'confirmed' &&
+      (!a.participation || a.participation.completion_status !== 'completed');
+    const bIsActive =
+      b.enrollment_status === 'confirmed' &&
+      (!b.participation || b.participation.completion_status !== 'completed');
+    if (aIsActive && !bIsActive) return -1;
+    if (!aIsActive && bIsActive) return 1;
+
+    const aIsCompleted = a.participation?.completion_status === 'completed';
+    const bIsCompleted = b.participation?.completion_status === 'completed';
+    if (aIsCompleted && !bIsCompleted) return -1;
+    if (!aIsCompleted && bIsCompleted) return 1;
+
+    return new Date(b.enrollment_date).getTime() - new Date(a.enrollment_date).getTime();
+  });
+
   const handleMutationSuccess = () => {
     loadData();
     if (onEnrollmentChanged) onEnrollmentChanged();
@@ -179,11 +207,19 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
             <GraduationCap className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-[#08254f] font-heading">
-              Matrículas & Resultado Comercial
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-[#08254f] font-heading">
+                Matrículas & Histórico Acadêmico
+              </h3>
+              {isRepeatStudent && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs" title="Aluno com 2 ou mais matrículas confirmadas">
+                  <Award className="w-3 h-3 text-amber-600" />
+                  Repeat Student
+                </span>
+              )}
+            </div>
             <p className="text-[11px] text-slate-500">
-              Contratos acadêmicos e registros financeiros auditáveis
+              Contratos acadêmicos, turmas vinculadas e registros financeiros
             </p>
           </div>
         </div>
@@ -229,7 +265,7 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
           </div>
         ) : (
           <div className="space-y-4">
-            {enrollments.map((enr) => {
+            {sortedEnrollments.map((enr) => {
               const isExpanded = !!expandedEnrollmentIds[enr.id];
               const payments = enr.payments || [];
 
@@ -257,6 +293,63 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
                           Origem: {enr.source}
                         </span>
                       </div>
+
+                      {/* Course Session Linkage */}
+                      {enr.session ? (
+                        <div className="pt-1 flex items-center gap-2 flex-wrap text-xs">
+                          <span className="font-semibold text-slate-700 font-mono bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                            {enr.session.code}
+                          </span>
+                          <span className="text-slate-700 font-medium">{enr.session.title}</span>
+                          <span className="text-slate-400 font-mono text-[11px]">
+                            ({enr.session.start_date} até {enr.session.end_date})
+                          </span>
+                          {enr.participation && (
+                            <>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-[11px] font-semibold text-slate-700 capitalize">
+                                Presença: {enr.participation.attendance_status}
+                              </span>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-[11px] font-semibold text-slate-700 capitalize">
+                                Status: {enr.participation.completion_status}
+                              </span>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAssignSessionEnrollment({
+                                id: enr.id,
+                                courseId: enr.course_id,
+                                sessionId: enr.session?.id,
+                              })
+                            }
+                            className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 ml-1 underline"
+                          >
+                            Trocar Turma
+                          </button>
+                        </div>
+                      ) : enr.enrollment_status === 'confirmed' ? (
+                        <div className="pt-1 flex items-center gap-2 text-xs">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                            Aguardando Turma
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAssignSessionEnrollment({
+                                id: enr.id,
+                                courseId: enr.course_id,
+                                sessionId: null,
+                              })
+                            }
+                            className="px-2 py-0.5 rounded text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                          >
+                            Atribuir Turma
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Financial Metrics Badges */}
@@ -445,6 +538,19 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
           mode={paymentModalEnrollment.mode || 'payment'}
           parentPayment={paymentModalEnrollment.parentPayment}
           maxRefundableAmount={paymentModalEnrollment.maxRefundableAmount}
+          onSuccess={handleMutationSuccess}
+        />
+      )}
+
+      {assignSessionEnrollment && (
+        <AssignSessionModal
+          isOpen={true}
+          onClose={() => setAssignSessionEnrollment(null)}
+          enrollmentId={assignSessionEnrollment.id}
+          leadId={leadId}
+          studentName=""
+          courseId={assignSessionEnrollment.courseId}
+          currentSessionId={assignSessionEnrollment.sessionId}
           onSuccess={handleMutationSuccess}
         />
       )}

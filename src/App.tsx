@@ -23,6 +23,8 @@ import { SequencesListPage } from './features/sequences/SequencesListPage';
 import { SequenceBuilderPage } from './features/sequences/SequenceBuilderPage';
 import { InboxPage } from './features/inbox/InboxPage';
 import { LeadScoringSettingsPage } from './features/scoring/LeadScoringSettingsPage';
+import { CourseOperationsPage } from './features/courses/CourseOperationsPage';
+import { SessionDetailPage } from './features/courses/SessionDetailPage';
 
 export default function App() {
   return (
@@ -66,6 +68,24 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/courses/operations"
+            element={
+              <ProtectedRoute>
+                <CourseOperationsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/courses/sessions/:id"
+            element={
+              <ProtectedRoute>
+                <SessionDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/courses" element={<Navigate to="/courses/operations" replace />} />
+          <Route path="/course-operations" element={<Navigate to="/courses/operations" replace />} />
           <Route
             path="/foundation"
             element={

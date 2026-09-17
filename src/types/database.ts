@@ -37,9 +37,26 @@ export type ActivityType =
   | 'sequence_started'
   | 'sequence_completed'
   | 'sequence_failed'
-  | 'sequence_stopped';
+  | 'sequence_stopped'
+  | 'email_reply_received'
+  | 'sms_reply_received'
+  | 'enrollment_created'
+  | 'enrollment_confirmed'
+  | 'course_session_assigned'
+  | 'course_session_changed'
+  | 'attendance_recorded'
+  | 'course_completed'
+  | 'student_no_show'
+  | 'checklist_item_updated';
 export type ActorType = 'system' | 'user';
-export type StageChangeReason = 'initial_assignment' | 'auto_after_intake' | 'manual' | 'csv_import_stage_mapping';
+export type StageChangeReason =
+  | 'initial_assignment'
+  | 'auto_after_intake'
+  | 'manual'
+  | 'csv_import_stage_mapping'
+  | 'enrollment_confirmed'
+  | 'course_completed'
+  | 'post_course_transition';
 export type DomainVerificationStatus = 'unknown' | 'pending' | 'passed' | 'verified' | 'failed';
 
 export type QualificationStatus =
@@ -80,6 +97,8 @@ export interface AppSettings {
   monthly_net_revenue_target?: number;
   monthly_enrollment_target?: number;
   default_currency?: string;
+  course_readiness_window_days?: number;
+  post_course_followup_due_days?: number;
   created_at: string;
   updated_at: string;
 }
@@ -521,7 +540,12 @@ export type AutomationTriggerType =
   | 'enrollment_created'
   | 'enrollment_status_changed'
   | 'payment_received'
-  | 'payment_status_changed';
+  | 'payment_status_changed'
+  | 'course_session_assigned'
+  | 'course_session_changed'
+  | 'attendance_recorded'
+  | 'course_completed'
+  | 'student_no_show';
 
 export type AutomationType = 'workflow' | 'sequence';
 export type AutomationStatus = 'draft' | 'active' | 'paused' | 'archived';
@@ -1212,7 +1236,10 @@ export interface Enrollment {
   created_at: string;
   updated_at: string;
   // Computed or joined
+  course_session_id?: string | null;
   course?: Course | null;
+  session?: CourseSession | null;
+  participation?: CourseParticipation | null;
   payments?: EnrollmentPayment[];
   paid_amount?: number;
   remaining_balance?: number;
@@ -1353,6 +1380,222 @@ export interface RevenueDashboardMetrics {
   approved_not_enrolled: ApprovedNotEnrolledLead[];
   velocity: EnrollmentVelocityEntry[];
 }
+
+// =============================================================================
+// Phase 4 Block 4: Course Operations & Student Lifecycle Types
+// =============================================================================
+
+export type CourseSessionStatus = 'draft' | 'open' | 'confirmed' | 'completed' | 'cancelled';
+export type AttendanceStatus = 'expected' | 'attended' | 'no_show' | 'cancelled';
+export type CompletionStatus = 'not_started' | 'completed' | 'incomplete';
+export type ChecklistItemStatus = 'pending' | 'completed' | 'waived';
+
+export type NeedsAttentionReasonCode =
+  | 'ENROLLMENT_WITHOUT_SESSION'
+  | 'PAYMENT_OUTSTANDING'
+  | 'MISSING_REQUIRED_ITEM'
+  | 'UPCOMING_SESSION_UNREADY'
+  | 'NO_SHOW'
+  | 'POST_COURSE_FOLLOWUP_DUE'
+  | 'SESSION_CANCELLED_REASSIGNMENT_REQUIRED';
+
+export interface CourseSession {
+  id: string;
+  course_id: string;
+  code: string;
+  title: string;
+  status: CourseSessionStatus;
+  start_date: string;
+  end_date: string;
+  timezone: string;
+  capacity: number | null;
+  location: string | null;
+  instructor_name: string | null;
+  notes: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  // Computed or joined
+  course?: Course;
+  confirmed_students_count?: number;
+  available_seats?: number | null;
+  is_at_capacity?: boolean;
+  is_over_capacity?: boolean;
+}
+
+export interface CourseParticipation {
+  id: string;
+  enrollment_id: string;
+  course_session_id: string;
+  attendance_status: AttendanceStatus;
+  completion_status: CompletionStatus;
+  completed_at: string | null;
+  completed_by: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  session?: CourseSession;
+}
+
+export interface CourseChecklistTemplate {
+  id: string;
+  course_id: string | null;
+  title: string;
+  description: string | null;
+  required: boolean;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudentChecklistItem {
+  id: string;
+  enrollment_id: string;
+  course_session_id: string;
+  template_id: string | null;
+  title_snapshot: string;
+  required: boolean;
+  status: ChecklistItemStatus;
+  completed_at: string | null;
+  completed_by: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionRosterStudent {
+  enrollment_id: string;
+  lead_id: string;
+  student_name: string;
+  student_email: string | null;
+  student_phone: string | null;
+  enrollment_status: EnrollmentStatus;
+  enrollment_date: string;
+  agreed_amount: number;
+  currency: string;
+  net_paid: number;
+  outstanding_balance: number;
+  payment_status_derived: 'paid' | 'partial' | 'unpaid';
+  attendance_status: AttendanceStatus;
+  completion_status: CompletionStatus;
+  completed_at: string | null;
+  participation_notes: string | null;
+  repeat_student: boolean;
+  checklist_total: number;
+  checklist_completed: number;
+  checklist_pending: number;
+  checklist_required_pending: number;
+  checklist_items: StudentChecklistItem[];
+  needs_attention_reasons: NeedsAttentionReasonCode[];
+}
+
+export interface CourseOperationsKpis {
+  active_sessions_count: number;
+  upcoming_sessions_count: number;
+  active_students_count: number;
+  unassigned_enrollments_count: number;
+  needs_attention_count: number;
+}
+
+export interface UpcomingSessionSummary {
+  id: string;
+  code: string;
+  title: string;
+  status: CourseSessionStatus;
+  start_date: string;
+  end_date: string;
+  timezone: string;
+  capacity: number | null;
+  location: string | null;
+  instructor_name: string | null;
+  course_id: string;
+  course_name: string;
+  course_code: string;
+  confirmed_students_count: number;
+  available_seats: number | null;
+  unready_students_count: number;
+}
+
+export interface RecentlyCompletedSessionSummary {
+  id: string;
+  code: string;
+  title: string;
+  status: CourseSessionStatus;
+  start_date: string;
+  end_date: string;
+  course_name: string;
+  total_students: number;
+  attended_count: number;
+  completed_count: number;
+}
+
+export interface UnassignedStudent {
+  enrollment_id: string;
+  lead_id: string;
+  student_name: string;
+  email: string | null;
+  phone: string | null;
+  course_id: string;
+  course_name_snapshot: string;
+  enrollment_date: string;
+  agreed_amount: number;
+  net_paid: number;
+  outstanding_balance: number;
+}
+
+export interface CourseOperationsNeedsAttentionItem {
+  reason_code: NeedsAttentionReasonCode;
+  severity: 'critical' | 'warning' | 'info';
+  enrollment_id: string;
+  lead_id: string;
+  student_name: string;
+  course_name: string;
+  session_code: string | null;
+  session_id: string | null;
+  message: string;
+  detected_at: string;
+}
+
+export interface CourseOperationsDashboardData {
+  kpis: CourseOperationsKpis;
+  upcoming_sessions: UpcomingSessionSummary[];
+  recently_completed: RecentlyCompletedSessionSummary[];
+  unassigned_students: UnassignedStudent[];
+  needs_attention: CourseOperationsNeedsAttentionItem[];
+  settings: {
+    readiness_window_days: number;
+    followup_due_days: number;
+  };
+}
+
+export interface CourseSessionDetailData {
+  session: {
+    id: string;
+    code: string;
+    title: string;
+    status: CourseSessionStatus;
+    start_date: string;
+    end_date: string;
+    timezone: string;
+    capacity: number | null;
+    location: string | null;
+    instructor_name: string | null;
+    notes: string | null;
+    confirmed_students_count: number;
+    available_seats: number | null;
+    is_at_capacity: boolean;
+    is_over_capacity: boolean;
+  };
+  course: {
+    id: string;
+    code: string;
+    name: string;
+    currency: string;
+  };
+  roster: SessionRosterStudent[];
+}
+
 
 
 
