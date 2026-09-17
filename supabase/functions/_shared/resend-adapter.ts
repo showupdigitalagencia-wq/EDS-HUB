@@ -10,6 +10,7 @@ interface SendEmailParams {
   subject: string;
   html: string;
   idempotencyKey: string;
+  headers?: Record<string, string>;
 }
 
 interface SendEmailResult {
@@ -31,6 +32,17 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
   }
 
   try {
+    const payload: any = {
+      from: params.from,
+      to: [params.to],
+      subject: params.subject,
+      html: params.html,
+    };
+
+    if (params.headers && Object.keys(params.headers).length > 0) {
+      payload.headers = params.headers;
+    }
+
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -38,12 +50,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
         'Content-Type': 'application/json',
         'Idempotency-Key': params.idempotencyKey,
       },
-      body: JSON.stringify({
-        from: params.from,
-        to: [params.to],
-        subject: params.subject,
-        html: params.html,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

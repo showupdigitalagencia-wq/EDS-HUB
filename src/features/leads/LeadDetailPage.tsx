@@ -7,6 +7,7 @@ import { ErrorState } from '../../components/ErrorState';
 import type { Lead, PipelineStage, Tag, LeadNote, Task, LeadActivity, ContactPreference, QualificationStatus } from '../../types';
 import { getQualificationStatusBadge, getQualificationStatusLabel } from './utils/qualificationMapping';
 import { LeadAutomationHistory } from './LeadAutomationHistory';
+import { LeadConversationsCard } from './LeadConversationsCard';
 import {
   ArrowLeft,
   Mail,
@@ -663,6 +664,12 @@ export function LeadDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Lead Conversations Card (Inbound & Outbound CRM) */}
+            <LeadConversationsCard
+              lead={lead}
+              onLeadUpdated={loadLeadData}
+            />
 
             {/* Automation History Card */}
             <LeadAutomationHistory

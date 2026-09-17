@@ -12,11 +12,13 @@ import {
   ClipboardList,
   Workflow,
   GitFork,
+  Inbox,
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Foundation Status', href: '/', icon: LayoutDashboard },
   { name: 'Leads', href: '/leads', icon: Users },
+  { name: 'Inbox', href: '/inbox', icon: Inbox },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban },
   { name: 'Forms', href: '/forms', icon: ClipboardList },
   { name: 'Automations', href: '/automations', icon: Workflow },

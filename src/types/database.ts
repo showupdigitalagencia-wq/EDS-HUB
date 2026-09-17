@@ -108,6 +108,7 @@ export interface Lead {
   course_interests: string[];
   pipeline_stage_id: string;
   source_created_at: string | null;
+  last_response_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -157,6 +158,10 @@ export interface OutboundMessage {
   sent_at: string | null;
   automation_run_id?: string | null;
   automation_run_step_id?: string | null;
+  conversation_id?: string | null;
+  is_manual_reply?: boolean;
+  actor_id?: string | null;
+  in_reply_to_provider_message_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -506,7 +511,8 @@ export type AutomationTriggerType =
   | 'qualification_status_changed'
   | 'pipeline_stage_changed'
   | 'tag_added'
-  | 'manual_enrollment';
+  | 'manual_enrollment'
+  | 'lead_replied';
 
 export type AutomationType = 'workflow' | 'sequence';
 export type AutomationStatus = 'draft' | 'active' | 'paused' | 'archived';
@@ -625,6 +631,7 @@ export interface Automation {
   status: AutomationStatus;
   stop_conditions: SequenceStopCondition[];
   enrollment_rules: Record<string, unknown>;
+  stop_on_response?: boolean;
   current_version: number;
   created_by_user_id: string | null;
   created_at: string;
@@ -645,6 +652,7 @@ export interface AutomationVersion {
   status: AutomationVersionStatus;
   definition: Record<string, unknown>;
   stop_conditions?: SequenceStopCondition[];
+  stop_on_response?: boolean;
   published_at: string | null;
   created_by_user_id: string | null;
   created_at: string;
@@ -773,6 +781,99 @@ export interface NextActionInfo {
   scheduledAt: string | null;
   isImmediate: boolean;
   isPaused: boolean;
+}
+
+// =============================================================================
+// Phase 3 Block 4: Inbound Responses & Conversational CRM Types
+// =============================================================================
+
+export type ConversationChannel = 'email' | 'sms';
+export type ConversationStatus = 'open' | 'closed';
+export type InboundProcessingStatus = 'received' | 'processed' | 'conflict' | 'failed';
+
+export interface Conversation {
+  id: string;
+  lead_id: string;
+  channel: ConversationChannel;
+  status: ConversationStatus;
+  external_thread_id: string | null;
+  subject: string | null;
+  last_message_at: string;
+  last_message_preview: string | null;
+  last_message_direction: 'inbound' | 'outbound' | null;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joins & derived
+  unread_count?: number;
+  lead?: {
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+    phone_e164: string | null;
+    contact_preference: ContactPreference;
+    qualification_status: QualificationStatus | null;
+    course_interest: string | null;
+    pipeline_stage_id: string;
+    last_response_at?: string | null;
+    pipeline_stages?: { id: string; name: string; code: string } | null;
+  } | null;
+}
+
+export interface InboundMessage {
+  id: string;
+  lead_id: string | null;
+  conversation_id: string | null;
+  channel: ConversationChannel;
+  provider: 'resend' | 'twilio';
+  provider_message_id: string;
+  provider_thread_id: string | null;
+  from_address: string;
+  to_address: string;
+  subject: string | null;
+  body_text: string;
+  body_html: string | null;
+  attachments: Array<{
+    filename: string;
+    mime_type: string;
+    size?: number;
+    provider_attachment_id?: string;
+  }>;
+  raw_metadata: Record<string, unknown>;
+  processing_status: InboundProcessingStatus;
+  conflict_reason: string | null;
+  processing_error: string | null;
+  read_at: string | null;
+  received_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationThreadMessage {
+  id: string;
+  conversation_id: string;
+  direction: 'inbound' | 'outbound';
+  channel: ConversationChannel;
+  provider: string;
+  sender: string;
+  recipient: string;
+  subject?: string | null;
+  body: string;
+  body_html?: string | null;
+  attachments?: Array<{ filename: string; mime_type: string; size?: number }>;
+  status?: string;
+  timestamp: string;
+  read_at?: string | null;
+  is_manual_reply?: boolean;
+}
+
+export interface ConversationMetrics {
+  total_replies: number;
+  email_replies: number;
+  sms_replies: number;
+  open_conversations: number;
+  unread_conversations: number;
 }
 
 

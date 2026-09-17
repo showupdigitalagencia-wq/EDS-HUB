@@ -19,6 +19,7 @@ import { AutomationBuilderPage } from './features/automations/AutomationBuilderP
 import { AutomationRunsPage } from './features/automations/AutomationRunsPage';
 import { SequencesListPage } from './features/sequences/SequencesListPage';
 import { SequenceBuilderPage } from './features/sequences/SequenceBuilderPage';
+import { InboxPage } from './features/inbox/InboxPage';
 
 export default function App() {
   return (
@@ -51,6 +52,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <LeadDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inbox"
+            element={
+              <ProtectedRoute>
+                <InboxPage />
               </ProtectedRoute>
             }
           />
