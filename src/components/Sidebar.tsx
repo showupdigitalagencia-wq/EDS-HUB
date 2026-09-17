@@ -14,10 +14,11 @@ import {
   GitFork,
   Inbox,
   Target,
+  Activity,
 } from 'lucide-react';
 
 const navigation = [
-  { name: 'Foundation Status', href: '/', icon: LayoutDashboard },
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Leads', href: '/leads', icon: Users },
   { name: 'Inbox', href: '/inbox', icon: Inbox },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban },
@@ -27,6 +28,7 @@ const navigation = [
   { name: 'Campaigns', href: '/campaigns', icon: Mail },
   { name: 'Templates', href: '/templates', icon: FileText },
   { name: 'Lead Scoring', href: '/scoring', icon: Target },
+  { name: 'Foundation Status', href: '/foundation', icon: Activity },
   { name: 'System Setup', href: '/settings', icon: Settings },
 ];
 

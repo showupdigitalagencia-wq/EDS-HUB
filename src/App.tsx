@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './features/auth/AuthProvider';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoginPage } from './features/auth/LoginPage';
+import { SalesDashboardPage } from './features/dashboard/SalesDashboardPage';
 import { FoundationStatusPage } from './features/dashboard/FoundationStatusPage';
 import { SystemSetupPage } from './features/settings/SystemSetupPage';
 import { LeadsListPage } from './features/leads/LeadsListPage';
@@ -34,6 +35,22 @@ export default function App() {
           {/* Protected routes */}
           <Route
             path="/"
+            element={
+              <ProtectedRoute>
+                <SalesDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <SalesDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/foundation"
             element={
               <ProtectedRoute>
                 <FoundationStatusPage />

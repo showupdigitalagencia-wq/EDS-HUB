@@ -988,6 +988,189 @@ export interface LeadScoreCalculationResult {
   }>;
 }
 
+// =============================================================================
+// Phase 4 Block 2: Sales Intelligence Dashboard Types
+// =============================================================================
+
+export type MetricSemantics = 'SNAPSHOT' | 'PERIOD';
+
+export type DashboardPeriodFilter = 'today' | '7d' | '30d' | '90d' | 'custom';
+
+export interface DashboardSnapshotMetrics {
+  total_leads: number;
+  open_tasks: number;
+  open_conversations: number;
+  unread_conversations: number;
+}
+
+export interface DashboardPipelineStage {
+  stage_id: string;
+  stage_code: string;
+  stage_name: string;
+  sort_order: number;
+  lead_count: number;
+  percentage: number;
+}
+
+export interface DashboardFunnelStage {
+  stage_code: string;
+  stage_name: string;
+  sort_order: number;
+  unique_leads_entered: number;
+  conversion_from_prev: number | null;
+}
+
+export interface DashboardPipelineMetrics {
+  current_distribution: DashboardPipelineStage[];
+  funnel: DashboardFunnelStage[];
+  movements_in_period: number;
+}
+
+export interface DashboardQualificationItem {
+  status: string;
+  label: string;
+  sort_order: number;
+  lead_count: number;
+  percentage: number;
+}
+
+export interface DashboardQualificationMetrics {
+  distribution: DashboardQualificationItem[];
+  confirmed_count: number;
+}
+
+export interface DashboardScoreBand {
+  category: string;
+  label: string;
+  min_score: number | null;
+  max_score: number | null;
+  lead_count: number;
+  percentage: number;
+}
+
+export interface DashboardScoringMetrics {
+  thresholds: LeadScoreSettings;
+  average_score: number;
+  hot_and_very_hot_count: number;
+  distribution: DashboardScoreBand[];
+}
+
+export interface DashboardActivityTrendItem {
+  date: string;
+  new_leads: number;
+  outbound_messages: number;
+  inbound_replies: number;
+  stage_movements: number;
+}
+
+export interface DashboardActivityMetrics {
+  new_leads_count: number;
+  outbound_sent_count: number;
+  outbound_unique_leads: number;
+  inbound_replies_count: number;
+  inbound_unique_leads: number;
+  reply_rate: number | null;
+  avg_first_response_time_seconds: number | null;
+  trend: DashboardActivityTrendItem[];
+}
+
+export interface DashboardSequencePerformance {
+  sequence_id: string;
+  sequence_name: string;
+  status: string;
+  active_runs: number;
+  completed_runs: number;
+  outbound_sent: number;
+  replies_attributed: number;
+  reply_rate: number | null;
+}
+
+export interface DashboardAutomationMetrics {
+  active_workflows: number;
+  active_sequences: number;
+  period_runs_total: number;
+  period_runs_completed: number;
+  period_runs_failed: number;
+  sequences_performance: DashboardSequencePerformance[];
+}
+
+export interface DashboardTasksMetrics {
+  pending_tasks: number;
+  due_today: number;
+  overdue: number;
+  completed_all_time: number;
+}
+
+export interface DashboardDemographics {
+  course_interest: Array<{
+    course_name: string;
+    lead_count: number;
+    percentage: number;
+  }>;
+  sources: Array<{
+    source: string;
+    lead_count: number;
+    percentage: number;
+  }>;
+  contact_preference: Array<{
+    preference: string;
+    lead_count: number;
+    percentage: number;
+  }>;
+}
+
+export interface DashboardPriorityLead {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone_e164: string | null;
+  lead_score: number | null;
+  lead_score_category: string;
+  stage_code: string;
+  stage_name: string;
+  qualification_status: string | null;
+  course_interest: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DashboardNeedsAttentionItem {
+  lead_id: string;
+  lead_name: string;
+  lead_email: string | null;
+  reason_code:
+    | 'HIGH_SCORE_NO_NEXT_ACTION'
+    | 'OVERDUE_TASK'
+    | 'FAILED_AUTOMATION'
+    | 'FAILED_INBOUND'
+    | 'UNREAD_CONVERSATION'
+    | 'NO_RESPONSE_STALE'
+    | string;
+  reason_label: string;
+  detected_at: string;
+  detail: string;
+}
+
+export interface SalesDashboardMetrics {
+  snapshot: DashboardSnapshotMetrics;
+  pipeline: DashboardPipelineMetrics;
+  qualification: DashboardQualificationMetrics;
+  scoring: DashboardScoringMetrics;
+  activity: DashboardActivityMetrics;
+  automation: DashboardAutomationMetrics;
+  tasks: DashboardTasksMetrics;
+  demographics: DashboardDemographics;
+  priority_leads: DashboardPriorityLead[];
+  needs_attention: DashboardNeedsAttentionItem[];
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  generated_at: string;
+}
+
+
 
 
 
