@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Plus,
   RefreshCw,
@@ -7,6 +7,7 @@ import {
   UserCheck,
   Clock,
   Layers,
+  Award,
 } from 'lucide-react';
 import {
   fetchCourseOperationsDashboard,
@@ -142,6 +143,14 @@ export const CourseOperationsPage: React.FC = () => {
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-blue-600' : ''}`} />
           </button>
+
+          <Link
+            to="/courses/post-course"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#08254f] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg shadow-xs transition-colors"
+          >
+            <Award className="w-4 h-4 text-amber-500" />
+            <span>Pós-Curso & Alumni</span>
+          </Link>
 
           <button
             onClick={handleCreateSession}

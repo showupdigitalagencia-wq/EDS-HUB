@@ -24,7 +24,9 @@ import {
   Plus,
   Activity,
   User,
+  Award,
 } from 'lucide-react';
+import { moveLeadToAlumni } from '../courses/services/post-course-service';
 
 export function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -57,6 +59,9 @@ export function LeadDetailPage() {
 
   // New Tag state
   const [newTagName, setNewTagName] = useState('');
+
+  // Move to Alumni state
+  const [isMovingAlumni, setIsMovingAlumni] = useState(false);
 
   const loadLeadData = useCallback(async () => {
     if (!id) return;
@@ -285,6 +290,24 @@ export function LeadDetailPage() {
     }
   };
 
+  // Promote to Alumni
+  const handlePromoteToAlumni = async () => {
+    if (!lead) return;
+    if (!confirm('Deseja promover este aluno para a etapa Alumni no pipeline de relacionamento?')) return;
+    setIsMovingAlumni(true);
+    try {
+      const res = await moveLeadToAlumni(lead.id);
+      if (res.has_future_session) {
+        alert('Aluno promovido a Alumni! Nota: O aluno possui matrícula/turma futura confirmada, que continua ativa normalmente.');
+      }
+      loadLeadData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Falha ao mover para Alumni.');
+    } finally {
+      setIsMovingAlumni(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout title="Lead Profile">
@@ -332,6 +355,17 @@ export function LeadDetailPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {currentStage?.code !== 'alumni' && (
+              <button
+                onClick={handlePromoteToAlumni}
+                disabled={isMovingAlumni}
+                title="Promover para Alumni"
+                className="btn-secondary text-xs text-[#08254f] border-slate-200 hover:border-slate-300"
+              >
+                <Award className="h-4 w-4 text-amber-500" />
+                {isMovingAlumni ? 'Movendo...' : 'Mover para Alumni'}
+              </button>
+            )}
             {!isEditing ? (
               <button
                 onClick={() => setIsEditing(true)}

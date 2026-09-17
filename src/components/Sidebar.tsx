@@ -16,6 +16,7 @@ import {
   Activity,
   DollarSign,
   GraduationCap,
+  Award,
 } from 'lucide-react';
 import edsLogo from '../assets/eds-logo.png';
 
@@ -43,6 +44,7 @@ const navigationGroups: NavGroup[] = [
     label: 'COURSES',
     items: [
       { name: 'Course Operations', href: '/courses/operations', icon: GraduationCap },
+      { name: 'Post-Course & Alumni', href: '/courses/post-course', icon: Award },
     ],
   },
   {

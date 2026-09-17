@@ -23,6 +23,7 @@ import {
 import { EnrollmentModal } from './EnrollmentModal';
 import { PaymentModal } from './PaymentModal';
 import { AssignSessionModal } from '../../courses/components/AssignSessionModal';
+import { PostCourseEngagementModal } from '../../courses/components/PostCourseEngagementModal';
 
 interface LeadEnrollmentCardProps {
   leadId: string;
@@ -45,6 +46,12 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
 
   // Expanded accordions for payments
   const [expandedEnrollmentIds, setExpandedEnrollmentIds] = useState<Record<string, boolean>>({});
+
+  // Post-Course Engagement modal
+  const [engagementModal, setEngagementModal] = useState<{
+    id: string;
+    courseName: string;
+  } | null>(null);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -420,6 +427,65 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
                         </div>
                       )}
 
+                      {/* Post-Course Engagement Section */}
+                      {enr.participation?.completion_status === 'completed' && (
+                        <div className="p-3.5 bg-blue-50/50 border border-blue-100 rounded-xl space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h5 className="text-xs font-bold text-[#08254f] flex items-center gap-1.5 font-heading">
+                              <Award className="w-3.5 h-3.5 text-[#125e95]" />
+                              Acompanhamento Pós-Curso & Satisfação
+                            </h5>
+                            {enr.post_course_engagement && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEngagementModal({
+                                    id: enr.post_course_engagement!.id,
+                                    courseName: enr.course_name_snapshot,
+                                  })
+                                }
+                                className="text-[11px] font-semibold text-[#125e95] hover:underline"
+                              >
+                                Gerenciar Pós-Curso
+                              </button>
+                            )}
+                          </div>
+
+                          {enr.post_course_engagement ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1">
+                              <div className="bg-white p-2 rounded-lg border border-slate-200">
+                                <span className="text-[10px] text-slate-400 font-medium block">Follow-Up:</span>
+                                <span className="font-semibold text-slate-700 capitalize">
+                                  {enr.post_course_engagement.followup_status}
+                                </span>
+                              </div>
+                              <div className="bg-white p-2 rounded-lg border border-slate-200">
+                                <span className="text-[10px] text-slate-400 font-medium block">Feedback:</span>
+                                <span className="font-semibold text-slate-700 capitalize">
+                                  {enr.post_course_engagement.feedback_status}
+                                </span>
+                              </div>
+                              <div className="bg-white p-2 rounded-lg border border-slate-200">
+                                <span className="text-[10px] text-slate-400 font-medium block">Depoimento:</span>
+                                <span className="font-semibold text-slate-700 capitalize">
+                                  {enr.post_course_engagement.testimonial_status}
+                                </span>
+                              </div>
+                              <div className="bg-white p-2 rounded-lg border border-slate-200">
+                                <span className="text-[10px] text-slate-400 font-medium block">Consentimento:</span>
+                                <span className="font-semibold text-slate-700 capitalize">
+                                  {enr.post_course_engagement.testimonial_consent_status}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-slate-500 py-1">
+                              Engajamento pós-curso inicializado para esta matrícula concluída.
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Payments Subtable */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
@@ -552,6 +618,17 @@ export const LeadEnrollmentCard: React.FC<LeadEnrollmentCardProps> = ({
           courseId={assignSessionEnrollment.courseId}
           currentSessionId={assignSessionEnrollment.sessionId}
           onSuccess={handleMutationSuccess}
+        />
+      )}
+
+      {engagementModal && (
+        <PostCourseEngagementModal
+          isOpen={true}
+          onClose={() => setEngagementModal(null)}
+          onSuccess={handleMutationSuccess}
+          engagementId={engagementModal.id}
+          courseName={engagementModal.courseName}
+          leadId={leadId}
         />
       )}
     </div>

@@ -47,7 +47,14 @@ export type ActivityType =
   | 'attendance_recorded'
   | 'course_completed'
   | 'student_no_show'
-  | 'checklist_item_updated';
+  | 'checklist_item_updated'
+  | 'post_course_followup_created'
+  | 'post_course_followup_completed'
+  | 'feedback_requested'
+  | 'feedback_received'
+  | 'testimonial_requested'
+  | 'testimonial_received'
+  | 'future_course_interest_added';
 export type ActorType = 'system' | 'user';
 export type StageChangeReason =
   | 'initial_assignment'
@@ -56,7 +63,8 @@ export type StageChangeReason =
   | 'csv_import_stage_mapping'
   | 'enrollment_confirmed'
   | 'course_completed'
-  | 'post_course_transition';
+  | 'post_course_transition'
+  | 'alumni_transition';
 export type DomainVerificationStatus = 'unknown' | 'pending' | 'passed' | 'verified' | 'failed';
 
 export type QualificationStatus =
@@ -99,6 +107,8 @@ export interface AppSettings {
   default_currency?: string;
   course_readiness_window_days?: number;
   post_course_followup_due_days?: number;
+  post_course_feedback_due_days?: number;
+  testimonial_request_due_days?: number;
   created_at: string;
   updated_at: string;
 }
@@ -450,6 +460,7 @@ export interface Form {
   duplicate_update_enabled: boolean;
   current_version: number;
   submit_button_text: string;
+  purpose?: 'general' | 'lead_capture' | 'course_feedback';
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
@@ -488,6 +499,7 @@ export interface FormSubmission {
   course_interest: string | null;
   source_detail: string | null;
   processing_status: SubmissionProcessingStatus;
+  post_course_engagement_id?: string | null;
   processing_error: string | null;
   idempotency_key: string;
   ip_address: string | null;
@@ -545,7 +557,13 @@ export type AutomationTriggerType =
   | 'course_session_changed'
   | 'attendance_recorded'
   | 'course_completed'
-  | 'student_no_show';
+  | 'student_no_show'
+  | 'post_course_engagement_created'
+  | 'post_course_followup_due'
+  | 'post_course_followup_completed'
+  | 'feedback_received'
+  | 'testimonial_received'
+  | 'future_course_interest_added';
 
 export type AutomationType = 'workflow' | 'sequence';
 export type AutomationStatus = 'draft' | 'active' | 'paused' | 'archived';
@@ -1240,6 +1258,7 @@ export interface Enrollment {
   course?: Course | null;
   session?: CourseSession | null;
   participation?: CourseParticipation | null;
+  post_course_engagement?: PostCourseEngagement | null;
   payments?: EnrollmentPayment[];
   paid_amount?: number;
   remaining_balance?: number;
@@ -1595,6 +1614,174 @@ export interface CourseSessionDetailData {
   };
   roster: SessionRosterStudent[];
 }
+
+// =============================================================================
+// Phase 4 Block 5: Alumni & Post-Course Experience Types
+// =============================================================================
+
+export type PostCourseFollowupStatus = 'pending' | 'in_progress' | 'completed' | 'skipped';
+export type FeedbackStatus = 'not_requested' | 'requested' | 'received' | 'declined';
+export type TestimonialStatus = 'not_requested' | 'requested' | 'received' | 'declined';
+export type TestimonialConsentStatus = 'unknown' | 'granted' | 'declined';
+export type FutureInterestStatus = 'active' | 'converted' | 'dismissed';
+export type FutureInterestSource = 'manual' | 'post_course' | 'form';
+
+export type PostCourseNeedsAttentionReason =
+  | 'POST_COURSE_FOLLOWUP_OVERDUE'
+  | 'FEEDBACK_PENDING'
+  | 'TESTIMONIAL_REQUEST_DUE'
+  | 'NEXT_COURSE_OPPORTUNITY'
+  | 'POST_COURSE_TASK_OVERDUE';
+
+export interface PostCourseEngagement {
+  id: string;
+  enrollment_id: string;
+  lead_id: string;
+  followup_status: PostCourseFollowupStatus;
+  feedback_status: FeedbackStatus;
+  testimonial_status: TestimonialStatus;
+  testimonial_consent_status: TestimonialConsentStatus;
+  followup_due_at: string;
+  followup_completed_at: string | null;
+  feedback_requested_at: string | null;
+  feedback_received_at: string | null;
+  feedback_notes: string | null;
+  testimonial_requested_at: string | null;
+  testimonial_received_at: string | null;
+  testimonial_notes: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  enrollment?: Enrollment;
+  lead?: Lead;
+}
+
+export interface LeadCourseInterest {
+  id: string;
+  lead_id: string;
+  course_id: string;
+  source: FutureInterestSource;
+  source_enrollment_id: string | null;
+  post_course_engagement_id: string | null;
+  status: FutureInterestStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  course?: Course;
+}
+
+export interface PostCourseFeedbackToken {
+  id: string;
+  engagement_id: string;
+  token_hash: string;
+  token_hint: string | null;
+  expires_at: string | null;
+  used_at: string | null;
+  created_at: string;
+}
+
+export interface PostCourseFollowupQueueItem {
+  engagement_id: string;
+  enrollment_id: string;
+  lead_id: string;
+  student_name: string;
+  student_email: string | null;
+  student_phone: string | null;
+  contact_preference: ContactPreference;
+  course_name: string;
+  session_code: string | null;
+  session_title: string | null;
+  completed_at: string | null;
+  followup_status: PostCourseFollowupStatus;
+  followup_due_at: string;
+  is_overdue: boolean;
+  notes: string | null;
+}
+
+export interface TestimonialOpportunityItem {
+  engagement_id: string;
+  enrollment_id: string;
+  lead_id: string;
+  student_name: string;
+  student_email: string | null;
+  course_name: string;
+  session_code: string | null;
+  feedback_status: FeedbackStatus;
+  feedback_received_at: string | null;
+  feedback_notes: string | null;
+  testimonial_status: TestimonialStatus;
+  testimonial_consent_status: TestimonialConsentStatus;
+  testimonial_notes: string | null;
+}
+
+export interface NextCourseOpportunityItem {
+  interest_id: string;
+  lead_id: string;
+  student_name: string;
+  student_email: string | null;
+  student_phone: string | null;
+  contact_preference: ContactPreference;
+  course_id: string;
+  target_course_name: string;
+  default_price: number | null;
+  source: FutureInterestSource;
+  status: FutureInterestStatus;
+  notes: string | null;
+  created_at: string;
+  completed_course_name: string | null;
+}
+
+export interface AlumniDirectoryItem {
+  lead_id: string;
+  student_name: string;
+  student_email: string | null;
+  student_phone: string | null;
+  contact_preference: ContactPreference;
+  member_since: string;
+  confirmed_enrollments_count: number;
+  is_repeat_student: boolean;
+  total_spend: number;
+  last_completed_date: string | null;
+  current_interest: string | null;
+}
+
+export interface PostCourseNeedsAttentionItem {
+  reason_code: PostCourseNeedsAttentionReason;
+  severity: 'warning' | 'info';
+  engagement_id: string;
+  lead_id: string;
+  student_name: string;
+  course_name: string;
+  message: string;
+  detected_at: string;
+}
+
+export interface PostCourseKpis {
+  completed_students_count: number;
+  followups_due_count: number;
+  followups_overdue_count: number;
+  feedback_pending_count: number;
+  feedback_received_count: number;
+  testimonials_received_count: number;
+  testimonial_opportunities_count: number;
+  next_course_opportunities_count: number;
+  repeat_students_count: number;
+  alumni_students_count: number;
+  feedback_response_rate: number | null;
+  testimonial_response_rate: number | null;
+  repeat_student_rate: number | null;
+}
+
+export interface PostCourseDashboardData {
+  kpis: PostCourseKpis;
+  followup_queue: PostCourseFollowupQueueItem[];
+  testimonial_opportunities: TestimonialOpportunityItem[];
+  next_course_opportunities: NextCourseOpportunityItem[];
+  alumni_directory: AlumniDirectoryItem[];
+  needs_attention: PostCourseNeedsAttentionItem[];
+}
+
 
 
 
