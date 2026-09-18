@@ -93,8 +93,8 @@ Deno.serve(async (req) => {
         let apiErrorMsg = '';
 
         if (externalId) {
-          // Update existing contact via PATCH /crm/v3/objects/contacts/{contactId}
-          const patchRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${externalId}`, {
+          // Update existing contact via PATCH /crm/objects/2026-09/contacts/{contactId}
+          const patchRes = await fetch(`https://api.hubapi.com/crm/objects/2026-09/contacts/${externalId}`, {
             method: 'PATCH',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -110,8 +110,8 @@ Deno.serve(async (req) => {
             apiErrorMsg = `HubSpot API ${patchRes.status}: ${errBody}`;
           }
         } else {
-          // Create new contact in HubSpot via POST /crm/v3/objects/contacts
-          const postRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts`, {
+          // Create new contact in HubSpot via POST /crm/objects/2026-09/contacts
+          const postRes = await fetch(`https://api.hubapi.com/crm/objects/2026-09/contacts`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,

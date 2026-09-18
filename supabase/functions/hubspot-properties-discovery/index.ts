@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const apiRes = await fetch(`https://api.hubapi.com/crm/v3/properties/contacts`, {
+    const apiRes = await fetch(`https://api.hubapi.com/crm/properties/2026-09/contacts`, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
