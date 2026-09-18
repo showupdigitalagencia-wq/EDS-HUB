@@ -7,6 +7,7 @@ import {
   Clock,
   DollarSign,
   ArrowRight,
+  BarChart3,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Sidebar } from '../../components/Sidebar';
@@ -163,6 +164,16 @@ export const SalesDashboardPage: React.FC = () => {
                   />
                 </div>
               )}
+
+              {/* View Full Reports Button */}
+              <Link
+                to="/reports"
+                id="view-full-reports-btn"
+                className="flex items-center gap-1.5 px-3 py-2 bg-[#08254f] hover:bg-[#061e40] text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                View Full Reports
+              </Link>
 
               {/* Refresh Button */}
               <button

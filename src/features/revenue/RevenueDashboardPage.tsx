@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { Sidebar } from '../../components/Sidebar';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
@@ -10,6 +11,7 @@ import {
   DollarSign,
   RefreshCw,
   Download,
+  BarChart3,
 } from 'lucide-react';
 import type {
   DashboardPeriodFilter,
@@ -142,6 +144,15 @@ export function RevenueDashboardPage() {
                 />
               </div>
             )}
+
+            {/* View Full Reports Button */}
+            <Link
+              to="/reports?tab=revenue"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-[#08254f] hover:bg-[#061e40] shadow-2xs transition-all"
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              View Full Reports
+            </Link>
 
             {/* Export All CSV Button */}
             <button

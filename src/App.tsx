@@ -27,6 +27,7 @@ import { CourseOperationsPage } from './features/courses/CourseOperationsPage';
 import { SessionDetailPage } from './features/courses/SessionDetailPage';
 import { PostCoursePage } from './features/courses/PostCoursePage';
 import { WorkDashboardPage } from './features/work/WorkDashboardPage';
+import { ReportsPage } from './features/reports/ReportsPage';
 
 export default function App() {
   return (
@@ -51,6 +52,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <SalesDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute>
+                <ReportsPage />
               </ProtectedRoute>
             }
           />
