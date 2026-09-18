@@ -42,6 +42,7 @@ export interface ReportMetadata {
   course_filter_id?: string | null;
   include_test: boolean;
   currency: string;
+  legacy_confirmation_fallback_count?: number;
   generated_at: string;
 }
 

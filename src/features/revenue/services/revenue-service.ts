@@ -318,9 +318,6 @@ export function deriveEnrollmentBalances(
       } else {
         grossPaid += amt;
       }
-    } else if (p.payment_status === 'refunded') {
-      // Fallback for any legacy status representation
-      refunded += amt;
     }
   }
 

@@ -65,6 +65,10 @@
 - **Source of Truth**: `public.enrollments` + `public.enrollment_history`
 - **Metric Type**: Period
 - **Date Field Used**: Canonical Confirmation Timestamp `confirmed_at` (derived from earliest `enrollment_history` entry with `status = 'confirmed'`, fallback to `(enrollment_date 00:00:00)` in org timezone).
+- **Data Provenance & Transparency**:
+  - `confirmation_timestamp_source = 'history'`: Proven by immutable audit entry in `enrollment_history`.
+  - `confirmation_timestamp_source = 'legacy_fallback'`: For legacy enrollments created before stage/status audit logging, `enrollment_date` is used as an operational approximation.
+  - Reports metadata returns `legacy_confirmation_fallback_count` reflecting how many enrollments in the report period depend on legacy fallback.
 - **Formula**: `COUNT(id) WHERE enrollment_status = 'confirmed' AND confirmed_at >= start_at AND confirmed_at < end_at`
 - **Null Behavior**: Returns `0`.
 
@@ -79,7 +83,7 @@
 - **Null Behavior**: Returns `NULL` if total confirmed enrollments in period = 0.
 
 ### 2.6 Gross Collected Revenue
-- **Source of Truth**: `public.enrollment_payments` (Reconciles 1:1 with Block 3)
+- **Source of Truth**: `public.enrollment_payments` (Reconciles 1:1 with Block 3 Revenue Dashboard)
 - **Metric Type**: Period
 - **Date Field Used**: `payment_date` in `[start_date, end_date]`
 - **Formula**:
@@ -87,15 +91,19 @@
 - **Null Behavior**: Returns `0.00`.
 
 ### 2.7 Refunded Amount
-- **Source of Truth**: `public.enrollment_payments` (Reconciles 1:1 with Block 3)
+- **Source of Truth**: `public.enrollment_payments` (Reconciles 1:1 with Block 3 Revenue Dashboard)
 - **Metric Type**: Period
 - **Date Field Used**: `payment_date` in `[start_date, end_date]`
 - **Formula**:
-  $$\text{Refunded Amount} = \sum \text{amount} \quad \text{WHERE (payment\_type = 'refund' OR payment\_status = 'refunded') AND currency = 'USD'}$$
+  $$\text{Refunded Amount} = \sum \text{amount} \quad \text{WHERE payment\_type = 'refund' AND payment\_status = 'paid' AND currency = 'USD'}$$
+- **Double Counting Prevention**:
+  - Original payments (`payment_type = 'payment'`) are never summed into Refunded Amount, regardless of whether their status was updated.
+  - Refund records are separate, dedicated transaction records (`payment_type = 'refund'`) created by `process_enrollment_refund`.
+  - Multiple partial refunds and full refunds each have their own refund transaction records and are summed once without double deduction.
 - **Null Behavior**: Returns `0.00`.
 
 ### 2.8 Net Revenue
-- **Source of Truth**: Server-side arithmetic (Reconciles 1:1 with Block 3)
+- **Source of Truth**: Server-side arithmetic (Reconciles 1:1 with Block 3 Revenue Dashboard)
 - **Metric Type**: Period
 - **Formula**: $\text{Net Revenue} = \text{Gross Collected} - \text{Refunded Amount}$
 - **Null Behavior**: Returns `0.00`.

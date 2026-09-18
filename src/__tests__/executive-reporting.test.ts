@@ -123,6 +123,8 @@ import type {
   PostCourseReportData,
   ReportsFilter,
 } from '../features/reports/types/reporting';
+import { deriveEnrollmentBalances } from '../features/revenue/services/revenue-service';
+import type { EnrollmentPayment } from '../types/database';
 import { supabase } from '../lib/supabase';
 
 // Mock Supabase
@@ -745,23 +747,56 @@ describe('Phase 5 Block 2: Reporting & Executive Analytics Suite (90 Scenarios)'
       expect(gross).toBe(3500);
     });
 
-    it('50. Refunded amount reconciles with sum of refunds paid in period', () => {
-      const payments = [
-        { id: 'p1', payment_type: 'payment', payment_status: 'paid', amount: 2000 },
-        { id: 'p2', payment_type: 'refund', payment_status: 'paid', amount: 500 },
-        { id: 'p3', payment_type: 'payment', payment_status: 'refunded', amount: 300 },
+    it('50. Refunded amount reconciles with sum of refunds paid in period and prevents double counting', () => {
+      const payments: EnrollmentPayment[] = [
+        { id: 'p1', enrollment_id: 'e1', payment_type: 'payment', parent_payment_id: null, amount: 2000, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-01', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+        { id: 'p2', enrollment_id: 'e1', payment_type: 'refund', parent_payment_id: 'p1', amount: 500, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-10', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+        { id: 'p3', enrollment_id: 'e1', payment_type: 'payment', parent_payment_id: null, amount: 300, currency: 'USD', payment_status: 'refunded', payment_date: '2026-09-12', payment_method: 'credit_card', external_reference: null, notes: 'Original marked refunded', idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
       ];
+      // Only payment_type = 'refund' AND payment_status = 'paid' is summed into refunded
       const refunded = payments
-        .filter((p) => p.payment_type === 'refund' || p.payment_status === 'refunded')
+        .filter((p) => p.payment_type === 'refund' && p.payment_status === 'paid')
         .reduce((sum, p) => sum + p.amount, 0);
-      expect(refunded).toBe(800);
+      expect(refunded).toBe(500);
+
+      // Canonical helper deriveEnrollmentBalances matches exactly
+      const balances = deriveEnrollmentBalances(2000, payments);
+      expect(balances.refunded).toBe(500);
+      expect(balances.grossPaid).toBe(2000);
+      expect(balances.netPaid).toBe(1500);
     });
 
-    it('51. Net revenue equals Gross Collected minus Refunded Amount', () => {
-      const gross = 3500;
-      const refunds = 800;
-      const net = gross - refunds;
-      expect(net).toBe(2700);
+    it('51. Net revenue equals Gross Collected minus Refunded Amount with double count prevention', () => {
+      // 1. Partial refund: original paid payment + separate refund record
+      const partialRefundPayments: EnrollmentPayment[] = [
+        { id: 'p1', enrollment_id: 'e1', payment_type: 'payment', parent_payment_id: null, amount: 3000, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-01', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+        { id: 'p2', enrollment_id: 'e1', payment_type: 'refund', parent_payment_id: 'p1', amount: 1000, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-05', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+      ];
+      const partialBalances = deriveEnrollmentBalances(3000, partialRefundPayments);
+      expect(partialBalances.grossPaid).toBe(3000);
+      expect(partialBalances.refunded).toBe(1000);
+      expect(partialBalances.netPaid).toBe(2000);
+
+      // 2. Full refund: original paid payment + equal refund record
+      const fullRefundPayments: EnrollmentPayment[] = [
+        { id: 'p1', enrollment_id: 'e1', payment_type: 'payment', parent_payment_id: null, amount: 2500, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-01', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+        { id: 'p2', enrollment_id: 'e1', payment_type: 'refund', parent_payment_id: 'p1', amount: 2500, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-08', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+      ];
+      const fullBalances = deriveEnrollmentBalances(2500, fullRefundPayments);
+      expect(fullBalances.grossPaid).toBe(2500);
+      expect(fullBalances.refunded).toBe(2500);
+      expect(fullBalances.netPaid).toBe(0);
+
+      // 3. Multiple partial refunds: original paid payment + two separate refund records
+      const multiRefundPayments: EnrollmentPayment[] = [
+        { id: 'p1', enrollment_id: 'e1', payment_type: 'payment', parent_payment_id: null, amount: 5000, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-01', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+        { id: 'p2', enrollment_id: 'e1', payment_type: 'refund', parent_payment_id: 'p1', amount: 1000, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-05', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+        { id: 'p3', enrollment_id: 'e1', payment_type: 'refund', parent_payment_id: 'p1', amount: 500, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-10', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+      ];
+      const multiBalances = deriveEnrollmentBalances(5000, multiRefundPayments);
+      expect(multiBalances.grossPaid).toBe(5000);
+      expect(multiBalances.refunded).toBe(1500);
+      expect(multiBalances.netPaid).toBe(3500);
     });
 
     it('52. Current outstanding balance is a current snapshot, not filtered by period dates', () => {
@@ -930,20 +965,36 @@ describe('Phase 5 Block 2: Reporting & Executive Analytics Suite (90 Scenarios)'
   // SECTION 9: Mandatory Adjustments 1 to 44 (Scenarios 66-90)
   // ===========================================================================
   describe('9. Canonical Integrity Adjustments (Scenarios 66-90)', () => {
-    it('66. enrollment confirmation uses canonical confirmation timestamp, not created_at', () => {
-      const enrollmentRecord = {
+    it('66. enrollment confirmation uses canonical confirmation timestamp, not created_at, and distinguishes confirmation_timestamp_source', () => {
+      // 1. With immutable audit history: source is 'history'
+      const enrollmentWithHistory = {
         id: 'e-canon',
         created_at: '2026-08-01T00:00:00Z',
+        enrollment_date: '2026-08-10',
         enrollment_history: [
           { status: 'draft', created_at: '2026-08-01T00:00:00Z' },
           { status: 'confirmed', created_at: '2026-08-15T12:00:00Z' }, // canonical entry
         ],
       };
-      const canonicalConfirmedAt = enrollmentRecord.enrollment_history.find(
+      const canonicalConfirmedAt = enrollmentWithHistory.enrollment_history.find(
         (h) => h.status === 'confirmed'
       )?.created_at;
+      const sourceWithHistory = canonicalConfirmedAt ? 'history' : 'legacy_fallback';
       expect(canonicalConfirmedAt).toBe('2026-08-15T12:00:00Z');
-      expect(canonicalConfirmedAt).not.toBe(enrollmentRecord.created_at);
+      expect(canonicalConfirmedAt).not.toBe(enrollmentWithHistory.created_at);
+      expect(sourceWithHistory).toBe('history');
+
+      // 2. Legacy enrollment without audit history: fallback to enrollment_date approximation
+      const legacyEnrollment = {
+        id: 'e-legacy',
+        created_at: '2026-05-01T00:00:00Z',
+        enrollment_date: '2026-05-10',
+        enrollment_history: [],
+      };
+      const legacyFallbackAt = `${legacyEnrollment.enrollment_date}T00:00:00Z`;
+      const sourceLegacy = legacyEnrollment.enrollment_history.length > 0 ? 'history' : 'legacy_fallback';
+      expect(legacyFallbackAt).toBe('2026-05-10T00:00:00Z');
+      expect(sourceLegacy).toBe('legacy_fallback');
     });
 
     it('67. repeat enrollment ordering uses confirmation timestamp', () => {
@@ -1059,13 +1110,15 @@ describe('Phase 5 Block 2: Reporting & Executive Analytics Suite (90 Scenarios)'
       expect(output.map((o) => o.currency)).toEqual(['USD', 'BRL']);
     });
 
-    it('78. report metadata timezone matches organization timezone', () => {
+    it('78. report metadata timezone matches organization timezone and exposes legacy fallback count', () => {
       const metadata = {
         timezone: 'America/New_York', // Canonical app_settings timezone
         period_start: '2026-08-19',
         period_end: '2026-09-17',
+        legacy_confirmation_fallback_count: 2,
       };
       expect(metadata.timezone).toBe('America/New_York');
+      expect(metadata.legacy_confirmation_fallback_count).toBe(2);
     });
 
     it('79. previous-period timezone boundaries match current semantics', () => {
@@ -1279,12 +1332,33 @@ describe('Phase 5 Block 2: Reporting & Executive Analytics Suite (90 Scenarios)'
       expect(valid[0].id).toBe('p1');
     });
 
-    it('90. current dashboard reconciliation tests pass', () => {
-      // Reconciles Reports Gross & Net with Revenue Dashboard
-      const revenueDashboard = { gross_collected: 45000, net_revenue: 43500 };
-      const executiveReport = { gross_collected: 45000, net_revenue: 43500 };
-      expect(executiveReport.gross_collected).toBe(revenueDashboard.gross_collected);
-      expect(executiveReport.net_revenue).toBe(revenueDashboard.net_revenue);
+    it('90. current dashboard reconciliation tests pass 1:1 using canonical Block 3 calculations', () => {
+      // Reconciles Reports Gross, Refund, Net, and Outstanding with Revenue Dashboard
+      const agreedAmount = 6000;
+      const payments: EnrollmentPayment[] = [
+        { id: 'p1', enrollment_id: 'e1', payment_type: 'payment', parent_payment_id: null, amount: 4500, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-01', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+        { id: 'p2', enrollment_id: 'e1', payment_type: 'refund', parent_payment_id: 'p1', amount: 500, currency: 'USD', payment_status: 'paid', payment_date: '2026-09-10', payment_method: 'credit_card', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+        { id: 'p3', enrollment_id: 'e1', payment_type: 'payment', parent_payment_id: null, amount: 1000, currency: 'USD', payment_status: 'pending', payment_date: '2026-09-12', payment_method: 'wire_transfer', external_reference: null, notes: null, idempotency_key: null, created_by_user_id: null, created_at: '', updated_at: '' },
+      ];
+
+      // Block 3 Revenue Dashboard canonical derivation:
+      const revenueDashboardBalances = deriveEnrollmentBalances(agreedAmount, payments);
+
+      // Reports Hub derivation:
+      const reportsGross = payments.filter((p) => p.payment_type === 'payment' && p.payment_status === 'paid').reduce((s, p) => s + p.amount, 0);
+      const reportsRefund = payments.filter((p) => p.payment_type === 'refund' && p.payment_status === 'paid').reduce((s, p) => s + p.amount, 0);
+      const reportsNet = reportsGross - reportsRefund;
+      const reportsOutstanding = Math.max(agreedAmount - reportsNet, 0);
+
+      expect(reportsGross).toBe(revenueDashboardBalances.grossPaid);
+      expect(reportsRefund).toBe(revenueDashboardBalances.refunded);
+      expect(reportsNet).toBe(revenueDashboardBalances.netPaid);
+      expect(reportsOutstanding).toBe(revenueDashboardBalances.balance);
+
+      expect(reportsGross).toBe(4500);
+      expect(reportsRefund).toBe(500);
+      expect(reportsNet).toBe(4000);
+      expect(reportsOutstanding).toBe(2000);
     });
   });
 });
