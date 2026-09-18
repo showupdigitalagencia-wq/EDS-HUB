@@ -5,14 +5,19 @@ import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { BlockEditor } from '../editor/BlockEditor';
+import { AudienceFilterBuilder } from './components/AudienceFilterBuilder';
+import { AudiencePreviewModal } from './components/AudiencePreviewModal';
+import { SavedSegmentsModal } from './components/SavedSegmentsModal';
+import { campaignAudienceService } from './services/campaign-audience-service';
 import type { EmailBlock } from '../editor/types';
 import type {
   Campaign,
   CampaignStatus,
   CampaignVersion,
   CampaignRecipient,
-  PipelineStage,
-  Tag,
+  CampaignAudience,
+  AudienceFilterDefinition,
+  AudiencePreviewResult,
 } from '../../types';
 import {
   ArrowLeft,
@@ -31,16 +36,17 @@ import {
   Check,
   ShieldCheck,
   XCircle,
+  PhoneCall,
+  MessageSquare,
+  Sparkles,
 } from 'lucide-react';
 
-type TabType = 'editor' | 'audience' | 'ab_test' | 'versions' | 'recipients' | 'send';
+type TabType = 'editor' | 'audience' | 'ab_test' | 'versions' | 'send';
 
 export function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [stages, setStages] = useState<PipelineStage[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
   const [activeTab, setActiveTab] = useState<TabType>('editor');
 
   // Loading & Action states
@@ -51,6 +57,7 @@ export function CampaignDetailPage() {
 
   // Campaign Header & Details
   const [name, setName] = useState('');
+  const [channel, setChannel] = useState<'email' | 'sms' | 'call'>('email');
   const [subject, setSubject] = useState('');
   const [previewText, setPreviewText] = useState('');
   const [fromName, setFromName] = useState('');
@@ -66,13 +73,15 @@ export function CampaignDetailPage() {
   const [versions, setVersions] = useState<CampaignVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
 
-  // Audience
-  const [selectedStageIds, setSelectedStageIds] = useState<string[]>([]);
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
-  const [selectedSource, setSelectedSource] = useState<string>('');
-  const [selectedPref, setSelectedPref] = useState<string>('');
-  const [estimatedCount, setEstimatedCount] = useState<number>(0);
-  const [isEstimating, setIsEstimating] = useState(false);
+  // Audience & Segmentation 2.0
+  const [filterDefinition, setFilterDefinition] = useState<AudienceFilterDefinition>({
+    version: 1,
+    operator: 'and',
+  });
+  const [campaignAudience, setCampaignAudience] = useState<CampaignAudience | null>(null);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewResult, setPreviewResult] = useState<AudiencePreviewResult | null>(null);
+  const [savedSegmentsOpen, setSavedSegmentsOpen] = useState(false);
 
   // A/B Variants
   const [hasABTest, setHasABTest] = useState(false);
@@ -86,15 +95,10 @@ export function CampaignDetailPage() {
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Prepare & Batch Send
+  // Prepare & Execution
   const [recipients, setRecipients] = useState<CampaignRecipient[]>([]);
   const [isPreparing, setIsPreparing] = useState(false);
-  const [isSendingBatch, setIsSendingBatch] = useState(false);
-  const [batchStats, setBatchStats] = useState<{
-    sent: number;
-    failed: number;
-    remaining: number;
-  } | null>(null);
+  const [isActivatingCall, setIsActivatingCall] = useState(false);
 
   const testEmailInputId = useId();
 
@@ -115,21 +119,14 @@ export function CampaignDetailPage() {
 
       setCampaign(camp);
       setName(camp.name);
+      setChannel(camp.channel || 'email');
       setSubject(camp.subject || '');
       setPreviewText(camp.preview_text || '');
       setFromName(camp.from_name || 'Expert Dental Solutions');
       setReplyTo(camp.reply_to || '');
       setScheduledAt(camp.scheduled_at ? new Date(camp.scheduled_at).toISOString().slice(0, 16) : '');
 
-      // 2. Fetch Reference data
-      const [stagesRes, tagsRes] = await Promise.all([
-        supabase.from('pipeline_stages').select('*').order('sort_order', { ascending: true }),
-        supabase.from('tags').select('*').order('name', { ascending: true }),
-      ]);
-      if (stagesRes.data) setStages(stagesRes.data);
-      if (tagsRes.data) setTags(tagsRes.data);
-
-      // 3. Fetch Versions
+      // 2. Fetch Versions
       const { data: vers } = await supabase
         .from('campaign_versions')
         .select('*')
@@ -147,25 +144,16 @@ export function CampaignDetailPage() {
         setTextContent(latest.text_snapshot || '');
       }
 
-      // 4. Fetch Audience
-      const { data: aud } = await supabase
-        .from('campaign_audiences')
-        .select('*')
-        .eq('campaign_id', id)
-        .maybeSingle();
-
+      // 3. Fetch Audience & Segmentation
+      const aud = await campaignAudienceService.fetchCampaignAudience(id);
       if (aud) {
-        const def = (aud.filter_definition as Record<string, unknown>) || {};
-        if (Array.isArray(def.pipeline_stage_id)) setSelectedStageIds(def.pipeline_stage_id);
-        else if (def.pipeline_stage_id) setSelectedStageIds([def.pipeline_stage_id as string]);
-
-        if (Array.isArray(def.tag_ids)) setSelectedTagIds(def.tag_ids as string[]);
-        if (def.source) setSelectedSource(def.source as string);
-        if (def.contact_preference) setSelectedPref(def.contact_preference as string);
-        setEstimatedCount(aud.estimated_recipient_count || 0);
+        setCampaignAudience(aud);
+        if (aud.filter_definition && typeof aud.filter_definition === 'object') {
+          setFilterDefinition(aud.filter_definition as AudienceFilterDefinition);
+        }
       }
 
-      // 5. Fetch Variants
+      // 4. Fetch Variants
       const { data: vars } = await supabase
         .from('campaign_variants')
         .select('*')
@@ -189,15 +177,9 @@ export function CampaignDetailPage() {
         setVariantBSubject(camp.subject);
       }
 
-      // 6. Fetch materialized recipients if campaign was prepared
-      const { data: recs } = await supabase
-        .from('campaign_recipients')
-        .select('*')
-        .eq('campaign_id', id)
-        .order('created_at', { ascending: true })
-        .limit(100);
-
-      if (recs) setRecipients(recs);
+      // 5. Fetch Materialized Recipients (Snapshot members)
+      const recs = await campaignAudienceService.fetchCampaignRecipients(id, 100, 0);
+      setRecipients(recs);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load campaign');
     } finally {
@@ -209,55 +191,7 @@ export function CampaignDetailPage() {
     loadCampaignData();
   }, [loadCampaignData]);
 
-  // Calculate estimated recipients based on current audience filters
-  const calculateEstimatedAudience = useCallback(async () => {
-    setIsEstimating(true);
-    try {
-      let query = supabase.from('leads').select('id, email', { count: 'exact' }).not('email', 'is', null);
-
-      if (selectedStageIds.length > 0) {
-        query = query.in('pipeline_stage_id', selectedStageIds);
-      }
-      if (selectedSource) {
-        query = query.eq('source', selectedSource);
-      }
-      if (selectedPref) {
-        query = query.eq('contact_preference', selectedPref);
-      }
-
-      const { data, count, error: countErr } = await query;
-      if (countErr) throw countErr;
-
-      let validCount = count || 0;
-
-      // Filter by tag links if tag filters selected
-      if (selectedTagIds.length > 0 && data && data.length > 0) {
-        const leadIds = data.map((l) => l.id);
-        const { data: tagMatches } = await supabase
-          .from('lead_tags')
-          .select('lead_id')
-          .in('tag_id', selectedTagIds)
-          .in('lead_id', leadIds);
-
-        const matchingIds = new Set((tagMatches || []).map((t) => t.lead_id));
-        validCount = data.filter((l) => matchingIds.has(l.id)).length;
-      }
-
-      setEstimatedCount(validCount);
-    } catch (err) {
-      console.error('Error calculating audience:', err);
-    } finally {
-      setIsEstimating(false);
-    }
-  }, [selectedStageIds, selectedTagIds, selectedSource, selectedPref]);
-
-  useEffect(() => {
-    if (!isLoading) {
-      calculateEstimatedAudience();
-    }
-  }, [calculateEstimatedAudience, isLoading]);
-
-  // Save campaign details & create new version
+  // Save campaign details & create new version snapshot
   const handleSaveCampaign = async () => {
     if (!campaign) return;
     setIsSaving(true);
@@ -270,6 +204,7 @@ export function CampaignDetailPage() {
         .from('campaigns')
         .update({
           name: name.trim(),
+          channel,
           subject: subject.trim(),
           preview_text: previewText.trim() || null,
           from_name: fromName.trim() || 'Expert Dental Solutions',
@@ -281,7 +216,7 @@ export function CampaignDetailPage() {
 
       if (campUpdateErr) throw campUpdateErr;
 
-      // 2. Insert new version (never silently overwrite previous versions)
+      // 2. Insert new version snapshot
       const nextVersionNumber = (versions[0]?.version_number || 0) + 1;
       const { data: newVer, error: verErr } = await supabase
         .from('campaign_versions')
@@ -299,25 +234,20 @@ export function CampaignDetailPage() {
 
       if (verErr) throw verErr;
 
-      // 3. Save audience filters
-      const filterDef: Record<string, unknown> = {};
-      if (selectedStageIds.length > 0) filterDef.pipeline_stage_id = selectedStageIds;
-      if (selectedTagIds.length > 0) filterDef.tag_ids = selectedTagIds;
-      if (selectedSource) filterDef.source = selectedSource;
-      if (selectedPref) filterDef.contact_preference = selectedPref;
-
+      // 3. Save audience filters in campaign_audiences
       await supabase.from('campaign_audiences').upsert(
         {
           campaign_id: campaign.id,
-          filter_definition: filterDef,
-          estimated_recipient_count: estimatedCount,
+          saved_segment_id: campaignAudience?.saved_segment_id || null,
+          filter_definition: filterDefinition,
+          estimated_recipient_count: previewResult?.eligible_count ?? 0,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'campaign_id' },
       );
 
       // 4. Save A/B variants if active
-      if (hasABTest) {
+      if (hasABTest && channel === 'email') {
         if (variantAPercent + variantBPercent !== 100) {
           throw new Error('A/B traffic percentages must sum to exactly 100%');
         }
@@ -348,8 +278,8 @@ export function CampaignDetailPage() {
 
       setVersions([newVer, ...versions]);
       setSelectedVersionId(newVer.id);
+      setCampaign({ ...campaign, name, channel, subject, preview_text: previewText, from_name: fromName, reply_to: replyTo });
       setSuccessMessage(`Campaign saved successfully! (Version ${nextVersionNumber} snapshot created)`);
-      setCampaign({ ...campaign, name, subject, preview_text: previewText, from_name: fromName, reply_to: replyTo });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error saving campaign');
     } finally {
@@ -357,7 +287,7 @@ export function CampaignDetailPage() {
     }
   };
 
-  // Approval Action: Enforce workflow Draft -> Pending Approval -> Approved
+  // Status transition workflow
   const handleTransitionStatus = async (newStatus: CampaignStatus) => {
     if (!campaign) return;
     setError(null);
@@ -382,6 +312,59 @@ export function CampaignDetailPage() {
       setSuccessMessage(`Campaign status successfully changed to '${newStatus.replace('_', ' ')}'`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error updating campaign status');
+    }
+  };
+
+  // Prepare Campaign Audience (FREEZE SNAPSHOT — DOES NOT CREATE TASKS OR SEND)
+  const handlePrepareAudience = async () => {
+    if (!campaign) return;
+    setIsPreparing(true);
+    setError(null);
+
+    try {
+      const prepRes = await campaignAudienceService.prepareCampaignAudience(
+        campaign.id,
+        campaignAudience?.saved_segment_id || null,
+      );
+
+      setSuccessMessage(
+        `Audience snapshot frozen! ${prepRes.recipients_materialized} contacts recorded (${prepRes.eligible_count} eligible, ${prepRes.excluded_count} safely excluded).`,
+      );
+
+      // Refresh audience and recipients
+      const aud = await campaignAudienceService.fetchCampaignAudience(campaign.id);
+      if (aud) setCampaignAudience(aud);
+
+      const recs = await campaignAudienceService.fetchCampaignRecipients(campaign.id, 100, 0);
+      setRecipients(recs);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error preparing audience snapshot');
+    } finally {
+      setIsPreparing(false);
+    }
+  };
+
+  // Activate Call Campaign (Explicit action: creates deduplicated tasks in public.tasks)
+  const handleActivateCallCampaign = async () => {
+    if (!campaign || campaign.channel !== 'call') return;
+    setIsActivatingCall(true);
+    setError(null);
+
+    try {
+      const actRes = await campaignAudienceService.activateCallCampaign(campaign.id);
+      setSuccessMessage(
+        `Call Campaign Activated! ${actRes.tasks_created} call tasks dispatched to Daily Operations (${actRes.tasks_skipped_idempotent} skipped as already pending).`,
+      );
+
+      setCampaign({ ...campaign, status: 'sent', activated_at: actRes.activated_at });
+
+      // Refresh recipients
+      const recs = await campaignAudienceService.fetchCampaignRecipients(campaign.id, 100, 0);
+      setRecipients(recs);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error activating call campaign');
+    } finally {
+      setIsActivatingCall(false);
     }
   };
 
@@ -420,7 +403,7 @@ export function CampaignDetailPage() {
 
       setTestResult({
         success: true,
-        message: `Test email sent to ${testEmail}! Provider Message ID: ${json.messageId || 'OK'}`,
+        message: `Test email sent to ${testEmail}! Message ID: ${json.messageId || 'OK'}`,
       });
     } catch (err) {
       setTestResult({
@@ -429,110 +412,6 @@ export function CampaignDetailPage() {
       });
     } finally {
       setIsSendingTest(false);
-    }
-  };
-
-  // Prepare Campaign (Materialize Recipients)
-  const handlePrepareCampaign = async () => {
-    if (!campaign) return;
-    setIsPreparing(true);
-    setError(null);
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/campaign-prepare`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session?.access_token || ''}`,
-          },
-          body: JSON.stringify({
-            campaign_id: campaign.id,
-          }),
-        },
-      );
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to prepare campaign');
-
-      setSuccessMessage(
-        `Audience prepared! ${json.recipients_materialized} unique recipients materialized in 'pending' status.`,
-      );
-
-      // Refresh recipients list
-      const { data: recs } = await supabase
-        .from('campaign_recipients')
-        .select('*')
-        .eq('campaign_id', campaign.id)
-        .order('created_at', { ascending: true })
-        .limit(100);
-
-      if (recs) setRecipients(recs);
-      setActiveTab('send');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error preparing campaign');
-    } finally {
-      setIsPreparing(false);
-    }
-  };
-
-  // Dispatch Batch Send via Edge Function
-  const handleDispatchBatch = async () => {
-    if (!campaign) return;
-    setIsSendingBatch(true);
-    setError(null);
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/campaign-send-batch`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session?.access_token || ''}`,
-          },
-          body: JSON.stringify({
-            campaign_id: campaign.id,
-            batch_size: 25,
-          }),
-        },
-      );
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to dispatch batch');
-
-      setBatchStats({
-        sent: json.sent || 0,
-        failed: json.failed || 0,
-        remaining: json.remaining_pending || 0,
-      });
-
-      if (json.campaign_status) {
-        setCampaign({ ...campaign, status: json.campaign_status });
-      }
-
-      // Refresh recipients
-      const { data: recs } = await supabase
-        .from('campaign_recipients')
-        .select('*')
-        .eq('campaign_id', campaign.id)
-        .order('created_at', { ascending: true })
-        .limit(100);
-
-      if (recs) setRecipients(recs);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error sending batch');
-    } finally {
-      setIsSendingBatch(false);
     }
   };
 
@@ -557,11 +436,7 @@ export function CampaignDetailPage() {
   const getStatusBadge = (status: CampaignStatus) => {
     switch (status) {
       case 'draft':
-        return (
-          <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">
-            Draft
-          </span>
-        );
+        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">Draft</span>;
       case 'pending_approval':
         return (
           <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 flex items-center gap-1">
@@ -589,13 +464,32 @@ export function CampaignDetailPage() {
       case 'sent':
         return (
           <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
-            <Check className="h-3 w-3" /> Sent
+            <Check className="h-3 w-3" /> {campaign.channel === 'call' ? 'Activated' : 'Sent'}
           </span>
         );
       default:
+        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">{status}</span>;
+    }
+  };
+
+  const getChannelBadge = (ch: 'email' | 'sms' | 'call') => {
+    switch (ch) {
+      case 'email':
         return (
-          <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">
-            {status}
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+            <Mail className="h-3 w-3" /> Email
+          </span>
+        );
+      case 'sms':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+            <MessageSquare className="h-3 w-3" /> SMS
+          </span>
+        );
+      case 'call':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <PhoneCall className="h-3 w-3" /> Call Campaign
           </span>
         );
     }
@@ -614,18 +508,21 @@ export function CampaignDetailPage() {
               <ArrowLeft className="h-5 w-5" />
             </Link>
             <div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="text-xl font-bold font-heading text-[#08254f]">{campaign.name}</h1>
                 {getStatusBadge(campaign.status)}
+                {getChannelBadge(campaign.channel)}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Channel: Email • Created {new Date(campaign.created_at).toLocaleDateString()}
+                Created {new Date(campaign.created_at).toLocaleDateString()} • Snapshot:{' '}
+                {campaignAudience?.snapshot_frozen_at
+                  ? `Frozen on ${new Date(campaignAudience.snapshot_frozen_at).toLocaleDateString()}`
+                  : 'Dynamic Draft'}
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Status transitions */}
             {campaign.status === 'draft' && (
               <button
                 onClick={() => handleTransitionStatus('pending_approval')}
@@ -671,32 +568,52 @@ export function CampaignDetailPage() {
 
         {/* Campaign Header Settings Bar */}
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <h2 className="text-sm font-bold text-gray-900 tracking-tight uppercase text-gray-400">
-            Envelope & Delivery Settings
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-gray-900 tracking-tight uppercase text-gray-400">
+              Envelope & Channel Settings
+            </h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-medium">Channel:</span>
+              <select
+                disabled={campaign.status === 'sent'}
+                value={channel}
+                onChange={(e) => setChannel(e.target.value as 'email' | 'sms' | 'call')}
+                className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-gray-50 font-bold text-gray-800"
+              >
+                <option value="email">Email Campaign</option>
+                <option value="sms">SMS Campaign</option>
+                <option value="call">Call Campaign (Operational)</option>
+              </select>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Subject Line</label>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                {channel === 'call' ? 'Call Campaign Purpose' : 'Subject Line'}
+              </label>
               <input
                 type="text"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                placeholder="e.g. Exclusive Invitation for {{salutation}}"
+                placeholder={channel === 'call' ? 'e.g. VIP Consultation Outreach' : 'e.g. Invitation for {{salutation}}'}
                 className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Preview Text</label>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                {channel === 'call' ? 'Internal Call Script Notes' : 'Preview Text'}
+              </label>
               <input
                 type="text"
                 value={previewText}
                 onChange={(e) => setPreviewText(e.target.value)}
-                placeholder="Inbox preheader text..."
+                placeholder={channel === 'call' ? 'Focus on course enrollment balance...' : 'Inbox preheader text...'}
                 className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">From Name</label>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Sender Name / Organizer</label>
               <input
                 type="text"
                 value={fromName}
@@ -719,31 +636,33 @@ export function CampaignDetailPage() {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-gray-200 gap-2 bg-white px-4 pt-3 rounded-t-2xl">
+        <div className="flex border-b border-gray-200 gap-2 bg-white px-4 pt-3 rounded-t-2xl overflow-x-auto">
           {[
-            { id: 'editor', label: 'Content Editor', icon: Mail },
-            { id: 'audience', label: `Audience (${estimatedCount})`, icon: Users },
-            { id: 'ab_test', label: 'A/B Testing', icon: FlaskConical },
-            { id: 'versions', label: `Versions (${versions.length})`, icon: History },
-            { id: 'send', label: 'Test & Send Execution', icon: Send },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id as TabType)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer ${
-                activeTab === t.id
-                  ? 'border-brand-600 text-brand-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-200'
-              }`}
-            >
-              <t.icon className="h-4 w-4" />
-              {t.label}
-            </button>
-          ))}
+            { id: 'editor', label: 'Content Editor', icon: Mail, visible: channel === 'email' },
+            { id: 'audience', label: `Audience (${campaignAudience?.eligible_count ?? '0'})`, icon: Users, visible: true },
+            { id: 'ab_test', label: 'A/B Testing', icon: FlaskConical, visible: channel === 'email' },
+            { id: 'versions', label: `Versions (${versions.length})`, icon: History, visible: true },
+            { id: 'send', label: channel === 'call' ? 'Activate & Dispatch' : 'Execution & Delivery', icon: Send, visible: true },
+          ]
+            .filter((t) => t.visible)
+            .map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id as TabType)}
+                className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer shrink-0 ${
+                  activeTab === t.id
+                    ? 'border-brand-600 text-brand-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-200'
+                }`}
+              >
+                <t.icon className="h-4 w-4" />
+                {t.label}
+              </button>
+            ))}
         </div>
 
-        {/* TAB 1: Visual Block Editor */}
-        {activeTab === 'editor' && (
+        {/* TAB 1: Visual Block Editor (Email only) */}
+        {activeTab === 'editor' && channel === 'email' && (
           <div className="bg-white rounded-b-2xl border border-gray-200 shadow-xs p-6">
             <BlockEditor
               initialBlocks={blocks}
@@ -756,111 +675,76 @@ export function CampaignDetailPage() {
           </div>
         )}
 
-        {/* TAB 2: Audience Definition */}
+        {/* TAB 2: Audience & Segmentation 2.0 */}
         {activeTab === 'audience' && (
           <div className="bg-white rounded-b-2xl border border-gray-200 shadow-xs p-6 space-y-6">
-            <div>
-              <h3 className="text-base font-bold text-gray-900">Target Audience Filters</h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Segment leads for this campaign. Recipient list is evaluated dynamically without pre-materializing prematurely.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Filter: Pipeline Stage */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-2">Pipeline Stages</label>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto border border-gray-200 rounded-xl p-3">
-                  {stages.map((stg) => (
-                    <label key={stg.id} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedStageIds.includes(stg.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedStageIds([...selectedStageIds, stg.id]);
-                          else setSelectedStageIds(selectedStageIds.filter((id) => id !== stg.id));
-                        }}
-                        className="rounded text-brand-600 focus:ring-brand-500"
-                      />
-                      <span>{stg.name}</span>
-                    </label>
-                  ))}
+            {/* Snapshot Immutability Banner */}
+            {campaignAudience?.snapshot_frozen_at ? (
+              <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full bg-blue-200 text-blue-900 text-xs font-bold">
+                      Audience Snapshot Frozen
+                    </span>
+                    <span className="text-xs text-blue-800">
+                      Prepared on {new Date(campaignAudience.snapshot_frozen_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-700">
+                    This campaign has an immutable snapshot with {campaignAudience.eligible_count} eligible contacts and{' '}
+                    {campaignAudience.excluded_count} audit exclusions. Changes to Saved Segments will not alter this snapshot.
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={handlePrepareAudience}
+                  disabled={isPreparing || campaign.status === 'sent'}
+                  className="px-3.5 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  <RotateCw className={`h-3.5 w-3.5 inline mr-1.5 ${isPreparing ? 'animate-spin' : ''}`} />
+                  {isPreparing ? 'Rebuilding...' : 'Rebuild / Refresh Snapshot'}
+                </button>
               </div>
-
-              {/* Filter: Tags */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-2">Lead Tags</label>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto border border-gray-200 rounded-xl p-3">
-                  {tags.map((t) => (
-                    <label key={t.id} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedTagIds.includes(t.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedTagIds([...selectedTagIds, t.id]);
-                          else setSelectedTagIds(selectedTagIds.filter((id) => id !== t.id));
-                        }}
-                        className="rounded text-brand-600 focus:ring-brand-500"
-                      />
-                      <span>{t.name}</span>
-                    </label>
-                  ))}
-                  {tags.length === 0 && <p className="text-xs text-gray-400">No tags found.</p>}
+            ) : (
+              <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-amber-600" />
+                    Dynamic Audience Draft
+                  </span>
+                  <p className="text-xs text-amber-800">
+                    Criteria are evaluated dynamically. Click &quot;Prepare Audience&quot; to freeze an immutable snapshot before dispatch.
+                  </p>
                 </div>
-              </div>
-
-              {/* Filter: Source */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-2">Lead Source</label>
-                <select
-                  value={selectedSource}
-                  onChange={(e) => setSelectedSource(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl"
+                <button
+                  type="button"
+                  onClick={handlePrepareAudience}
+                  disabled={isPreparing}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-gray-900 text-white hover:bg-black transition-colors shadow-xs cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  <option value="">All Sources</option>
-                  <option value="meta">Meta</option>
-                  <option value="google">Google</option>
-                  <option value="manual">Manual</option>
-                  <option value="test">Test</option>
-                </select>
+                  <Layers className="h-4 w-4" />
+                  {isPreparing ? 'Preparing Snapshot...' : 'Prepare Audience (Freeze Snapshot)'}
+                </button>
               </div>
+            )}
 
-              {/* Filter: Contact Preference */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-2">Contact Preference</label>
-                <select
-                  value={selectedPref}
-                  onChange={(e) => setSelectedPref(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl"
-                >
-                  <option value="">Any Preference</option>
-                  <option value="email">Email</option>
-                  <option value="sms">SMS</option>
-                  <option value="call">Call</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-brand-50 border border-brand-200 flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-brand-900">Estimated Target Reach:</span>
-                <p className="text-2xl font-black text-brand-700">
-                  {isEstimating ? 'Calculating...' : `${estimatedCount} Eligible Leads`}
-                </p>
-              </div>
-              <button
-                onClick={calculateEstimatedAudience}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-brand-700 border border-brand-300 hover:bg-brand-100 transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <RotateCw className={`h-3.5 w-3.5 ${isEstimating ? 'animate-spin' : ''}`} /> Refresh Calculation
-              </button>
-            </div>
+            {/* Visual Audience Filter Builder */}
+            <AudienceFilterBuilder
+              channel={channel}
+              filterDefinition={filterDefinition}
+              onChange={setFilterDefinition}
+              onOpenPreview={(prev) => {
+                setPreviewResult(prev);
+                setPreviewModalOpen(true);
+              }}
+              onOpenSavedSegments={() => setSavedSegmentsOpen(true)}
+              disabled={campaign.status === 'sent'}
+            />
           </div>
         )}
 
         {/* TAB 3: A/B Testing */}
-        {activeTab === 'ab_test' && (
+        {activeTab === 'ab_test' && channel === 'email' && (
           <div className="bg-white rounded-b-2xl border border-gray-200 shadow-xs p-6 space-y-6">
             <div className="flex items-center justify-between">
               <div>
@@ -957,7 +841,7 @@ export function CampaignDetailPage() {
           <div className="bg-white rounded-b-2xl border border-gray-200 shadow-xs p-6 space-y-4">
             <h3 className="text-base font-bold text-gray-900">Campaign Version Snapshots</h3>
             <p className="text-xs text-gray-500">
-              Immutable history of campaign edits. Previous versions are never deleted.
+              Immutable history of campaign content and settings. Previous versions are preserved for auditability.
             </p>
 
             <div className="divide-y divide-gray-100 border border-gray-200 rounded-xl overflow-hidden">
@@ -996,196 +880,223 @@ export function CampaignDetailPage() {
           </div>
         )}
 
-        {/* TAB 5: Test Send & Execution */}
+        {/* TAB 5: Execution & Delivery */}
         {activeTab === 'send' && (
           <div className="space-y-6">
-            {/* Test Send Section */}
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-              <div className="flex items-center gap-2 text-brand-700">
-                <FlaskConical className="h-5 w-5" />
-                <h3 className="text-base font-bold text-gray-900">Preview & Send Test Email</h3>
-              </div>
-              <p className="text-xs text-gray-500">
-                Sends a one-off preview to your email using Resend. Personalized tags like {'{{salutation}}'} are resolved using official rules.
-              </p>
-
-              <form onSubmit={handleSendTest} className="flex flex-col sm:flex-row gap-3 max-w-xl">
-                <label htmlFor={testEmailInputId} className="sr-only">
-                  Recipient Test Email
-                </label>
-                <input
-                  id={testEmailInputId}
-                  type="email"
-                  required
-                  value={testEmail}
-                  onChange={(e) => setTestEmail(e.target.value)}
-                  placeholder="your-email@expdentalsolutions.com"
-                  className="flex-1 px-3.5 py-2 text-xs border border-gray-200 rounded-xl"
-                />
-                <button
-                  type="submit"
-                  disabled={isSendingTest}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-gray-900 text-white hover:bg-black transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shrink-0"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  {isSendingTest ? 'Sending...' : 'Send Test'}
-                </button>
-              </form>
-
-              {testResult && (
-                <div
-                  className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
-                    testResult.success
-                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                      : 'bg-red-50 text-red-800 border border-red-200'
-                  }`}
-                >
-                  {testResult.success ? <Check className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                  <span>{testResult.message}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Preparation & Scheduling Section */}
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-6">
-              <div>
-                <h3 className="text-base font-bold text-gray-900">Campaign Execution & Delivery</h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Prepare target recipients from audience filters and dispatch in throttled batches via Resend.
-                </p>
-              </div>
-
-              {/* Approval status check */}
-              {campaign.status !== 'approved' && campaign.status !== 'scheduled' && campaign.status !== 'sending' && (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-3">
-                  <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+            {/* Call Campaign Dispatch View */}
+            {channel === 'call' ? (
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-6">
+                <div className="flex items-center gap-2.5">
+                  <PhoneCall className="h-5 w-5 text-emerald-600" />
                   <div>
-                    <span className="font-bold">Mandatory Approval Required</span>
-                    <p className="mt-0.5">
-                      Campaigns cannot be prepared or sent while in draft status. Click "Approve Campaign" in the top bar before proceeding.
+                    <h3 className="text-base font-bold text-gray-900">Call Campaign Activation</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Call campaigns create deduplicated outbound calling tasks directly in the Daily Operations Command Center (`/work`).
                     </p>
                   </div>
                 </div>
-              )}
 
-              {/* Scheduling Field */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-xl border border-gray-200 bg-gray-50/50">
-                <div>
-                  <span className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                    <Calendar className="h-4 w-4 text-purple-600" />
-                    Scheduled Dispatch (Server-Side)
-                  </span>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Leave blank to send manually, or set a future date and time. Server processes without needing browser open.
-                  </p>
-                </div>
-                <input
-                  type="datetime-local"
-                  value={scheduledAt}
-                  onChange={(e) => setScheduledAt(e.target.value)}
-                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white"
-                />
-              </div>
-
-              {/* Actions: Prepare vs Dispatch Batch */}
-              <div className="flex flex-wrap gap-4 pt-2">
-                <button
-                  onClick={handlePrepareCampaign}
-                  disabled={isPreparing || (campaign.status !== 'approved' && campaign.status !== 'scheduled')}
-                  className="px-4 py-2.5 text-xs font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  <Layers className="h-4 w-4" />
-                  {isPreparing ? 'Preparing Recipients...' : 'Step 1: Prepare & Materialize Recipients'}
-                </button>
-
-                <button
-                  onClick={handleDispatchBatch}
-                  disabled={isSendingBatch || recipients.length === 0}
-                  className="px-4 py-2.5 text-xs font-semibold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  <Send className="h-4 w-4" />
-                  {isSendingBatch ? 'Dispatching Batch...' : 'Step 2: Dispatch Next Batch (25 emails)'}
-                </button>
-              </div>
-
-              {/* Batch execution stats */}
-              {batchStats && (
-                <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 text-xs flex items-center gap-6">
-                  <div>
-                    <span className="text-gray-500">Sent in Batch:</span>{' '}
-                    <strong className="text-emerald-700 font-bold">{batchStats.sent}</strong>
+                {!campaignAudience?.snapshot_frozen_at ? (
+                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-3">
+                    <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+                    <div>
+                      <span className="font-bold">Audience Not Prepared</span>
+                      <p className="mt-0.5">
+                        Please go to the Audience tab and click &quot;Prepare Audience&quot; to freeze the snapshot before activating call tasks.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-gray-500">Failed:</span>{' '}
-                    <strong className="text-red-700 font-bold">{batchStats.failed}</strong>
+                ) : campaign.status === 'sent' ? (
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-3">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                    <div>
+                      <span className="font-bold">Call Campaign Is Active</span>
+                      <p className="mt-0.5">
+                        Tasks were generated on {new Date(campaign.activated_at || campaign.updated_at).toLocaleString()}. You can view and process them in the Work Queue.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-gray-500">Remaining Pending:</span>{' '}
-                    <strong className="text-gray-900 font-bold">{batchStats.remaining}</strong>
-                  </div>
-                </div>
-              )}
-
-              {/* Materialized Recipients Table */}
-              <div className="space-y-3 pt-4 border-t border-gray-100">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase text-gray-400">
-                    Materialized Recipients ({recipients.length})
-                  </h4>
-                  <span className="text-[11px] text-gray-400">Showing first 100 entries</span>
-                </div>
-
-                {recipients.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic">
-                    No recipients materialized yet. Click 'Prepare & Materialize Recipients' to populate target leads.
-                  </p>
                 ) : (
-                  <div className="border border-gray-200 rounded-xl overflow-hidden text-xs">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50 text-gray-600 font-semibold">
-                        <tr>
-                          <th className="px-3.5 py-2.5 text-left">Email</th>
-                          <th className="px-3.5 py-2.5 text-left">Variant</th>
-                          <th className="px-3.5 py-2.5 text-left">Status</th>
-                          <th className="px-3.5 py-2.5 text-left">Message ID</th>
-                          <th className="px-3.5 py-2.5 text-left">Sent At</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 bg-white">
-                        {recipients.map((r) => (
-                          <tr key={r.id}>
-                            <td className="px-3.5 py-2 font-medium text-gray-900">{r.email}</td>
-                            <td className="px-3.5 py-2 text-gray-500">{r.variant || 'Base'}</td>
-                            <td className="px-3.5 py-2">
-                              <span
-                                className={`px-2 py-0.5 rounded-full font-semibold text-[10px] ${
-                                  r.status === 'sent'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : r.status === 'failed'
-                                      ? 'bg-red-100 text-red-800'
-                                      : 'bg-amber-100 text-amber-800'
-                                }`}
-                              >
-                                {r.status}
-                              </span>
-                            </td>
-                            <td className="px-3.5 py-2 text-gray-400 font-mono text-[11px]">
-                              {r.provider_message_id || '—'}
-                            </td>
-                            <td className="px-3.5 py-2 text-gray-500">
-                              {r.sent_at ? new Date(r.sent_at).toLocaleTimeString() : '—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="p-5 rounded-xl border border-emerald-200 bg-emerald-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <span className="font-bold text-xs text-emerald-950 block">Ready for Call Activation</span>
+                      <p className="text-xs text-emerald-800 mt-0.5">
+                        {campaignAudience.eligible_count} eligible call contacts ready. Activating will schedule deduplicated call tasks for each lead.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleActivateCallCampaign}
+                      disabled={isActivatingCall}
+                      className="px-4 py-2.5 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+                    >
+                      <PhoneCall className="h-4 w-4" />
+                      {isActivatingCall ? 'Activating Tasks...' : 'Activate Call Campaign'}
+                    </button>
                   </div>
                 )}
               </div>
+            ) : (
+              /* Email / SMS Provider Deferred View */
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-6">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-gray-900">Campaign Execution & Delivery</h3>
+                    <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                      Provider Integration Deferred — Phase 7
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Live batch sending via Resend (Email) and Twilio (SMS) is scheduled for Phase 7 (Integrations). Audience segmentation, contact preference safety, and snapshot immutability are fully operational.
+                  </p>
+                </div>
+
+                {/* Test Send Section (Email preview) */}
+                {channel === 'email' && (
+                  <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 space-y-3">
+                    <div className="flex items-center gap-2 text-brand-700">
+                      <FlaskConical className="h-4 w-4" />
+                      <span className="text-xs font-bold text-gray-900">Preview & Send Test Email</span>
+                    </div>
+                    <form onSubmit={handleSendTest} className="flex flex-col sm:flex-row gap-2 max-w-lg">
+                      <input
+                        id={testEmailInputId}
+                        type="email"
+                        required
+                        value={testEmail}
+                        onChange={(e) => setTestEmail(e.target.value)}
+                        placeholder="your-email@expdentalsolutions.com"
+                        className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSendingTest}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-gray-900 text-white hover:bg-black transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                      >
+                        <Send className="h-3 w-3" />
+                        {isSendingTest ? 'Sending...' : 'Send Test'}
+                      </button>
+                    </form>
+                    {testResult && (
+                      <p className={`text-xs ${testResult.success ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {testResult.message}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Materialized Recipients & Audit Table */}
+            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900">Materialized Audience Snapshot ({recipients.length})</h4>
+                  <p className="text-xs text-gray-500">
+                    Auditable list of eligible recipients and safely excluded contacts preserved at preparation time.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const recs = await campaignAudienceService.fetchCampaignRecipients(campaign.id, 100, 0);
+                    setRecipients(recs);
+                  }}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Refresh recipients"
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              {recipients.length === 0 ? (
+                <div className="p-8 text-center text-xs text-gray-400 italic">
+                  No audience snapshot materialized yet. Click &quot;Prepare Audience&quot; in the Audience tab to freeze the snapshot.
+                </div>
+              ) : (
+                <div className="border border-gray-200 rounded-xl overflow-hidden text-xs">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50 text-gray-600 font-semibold">
+                      <tr>
+                        <th className="px-3.5 py-2.5 text-left">Destination</th>
+                        <th className="px-3.5 py-2.5 text-left">Channel</th>
+                        <th className="px-3.5 py-2.5 text-left">Eligibility & Exclusion Audit</th>
+                        <th className="px-3.5 py-2.5 text-left">Status</th>
+                        <th className="px-3.5 py-2.5 text-left">Prepared At</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {recipients.map((r) => (
+                        <tr key={r.id} className="hover:bg-gray-50/70">
+                          <td className="px-3.5 py-2 font-medium text-gray-900">
+                            {r.email || r.phone_e164 || 'No destination'}
+                          </td>
+                          <td className="px-3.5 py-2 uppercase font-bold text-[10px] text-gray-600">
+                            {r.channel}
+                          </td>
+                          <td className="px-3.5 py-2">
+                            {r.is_eligible ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                                <CheckCircle2 className="h-3 w-3" /> Eligible
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px]">
+                                <XCircle className="h-3 w-3" /> {r.exclusion_reason || 'Excluded'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3.5 py-2">
+                            <span
+                              className={`px-2 py-0.5 rounded-full font-semibold text-[10px] ${
+                                r.status === 'sent'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : r.status === 'skipped'
+                                    ? 'bg-gray-100 text-gray-600'
+                                    : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {r.status}
+                            </span>
+                          </td>
+                          <td className="px-3.5 py-2 text-gray-500 text-[11px]">
+                            {new Date(r.prepared_at).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Audience Preview Modal */}
+      {previewResult && (
+        <AudiencePreviewModal
+          isOpen={previewModalOpen}
+          onClose={() => setPreviewModalOpen(false)}
+          channel={channel}
+          previewResult={previewResult}
+        />
+      )}
+
+      {/* Saved Segments Modal */}
+      <SavedSegmentsModal
+        isOpen={savedSegmentsOpen}
+        onClose={() => setSavedSegmentsOpen(false)}
+        currentFilterDefinition={filterDefinition}
+        onApplySegment={(seg) => {
+          setFilterDefinition(seg.filter_definition);
+          setCampaignAudience((prev) =>
+            prev
+              ? { ...prev, saved_segment_id: seg.id }
+              : ({ campaign_id: campaign.id, saved_segment_id: seg.id, filter_definition: seg.filter_definition } as CampaignAudience),
+          );
+          setSuccessMessage(`Applied saved segment "${seg.name}"`);
+        }}
+      />
     </Layout>
   );
 }

@@ -109,5 +109,14 @@ export type {
   DailyOperationsDashboardKpis,
   DailyOperationsQueueResponse,
   DailyOperationsFilter,
+  SavedSegment,
+  AudienceFilterDefinition,
+  AudienceFilterRule,
+  AudienceExclusionBreakdown,
+  AudienceExclusionReason,
+  AudienceMemberPreview,
+  AudiencePreviewResult,
+  CampaignChannel,
 } from './database';
 export type { LeadIntakePayload, LeadIntakeResponse } from './lead-intake';
+

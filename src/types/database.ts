@@ -10,7 +10,7 @@ export type MessageStatus = 'pending' | 'sent' | 'failed';
 export type IntakeStatus = 'received' | 'processing' | 'processed' | 'failed' | 'duplicate';
 export type TaskType = 'call' | 'data_review' | 'general' | 'follow_up';
 export type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
-export type TaskSource = 'manual' | 'automation' | 'system' | 'course_operations' | 'post_course';
+export type TaskSource = 'manual' | 'automation' | 'system' | 'course_operations' | 'post_course' | 'campaign';
 export type TaskStatus = 'pending' | 'completed' | 'cancelled';
 export type TaskCreatedBy = 'system' | 'user';
 export type ActivityType =
@@ -342,7 +342,7 @@ export interface Campaign {
   id: string;
   name: string;
   description: string | null;
-  channel: 'email';
+  channel: 'email' | 'sms' | 'call';
   status: CampaignStatus;
   subject: string;
   preview_text: string | null;
@@ -353,6 +353,7 @@ export interface Campaign {
   approved_at: string | null;
   approved_by_user_id: string | null;
   created_by_user_id: string | null;
+  activated_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -373,8 +374,14 @@ export interface CampaignVersion {
 export interface CampaignAudience {
   id: string;
   campaign_id: string;
-  filter_definition: Record<string, unknown>;
+  saved_segment_id?: string | null;
+  filter_definition: AudienceFilterDefinition | Record<string, unknown>;
   estimated_recipient_count: number;
+  snapshot_frozen_at?: string | null;
+  snapshot_metadata?: Record<string, unknown>;
+  total_matched_count?: number;
+  eligible_count?: number;
+  excluded_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -395,15 +402,105 @@ export interface CampaignRecipient {
   id: string;
   campaign_id: string;
   lead_id: string;
-  email: string;
+  email: string | null;
+  phone_e164?: string | null;
+  channel: 'email' | 'sms' | 'call';
+  is_eligible: boolean;
+  exclusion_reason?: string | null;
   status: RecipientStatus;
   variant: 'A' | 'B' | null;
   provider_message_id: string | null;
   sent_at: string | null;
   error_code: string | null;
   error_message: string | null;
+  snapshot_stage_id?: string | null;
+  snapshot_lead_score?: number | null;
+  prepared_at: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SavedSegment {
+  id: string;
+  name: string;
+  description?: string | null;
+  filter_definition: AudienceFilterDefinition;
+  is_active: boolean;
+  created_by_user_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CampaignChannel = 'email' | 'sms' | 'call';
+
+export type AudienceExclusionReason =
+  | 'TEST_SOURCE'
+  | 'NO_VALID_CONTACT_PREFERENCE'
+  | 'CHANNEL_PREFERENCE_MISMATCH'
+  | 'MISSING_EMAIL'
+  | 'MISSING_PHONE'
+  | 'INVALID_EMAIL'
+  | 'INVALID_PHONE'
+  | 'SUPPRESSED'
+  | 'DUPLICATE';
+
+export interface AudienceFilterRule {
+  field: string;
+  operator: string;
+  value: any;
+}
+
+export interface AudienceFilterDefinition {
+  version: number;
+  operator: 'and';
+  stages?: string[];
+  sources?: string[];
+  qualification_statuses?: string[];
+  min_score?: number | null;
+  max_score?: number | null;
+  days_since_last_activity?: number | null;
+  enrolled_course_id?: string | null;
+  not_enrolled_course_id?: string | null;
+  completed_course_id?: string | null;
+  repeat_student?: boolean | null;
+  has_outstanding_balance?: boolean | null;
+  course_interest_id?: string | null;
+  contact_preferences?: string[];
+  rules?: AudienceFilterRule[];
+}
+
+export interface AudienceExclusionBreakdown {
+  TEST_SOURCE: number;
+  NO_VALID_CONTACT_PREFERENCE: number;
+  CHANNEL_PREFERENCE_MISMATCH: number;
+  MISSING_EMAIL: number;
+  MISSING_PHONE: number;
+  [key: string]: number;
+}
+
+export interface AudienceMemberPreview {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  source: string;
+  contact_preference: string | null;
+  pipeline_stage_id: string;
+  stage_name: string | null;
+  stage_code: string | null;
+  lead_score: number;
+  is_eligible: boolean;
+  exclusion_reason: string | null;
+  created_at: string;
+}
+
+export interface AudiencePreviewResult {
+  total_matched: number;
+  eligible_count: number;
+  excluded_count: number;
+  exclusion_breakdown: AudienceExclusionBreakdown;
+  leads: AudienceMemberPreview[];
 }
 
 export interface CampaignTestSend {

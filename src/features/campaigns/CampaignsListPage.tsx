@@ -5,9 +5,12 @@ import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { EmptyState } from '../../components/EmptyState';
-import type { Campaign, CampaignStatus } from '../../types';
+import { SavedSegmentsModal } from './components/SavedSegmentsModal';
+import type { Campaign, CampaignStatus, CampaignChannel } from '../../types';
 import {
   Mail,
+  MessageSquare,
+  PhoneCall,
   Plus,
   Calendar,
   CheckCircle2,
@@ -16,6 +19,7 @@ import {
   Send,
   FileEdit,
   RotateCw,
+  Bookmark,
 } from 'lucide-react';
 
 export function CampaignsListPage() {
@@ -25,11 +29,16 @@ export function CampaignsListPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
+  const [channelFilter, setChannelFilter] = useState<string>('all');
+
+  // Saved Segments Modal state
+  const [isSavedSegmentsOpen, setIsSavedSegmentsOpen] = useState(false);
 
   // Create Campaign Modal state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newCampName, setNewCampName] = useState('');
   const [newCampSubject, setNewCampSubject] = useState('');
+  const [newCampChannel, setNewCampChannel] = useState<CampaignChannel>('email');
   const [isCreating, setIsCreating] = useState(false);
 
   const fetchCampaigns = useCallback(async () => {
@@ -41,6 +50,9 @@ export function CampaignsListPage() {
       if (statusFilter) {
         query = query.eq('status', statusFilter);
       }
+      if (channelFilter && channelFilter !== 'all') {
+        query = query.eq('channel', channelFilter);
+      }
       const { data, error: err } = await query;
       if (err) throw err;
       setCampaigns(data || []);
@@ -49,7 +61,7 @@ export function CampaignsListPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, channelFilter]);
 
   useEffect(() => {
     fetchCampaigns();
@@ -61,11 +73,19 @@ export function CampaignsListPage() {
     setIsCreating(true);
 
     try {
+      const defaultSubject =
+        newCampChannel === 'call'
+          ? 'Outbound Phone Follow-up'
+          : newCampChannel === 'sms'
+          ? 'SMS Announcement'
+          : 'Exciting Updates from Expert Dental Solutions';
+
       const { data: newCamp, error: createErr } = await supabase
         .from('campaigns')
         .insert({
           name: newCampName.trim(),
-          subject: newCampSubject.trim() || 'Exciting Updates from Expert Dental Solutions',
+          subject: newCampSubject.trim() || defaultSubject,
+          channel: newCampChannel,
           from_name: 'Expert Dental Solutions',
           status: 'draft',
         })
@@ -81,19 +101,50 @@ export function CampaignsListPage() {
         subject: newCamp.subject,
       });
 
-      // Create empty audience row
+      // Create initial audience row with default preference filter
       await supabase.from('campaign_audiences').insert({
         campaign_id: newCamp.id,
-        filter_definition: {},
+        filter_definition: {
+          version: 1,
+          operator: 'and',
+          rules: [{ field: 'contact_preference', operator: 'eq', value: newCampChannel }],
+        },
         estimated_recipient_count: 0,
       });
 
       setIsCreateOpen(false);
+      setNewCampName('');
+      setNewCampSubject('');
+      setNewCampChannel('email');
       navigate(`/campaigns/${newCamp.id}`);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error creating campaign');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const getChannelBadge = (channel: CampaignChannel = 'email') => {
+    switch (channel) {
+      case 'call':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded-md bg-purple-50 text-purple-700 border border-purple-200">
+            <PhoneCall className="h-3 w-3" /> Call
+          </span>
+        );
+      case 'sms':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <MessageSquare className="h-3 w-3" /> SMS
+          </span>
+        );
+      case 'email':
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded-md bg-sky-50 text-sky-700 border border-sky-200">
+            <Mail className="h-3 w-3" /> Email
+          </span>
+        );
     }
   };
 
@@ -163,11 +214,22 @@ export function CampaignsListPage() {
               <h1 className="text-2xl font-bold font-heading text-[#08254f] tracking-tight">Campaigns</h1>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Email marketing campaigns with mandatory approval, A/B testing and batch dispatching
+              Multi-channel campaigns (Email, SMS, Call) with canonical audience segmentation, snapshot freezing, and Work Queue activation
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <select
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value)}
+              className="px-3 py-2 text-xs font-semibold bg-white border border-slate-200/80 rounded-xl shadow-xs text-slate-700"
+            >
+              <option value="all">All Channels</option>
+              <option value="email">Email</option>
+              <option value="sms">SMS</option>
+              <option value="call">Call Tasks</option>
+            </select>
+
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -181,6 +243,15 @@ export function CampaignsListPage() {
               <option value="sending">Sending</option>
               <option value="sent">Sent</option>
             </select>
+
+            <button
+              onClick={() => setIsSavedSegmentsOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl shadow-xs transition-colors cursor-pointer"
+            >
+              <Bookmark className="h-3.5 w-3.5 text-brand-600" />
+              Saved Segments
+            </button>
+
             <button
               onClick={fetchCampaigns}
               title="Refresh campaigns"
@@ -188,6 +259,7 @@ export function CampaignsListPage() {
             >
               <RotateCw className="h-4 w-4" />
             </button>
+
             <button
               onClick={() => setIsCreateOpen(true)}
               className="btn-crimson text-xs"
@@ -206,7 +278,7 @@ export function CampaignsListPage() {
         ) : campaigns.length === 0 ? (
           <EmptyState
             title="No campaigns found"
-            message="Create your first marketing campaign with visual blocks, target audience filters, and approval workflows."
+            message="Create your first marketing or call campaign with canonical audience segmentation, snapshot freezing, and approval workflows."
           />
         ) : (
           <div className="card-executive overflow-hidden">
@@ -218,13 +290,14 @@ export function CampaignsListPage() {
                   className="p-5 hover:bg-slate-50/70 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
                 >
                   <div className="space-y-1">
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
                       <h3 className="text-base font-bold font-heading text-[#08254f]">{camp.name}</h3>
+                      {getChannelBadge(camp.channel)}
                       {getStatusBadge(camp.status)}
                     </div>
-                    <p className="text-xs text-gray-500 flex items-center gap-2">
+                    <p className="text-xs text-gray-500 flex flex-wrap items-center gap-2">
                       <span>Subject: <strong className="text-gray-700">{camp.subject}</strong></span>
-                      {camp.from_name && <span>• From: {camp.from_name}</span>}
+                      {camp.from_name && <span>• Sender: {camp.from_name}</span>}
                     </p>
                   </div>
 
@@ -249,27 +322,93 @@ export function CampaignsListPage() {
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4 border border-gray-100">
               <h2 className="text-lg font-bold text-gray-900">Create Campaign Draft</h2>
               <form onSubmit={handleCreateCampaign} className="space-y-4">
+                {/* Channel Selector */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Campaign Name</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-2">Campaign Channel *</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewCampChannel('email')}
+                      className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
+                        newCampChannel === 'email'
+                          ? 'border-brand-500 bg-brand-50/50 text-brand-900 font-bold'
+                          : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                      }`}
+                    >
+                      <Mail className={`h-4 w-4 ${newCampChannel === 'email' ? 'text-brand-600' : 'text-gray-400'}`} />
+                      <span className="text-xs">Email</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewCampChannel('sms')}
+                      className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
+                        newCampChannel === 'sms'
+                          ? 'border-emerald-500 bg-emerald-50/50 text-emerald-900 font-bold'
+                          : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                      }`}
+                    >
+                      <MessageSquare className={`h-4 w-4 ${newCampChannel === 'sms' ? 'text-emerald-600' : 'text-gray-400'}`} />
+                      <span className="text-xs">SMS</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewCampChannel('call')}
+                      className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
+                        newCampChannel === 'call'
+                          ? 'border-purple-500 bg-purple-50/50 text-purple-900 font-bold'
+                          : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                      }`}
+                    >
+                      <PhoneCall className={`h-4 w-4 ${newCampChannel === 'call' ? 'text-purple-600' : 'text-gray-400'}`} />
+                      <span className="text-xs">Call Tasks</span>
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1.5">
+                    {newCampChannel === 'call'
+                      ? 'Creates deduplicated call tasks in Daily Operations Work Queue upon activation.'
+                      : 'Audience builder & snapshot freeze ready. Live sending deferred to Phase 7.'}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Campaign Name *</label>
                   <input
                     type="text"
                     required
                     value={newCampName}
                     onChange={(e) => setNewCampName(e.target.value)}
-                    placeholder="e.g. Q3 Alumni Masterclass Announcement"
+                    placeholder={
+                      newCampChannel === 'call'
+                        ? 'e.g. Q3 Alumni Direct Phone Follow-up'
+                        : 'e.g. Q3 Alumni Masterclass Announcement'
+                    }
                     className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Email Subject Line</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    {newCampChannel === 'call'
+                      ? 'Call Script Goal / Objective'
+                      : newCampChannel === 'sms'
+                      ? 'SMS Topic / Header'
+                      : 'Email Subject Line'}
+                  </label>
                   <input
                     type="text"
                     value={newCampSubject}
                     onChange={(e) => setNewCampSubject(e.target.value)}
-                    placeholder="e.g. Exclusive Masterclass for {{salutation}}"
+                    placeholder={
+                      newCampChannel === 'call'
+                        ? 'e.g. Follow-up regarding Next Level Restorative certification'
+                        : 'e.g. Exclusive Masterclass for Dental Practitioners'
+                    }
                     className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
                   />
                 </div>
+
                 <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
                   <button
                     type="button"
@@ -290,6 +429,12 @@ export function CampaignsListPage() {
             </div>
           </div>
         )}
+
+        {/* Saved Segments Management Modal */}
+        <SavedSegmentsModal
+          isOpen={isSavedSegmentsOpen}
+          onClose={() => setIsSavedSegmentsOpen(false)}
+        />
       </div>
     </Layout>
   );

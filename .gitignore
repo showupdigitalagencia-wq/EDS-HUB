@@ -33,3 +33,6 @@ supabase/functions/.env*
 *.njsproj
 *.sln
 *.sw?
+
+# Temporary scratch scripts
+scratch/
