@@ -262,8 +262,8 @@ export function LeadsListPage() {
               />
             </div>
 
-            {/* Stage filter */}
-            <div className="flex items-center gap-2">
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-2">
               <Filter className="h-4 w-4 text-gray-400 shrink-0 hidden sm:inline" />
               <select
                 value={stageFilter}
@@ -373,7 +373,7 @@ export function LeadsListPage() {
           </div>
 
           {/* Presets Bar */}
-          <div className="flex items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
             <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mr-1">
               Views:
             </span>

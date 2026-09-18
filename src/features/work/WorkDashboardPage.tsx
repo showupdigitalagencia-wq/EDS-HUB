@@ -13,6 +13,7 @@ import {
   Download,
   AlertTriangle,
   Filter,
+  Menu,
 } from 'lucide-react';
 import {
   fetchDailyOperationsDashboard,
@@ -148,13 +149,58 @@ export const WorkDashboardPage: React.FC = () => {
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-  return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
-      <Sidebar />
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto pl-64">
+  return (
+    <div className="flex flex-col lg:flex-row min-h-screen lg:h-screen bg-slate-50 overflow-x-hidden font-sans w-full">
+      <Sidebar mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
+
+      {/* Mobile Top Bar (< lg) */}
+      <header className="lg:hidden sticky top-0 z-20 bg-white/95 backdrop-blur-xs border-b border-slate-200/80 px-4 py-3 flex items-center justify-between min-h-[56px] shadow-2xs">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            id="mobile-work-menu-btn"
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Abrir menu lateral"
+            className="p-2 -ml-1.5 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold text-[#08254f] truncate font-heading">
+              Daily Operations
+            </h1>
+            <p className="text-[10px] text-slate-500 truncate">Command Center</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              loadKpis();
+              loadQueue();
+            }}
+            disabled={loadingItems}
+            aria-label="Atualizar Workspace"
+            className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 ${loadingItems ? 'animate-spin text-blue-600' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsCreateTaskOpen(true)}
+            aria-label="Nova Tarefa"
+            className="p-2 rounded-lg bg-[#08254f] text-white hover:bg-[#0a336c] transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+      </header>
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto lg:pl-64 w-full">
         {/* Header Bar */}
-        <header className="px-8 py-6 bg-white border-b border-slate-200/80 sticky top-0 z-20 shadow-sm">
+        <header className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 bg-white border-b border-slate-200/80 sticky top-0 z-20 shadow-sm hidden lg:block">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
@@ -338,7 +384,7 @@ export const WorkDashboardPage: React.FC = () => {
         </header>
 
         {/* Workspace Body */}
-        <main className="flex-1 p-8 space-y-6">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6">
           {/* Tabs Navigation & Search Bar */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             {/* Primary Tab Buttons */}

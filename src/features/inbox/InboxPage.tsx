@@ -11,6 +11,7 @@ import {
   Archive,
   ArrowUpRight,
   ArrowDownLeft,
+  ArrowLeft,
 } from 'lucide-react';
 import { Layout } from '../../components/Layout';
 import { supabase } from '../../lib/supabase';
@@ -33,6 +34,7 @@ export function InboxPage() {
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isUpdatingLead, setIsUpdatingLead] = useState(false);
+  const [showMobileThread, setShowMobileThread] = useState(false);
 
   // Metrics
   const [metrics, setMetrics] = useState({
@@ -127,6 +129,7 @@ export function InboxPage() {
   const handleSelectConversation = (conv: Conversation) => {
     setSelectedConversation(conv);
     setSearchParams({ id: conv.id });
+    setShowMobileThread(true);
   };
 
   const handleUpdateQualification = async (newStatus: QualificationStatus) => {
@@ -227,7 +230,7 @@ export function InboxPage() {
         {/* 3-Column Workspace */}
         <div className="flex-1 flex overflow-hidden">
           {/* Column 1: Conversations List */}
-          <div className="w-80 lg:w-96 border-r border-slate-200/80 bg-white flex flex-col">
+          <div className={`w-full md:w-80 lg:w-96 border-r border-slate-200/80 bg-white flex-col ${showMobileThread ? 'hidden md:flex' : 'flex'}`}>
             {/* Search and Filters */}
             <div className="p-3 border-b border-slate-100 space-y-2">
               <div className="relative">
@@ -374,7 +377,20 @@ export function InboxPage() {
           </div>
 
           {/* Column 2: Center Thread Area */}
-          <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
+          <div className={`flex-1 flex-col bg-gray-50 overflow-hidden ${showMobileThread ? 'flex' : 'hidden md:flex'}`}>
+            {/* Mobile Back Button (< md) */}
+            <div className="md:hidden flex items-center justify-between px-3 py-2.5 bg-white border-b border-slate-200/80 shadow-2xs shrink-0">
+              <button
+                type="button"
+                id="mobile-inbox-back-btn"
+                onClick={() => setShowMobileThread(false)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#08254f] hover:text-[#449bd5] py-1 px-2 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Voltar para a lista</span>
+              </button>
+            </div>
+
             {selectedConversation ? (
               <ConversationThread
                 key={selectedConversation.id}
@@ -397,7 +413,7 @@ export function InboxPage() {
 
           {/* Column 3: Lead Quick Context Drawer */}
           {selectedConversation && selectedConversation.lead && (
-            <div className="w-72 lg:w-80 border-l border-gray-200 bg-white p-5 flex flex-col overflow-y-auto space-y-6">
+            <div className="hidden xl:flex w-72 lg:w-80 border-l border-gray-200 bg-white p-5 flex-col overflow-y-auto space-y-6 shrink-0">
               <div className="flex items-center justify-between pb-3 border-b border-gray-100">
                 <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
                   Lead Profile

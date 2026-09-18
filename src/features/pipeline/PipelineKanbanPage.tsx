@@ -128,14 +128,7 @@ export function PipelineKanbanPage() {
     setActiveDropStageId(null);
   };
 
-  const handleDrop = async (e: React.DragEvent, targetStageId: string) => {
-    e.preventDefault();
-    setActiveDropStageId(null);
-
-    if (!draggedLeadId) return;
-    const leadId = draggedLeadId;
-    setDraggedLeadId(null);
-
+  const moveLeadToStage = async (leadId: string, targetStageId: string) => {
     // Find current stage of lead
     let currentStageId: string | null = null;
     for (const [stgId, lds] of Object.entries(leadsByStage)) {
@@ -171,6 +164,16 @@ export function PipelineKanbanPage() {
       setLeadsByStage(previousState);
       alert(err instanceof Error ? err.message : 'Failed to move lead stage');
     }
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetStageId: string) => {
+    e.preventDefault();
+    setActiveDropStageId(null);
+
+    if (!draggedLeadId) return;
+    const leadId = draggedLeadId;
+    setDraggedLeadId(null);
+    await moveLeadToStage(leadId, targetStageId);
   };
 
   const getStageHeaderColor = (sortOrder: number) => {
@@ -231,8 +234,8 @@ export function PipelineKanbanPage() {
           <ErrorState message={error} onRetry={loadPipelineData} />
         ) : (
           /* Kanban Board Scrollable Container */
-          <div className="overflow-x-auto pb-4">
-            <div className="flex gap-4 min-w-[1500px]">
+          <div className="overflow-x-auto pb-4 snap-x snap-mandatory scroll-smooth">
+            <div className="flex gap-3 sm:gap-4 min-w-[1400px]">
               {stages.map((stage) => {
                 const stageLeads = leadsByStage[stage.id] || [];
                 const isDropTarget = activeDropStageId === stage.id;
@@ -243,7 +246,7 @@ export function PipelineKanbanPage() {
                     onDragOver={(e) => handleDragOver(e, stage.id)}
                     onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, stage.id)}
-                    className={`flex-1 min-w-[220px] max-w-[260px] rounded-2xl flex flex-col bg-slate-100/70 border transition-all duration-200 ${
+                    className={`flex-1 min-w-[260px] sm:min-w-[240px] max-w-[280px] snap-start rounded-2xl flex flex-col bg-slate-100/70 border transition-all duration-200 ${
                       isDropTarget
                         ? 'border-[#449bd5] bg-[#449bd5]/10 ring-2 ring-[#449bd5]/30 shadow-md'
                         : 'border-slate-200/80'
@@ -351,16 +354,34 @@ export function PipelineKanbanPage() {
                               })()
                             )}
 
-                            {/* Footer info */}
-                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-                              <span className="capitalize">{lead.source}</span>
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-2.5 w-2.5" />
-                                {new Date(lead.updated_at).toLocaleDateString([], {
-                                  month: 'short',
-                                  day: 'numeric',
-                                })}
-                              </span>
+                            {/* Footer info & Touch stage changer */}
+                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1 text-[10px] text-slate-400">
+                              <span className="capitalize truncate max-w-[70px]">{lead.source}</span>
+                              <div className="flex items-center gap-1.5">
+                                <select
+                                  aria-label={`Mover estágio de ${fullName}`}
+                                  value={stage.id}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    moveLeadToStage(lead.id, e.target.value);
+                                  }}
+                                  className="text-[10px] py-0.5 px-1 rounded border border-slate-200 bg-slate-50 text-slate-700 font-medium cursor-pointer hover:bg-white transition-colors"
+                                >
+                                  {stages.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="flex items-center gap-0.5 text-[9px] text-slate-400 shrink-0">
+                                  <Clock className="h-2.5 w-2.5" />
+                                  {new Date(lead.updated_at).toLocaleDateString([], {
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         );

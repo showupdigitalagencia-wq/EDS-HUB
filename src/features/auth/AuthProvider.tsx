@@ -37,29 +37,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      if (s?.user) {
-        fetchAppUser(s.user.id).finally(() => setIsLoading(false));
-      } else {
+    let isMounted = true;
+    // Safety timeout: Never let the auth loader freeze the screen indefinitely
+    const timeoutId = setTimeout(() => {
+      if (isMounted) {
         setIsLoading(false);
       }
-    });
+    }, 5000);
+
+    // Get initial session
+    supabase.auth
+      .getSession()
+      .then(({ data: { session: s } }) => {
+        if (!isMounted) return;
+        setSession(s);
+        if (s?.user) {
+          fetchAppUser(s.user.id)
+            .catch((err) => {
+              console.warn('[AuthProvider] fetchAppUser error:', err);
+              if (isMounted) setAppUser(null);
+            })
+            .finally(() => {
+              if (isMounted) {
+                clearTimeout(timeoutId);
+                setIsLoading(false);
+              }
+            });
+        } else {
+          clearTimeout(timeoutId);
+          setIsLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error('[AuthProvider] getSession error:', err);
+        if (isMounted) {
+          clearTimeout(timeoutId);
+          setIsLoading(false);
+        }
+      });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, s) => {
+        if (!isMounted) return;
         setSession(s);
         if (s?.user) {
-          await fetchAppUser(s.user.id);
+          try {
+            await fetchAppUser(s.user.id);
+          } catch (err) {
+            console.warn('[AuthProvider] onAuthStateChange fetchAppUser error:', err);
+            if (isMounted) setAppUser(null);
+          }
         } else {
           setAppUser(null);
         }
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+      subscription.unsubscribe();
+    };
   }, [fetchAppUser]);
 
   const signIn = useCallback(async (email: string, password: string) => {

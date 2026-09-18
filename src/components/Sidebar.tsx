@@ -1,3 +1,4 @@
+import { useEffect, useCallback } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../features/auth/AuthProvider';
 import {
@@ -19,6 +20,7 @@ import {
   Award,
   CheckSquare,
   BarChart3,
+  X,
 } from 'lucide-react';
 import edsLogo from '../assets/eds-logo.png';
 
@@ -71,21 +73,69 @@ const navigationGroups: NavGroup[] = [
   },
 ];
 
-export function Sidebar() {
+export interface SidebarProps {
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
+}
+
+export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const { appUser, signOut } = useAuth();
   const location = useLocation();
 
-  return (
-    <aside className="fixed inset-y-0 left-0 w-64 bg-[#08254f] text-white flex flex-col z-30 shadow-xl border-r border-[#0d3368]">
+  // Close on Escape key press
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && mobileOpen && onCloseMobile) {
+        onCloseMobile();
+      }
+    },
+    [mobileOpen, onCloseMobile]
+  );
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  // Lock body scroll when mobile drawer is open
+  useEffect(() => {
+    if (mobileOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [mobileOpen]);
+
+  const handleNavClick = () => {
+    if (mobileOpen && onCloseMobile) {
+      onCloseMobile();
+    }
+  };
+
+  const renderNavContent = (isMobile: boolean) => (
+    <>
       {/* Brand Header with Official Logo */}
-      <div className="px-6 py-5 border-b border-white/10 bg-[#061e40] flex items-center justify-between">
-        <NavLink to="/" className="flex items-center gap-2 group block">
+      <div className="px-5 py-4 border-b border-white/10 bg-[#061e40] flex items-center justify-between">
+        <NavLink to="/" onClick={handleNavClick} className="flex items-center gap-2 group block">
           <img
             src={edsLogo}
             alt="Expert Dental Solutions"
-            className="h-9 w-auto max-w-[190px] object-contain transition-transform group-hover:scale-[1.02]"
+            className="h-8 sm:h-9 w-auto max-w-[170px] sm:max-w-[190px] object-contain transition-transform group-hover:scale-[1.02]"
           />
         </NavLink>
+        {isMobile && onCloseMobile && (
+          <button
+            type="button"
+            id="mobile-sidebar-close-btn"
+            onClick={onCloseMobile}
+            aria-label="Fechar menu lateral"
+            className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       {/* Navigation Groups */}
@@ -106,6 +156,7 @@ export function Sidebar() {
                   key={item.href}
                   to={item.href}
                   id={`nav-${item.href.replace('/', '') || 'home'}`}
+                  onClick={handleNavClick}
                   className={`group relative flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 ${
                     isActive
                       ? 'bg-white/12 text-white font-semibold shadow-xs'
@@ -149,13 +200,46 @@ export function Sidebar() {
         <button
           id="sidebar-logout"
           type="button"
-          onClick={signOut}
+          onClick={() => {
+            signOut();
+            handleNavClick();
+          }}
           className="flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-[#8a1c1c]/20 hover:text-white transition-colors cursor-pointer"
         >
           <LogOut className="h-3.5 w-3.5 text-slate-400 group-hover:text-white" />
           <span>Sign out</span>
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* 1. Desktop Fixed Sidebar (visible only on >= lg) */}
+      <aside className="hidden lg:flex fixed inset-y-0 left-0 w-64 bg-[#08254f] text-white flex-col z-30 shadow-xl border-r border-[#0d3368]">
+        {renderNavContent(false)}
+      </aside>
+
+      {/* 2. Mobile Drawer & Backdrop Overlay (visible only on < lg when open) */}
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div
+            id="mobile-sidebar-backdrop"
+            onClick={onCloseMobile}
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300"
+            aria-hidden="true"
+          />
+
+          {/* Drawer */}
+          <aside
+            id="mobile-sidebar-drawer"
+            className="relative w-72 max-w-[85vw] bg-[#08254f] text-white flex flex-col z-50 shadow-2xl h-full"
+          >
+            {renderNavContent(true)}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
