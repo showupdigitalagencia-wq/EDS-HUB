@@ -416,6 +416,7 @@ export interface CampaignRecipient {
   snapshot_stage_id?: string | null;
   snapshot_lead_score?: number | null;
   prepared_at: string;
+  activated_at?: string | null;
   created_at: string;
   updated_at: string;
 }

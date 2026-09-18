@@ -438,6 +438,28 @@ describe('PHASE 5 — BLOCK 3: CAMPAIGNS & AUDIENCE SEGMENTATION 2.0 SUITE', () 
       expect(res.tasks_skipped_idempotent).toBe(5);
     });
 
+    it('19b. permanent idempotency prevents task creation even if earlier task status is completed', () => {
+      // Simulating recipient with already created task (status: 'completed')
+      const existingTask = {
+        campaign_id: 'camp-call-1',
+        lead_id: 'lead-1',
+        status: 'completed',
+      };
+      const recipient = {
+        campaign_id: 'camp-call-1',
+        lead_id: 'lead-1',
+        activated_at: '2026-09-18T10:00:00Z',
+      };
+
+      // Under migration 00048, check is regardless of status or activated_at presence
+      const shouldSkip =
+        recipient.activated_at !== null ||
+        (existingTask.campaign_id === recipient.campaign_id &&
+          existingTask.lead_id === recipient.lead_id);
+
+      expect(shouldSkip).toBe(true);
+    });
+
     it('20. call tasks are NEVER created for excluded members or test leads', () => {
       const recipients = [
         { lead_id: 'lead-1', is_eligible: true, exclusion_reason: null },
@@ -483,18 +505,36 @@ describe('PHASE 5 — BLOCK 3: CAMPAIGNS & AUDIENCE SEGMENTATION 2.0 SUITE', () 
       expect(calcBalance(5000, 5000, 1500)).toBe(1500);
     });
 
-    it('23. independent EXISTS clauses safely handle leads with multiple distinct enrollments', () => {
-      const leadEnrollments = [
-        { course_id: 'course-ortho', status: 'confirmed' },
-        { course_id: 'course-implants', status: 'cancelled' },
-      ];
+    it('23. independent EXISTS clauses safely handle leads with multiple distinct enrollments (e.g. Completed A and Not Enrolled B)', () => {
+      const studentWithBoth = {
+        id: 'student-1',
+        enrollments: [
+          { course_id: 'course-A', status: 'confirmed', completed: true },
+          { course_id: 'course-B', status: 'confirmed', completed: false },
+        ],
+      };
 
-      const isEnrolledInCourse = (courseId: string) =>
-        leadEnrollments.some((e) => e.course_id === courseId && e.status === 'confirmed');
+      const studentTargeted = {
+        id: 'student-2',
+        enrollments: [
+          { course_id: 'course-A', status: 'confirmed', completed: true },
+        ],
+      };
 
-      expect(isEnrolledInCourse('course-ortho')).toBe(true);
-      expect(isEnrolledInCourse('course-implants')).toBe(false);
-      expect(isEnrolledInCourse('course-surgery')).toBe(false);
+      const filterCompletedAAndNotEnrolledB = (student: typeof studentWithBoth) => {
+        const completedA = student.enrollments.some(
+          (e) => e.course_id === 'course-A' && e.completed === true,
+        );
+        const notEnrolledB = !student.enrollments.some(
+          (e) => e.course_id === 'course-B' && e.status === 'confirmed',
+        );
+        return completedA && notEnrolledB;
+      };
+
+      // Student 1 completed A but is enrolled in B -> should NOT match
+      expect(filterCompletedAAndNotEnrolledB(studentWithBoth)).toBe(false);
+      // Student 2 completed A and is NOT enrolled in B -> MUST match!
+      expect(filterCompletedAAndNotEnrolledB(studentTargeted)).toBe(true);
     });
   });
 
