@@ -17,6 +17,7 @@ import {
   DollarSign,
   GraduationCap,
   Award,
+  CheckSquare,
 } from 'lucide-react';
 import edsLogo from '../assets/eds-logo.png';
 
@@ -34,6 +35,7 @@ const navigationGroups: NavGroup[] = [
     label: 'MAIN',
     items: [
       { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { name: 'Work', href: '/work', icon: CheckSquare },
       { name: 'Revenue', href: '/dashboard/revenue', icon: DollarSign },
       { name: 'Inbox', href: '/inbox', icon: Inbox },
       { name: 'Leads', href: '/leads', icon: Users },

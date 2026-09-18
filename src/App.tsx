@@ -26,6 +26,7 @@ import { LeadScoringSettingsPage } from './features/scoring/LeadScoringSettingsP
 import { CourseOperationsPage } from './features/courses/CourseOperationsPage';
 import { SessionDetailPage } from './features/courses/SessionDetailPage';
 import { PostCoursePage } from './features/courses/PostCoursePage';
+import { WorkDashboardPage } from './features/work/WorkDashboardPage';
 
 export default function App() {
   return (
@@ -50,6 +51,30 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <SalesDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/work"
+            element={
+              <ProtectedRoute>
+                <WorkDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tasks/work"
+            element={
+              <ProtectedRoute>
+                <WorkDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tasks"
+            element={
+              <ProtectedRoute>
+                <WorkDashboardPage />
               </ProtectedRoute>
             }
           />

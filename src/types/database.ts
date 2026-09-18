@@ -8,7 +8,9 @@ export type MessageChannel = 'email' | 'sms' | 'call';
 export type MessageProvider = 'resend' | 'twilio';
 export type MessageStatus = 'pending' | 'sent' | 'failed';
 export type IntakeStatus = 'received' | 'processing' | 'processed' | 'failed' | 'duplicate';
-export type TaskType = 'call' | 'data_review' | 'general';
+export type TaskType = 'call' | 'data_review' | 'general' | 'follow_up';
+export type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
+export type TaskSource = 'manual' | 'automation' | 'system' | 'course_operations' | 'post_course';
 export type TaskStatus = 'pending' | 'completed' | 'cancelled';
 export type TaskCreatedBy = 'system' | 'user';
 export type ActivityType =
@@ -54,7 +56,10 @@ export type ActivityType =
   | 'feedback_received'
   | 'testimonial_requested'
   | 'testimonial_received'
-  | 'future_course_interest_added';
+  | 'future_course_interest_added'
+  | 'task_created'
+  | 'task_rescheduled'
+  | 'task_completed';
 export type ActorType = 'system' | 'user';
 export type StageChangeReason =
   | 'initial_assignment'
@@ -109,6 +114,9 @@ export interface AppSettings {
   post_course_followup_due_days?: number;
   post_course_feedback_due_days?: number;
   testimonial_request_due_days?: number;
+  lead_stale_after_days?: number;
+  hot_lead_action_window_hours?: number;
+  new_lead_action_grace_hours?: number;
   created_at: string;
   updated_at: string;
 }
@@ -211,7 +219,12 @@ export interface Task {
   description: string | null;
   status: TaskStatus;
   due_at: string | null;
+  priority: TaskPriority;
+  task_source: TaskSource;
   created_by: TaskCreatedBy;
+  enrollment_id?: string | null;
+  course_session_id?: string | null;
+  post_course_engagement_id?: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -1782,10 +1795,103 @@ export interface PostCourseDashboardData {
   needs_attention: PostCourseNeedsAttentionItem[];
 }
 
+// =============================================================================
+// Phase 5 Block 1: Tasks, Work Queues & Daily Operations Types
+// =============================================================================
 
+export type WorkItemType =
+  | 'TASK'
+  | 'LEAD_ATTENTION'
+  | 'CONVERSATION_ATTENTION'
+  | 'PAYMENT_ATTENTION'
+  | 'COURSE_ATTENTION'
+  | 'POST_COURSE_ATTENTION';
 
+export type WorkItemCategory =
+  | 'today'
+  | 'overdue'
+  | 'needs_reply'
+  | 'hot_leads'
+  | 'no_action'
+  | 'stale_leads'
+  | 'courses'
+  | 'payments'
+  | 'post_course'
+  | 'completed'
+  | 'upcoming';
 
+export interface WorkItemPrimaryAction {
+  type:
+    | 'complete_task'
+    | 'reschedule_task'
+    | 'open_lead'
+    | 'create_task'
+    | 'open_inbox'
+    | 'open_enrollment'
+    | 'open_session'
+    | 'open_engagement';
+  label: string;
+  href?: string;
+  task_id?: string;
+  lead_id?: string;
+  session_id?: string;
+  enrollment_id?: string;
+  engagement_id?: string;
+}
 
+export interface WorkItem {
+  id: string;
+  type: WorkItemType;
+  category: WorkItemCategory;
+  priority: TaskPriority;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  is_overdue: boolean;
+  detected_at: string;
+  lead_id: string | null;
+  lead_name: string | null;
+  lead_email: string | null;
+  lead_phone: string | null;
+  contact_preference: ContactPreference | null;
+  lead_score: number | null;
+  pipeline_stage: string | null;
+  reason_code: string | null;
+  context_id: string | null;
+  context_type: 'task' | 'conversation' | 'lead' | 'enrollment' | 'session' | 'post_course';
+  primary_action: WorkItemPrimaryAction;
+}
 
+export interface DailyOperationsDashboardKpis {
+  timezone: string;
+  hot_min_threshold: number;
+  stale_after_days: number;
+  due_today_count: number;
+  overdue_count: number;
+  completed_today_count: number;
+  needs_reply_count: number;
+  hot_leads_count: number;
+  leads_no_next_action_count: number;
+  stale_leads_count: number;
+  course_attention_count: number;
+  payment_attention_count: number;
+  post_course_attention_count: number;
+  total_actionable_items: number;
+}
 
+export interface DailyOperationsQueueResponse {
+  tab: string;
+  total_count: number;
+  limit: number;
+  offset: number;
+  items: WorkItem[];
+}
 
+export interface DailyOperationsFilter {
+  tab?: string;
+  subFilter?: string | null;
+  priority?: TaskPriority | null;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}

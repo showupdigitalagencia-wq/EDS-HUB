@@ -100,5 +100,14 @@ export type {
   PostCourseNeedsAttentionItem,
   PostCourseKpis,
   PostCourseDashboardData,
+  TaskPriority,
+  TaskSource,
+  WorkItemType,
+  WorkItemCategory,
+  WorkItemPrimaryAction,
+  WorkItem,
+  DailyOperationsDashboardKpis,
+  DailyOperationsQueueResponse,
+  DailyOperationsFilter,
 } from './database';
 export type { LeadIntakePayload, LeadIntakeResponse } from './lead-intake';

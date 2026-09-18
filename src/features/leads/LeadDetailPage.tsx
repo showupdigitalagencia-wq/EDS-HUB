@@ -27,6 +27,10 @@ import {
   Award,
 } from 'lucide-react';
 import { moveLeadToAlumni } from '../courses/services/post-course-service';
+import { deriveNextAction, deriveIsOverdue, completeCrmTask } from '../work/services/work-queue-service';
+import { CreateTaskModal } from '../work/components/CreateTaskModal';
+import { RescheduleTaskModal } from '../work/components/RescheduleTaskModal';
+import { AlertCircle, Calendar, CheckSquare } from 'lucide-react';
 
 export function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -62,6 +66,10 @@ export function LeadDetailPage() {
 
   // Move to Alumni state
   const [isMovingAlumni, setIsMovingAlumni] = useState(false);
+
+  // Daily Operations Tasks states
+  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
 
   const loadLeadData = useCallback(async () => {
     if (!id) return;
@@ -205,19 +213,21 @@ export function LeadDetailPage() {
     }
   };
 
-  // Toggle Task Status
+  // Toggle Task Status (using canonical completeCrmTask for completion)
   const handleToggleTask = async (task: Task) => {
-    const nextStatus = task.status === 'completed' ? 'pending' : 'completed';
     try {
-      await supabase
-        .from('tasks')
-        .update({
-          status: nextStatus,
-          completed_at: nextStatus === 'completed' ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', task.id);
-
+      if (task.status !== 'completed') {
+        await completeCrmTask(task.id);
+      } else {
+        await supabase
+          .from('tasks')
+          .update({
+            status: 'pending',
+            completed_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', task.id);
+      }
       loadLeadData();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to update task');
@@ -326,6 +336,18 @@ export function LeadDetailPage() {
 
   const currentStage = stages.find((s) => s.id === lead.pipeline_stage_id);
   const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed Lead';
+
+  // Work Queue Next Action & Overdue calculations (Canonical Work Queue Engine)
+  const nextActionResult = deriveNextAction(tasks);
+  const nextActionTitle = nextActionResult.nextTask ? nextActionResult.nextTask.title : 'No next action scheduled';
+  const openTasks = tasks.filter((t) => t.status === 'pending');
+  const overdueTasks = openTasks.filter((t) => deriveIsOverdue(t.due_at));
+  const earliestOpenTask = openTasks.slice().sort((a, b) => {
+    const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity;
+    const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity;
+    if (aDue !== bDue) return aDue - bDue;
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  })[0];
 
   return (
     <Layout title={`Lead: ${fullName}`}>
@@ -651,54 +673,180 @@ export function LeadDetailPage() {
               </div>
             </div>
 
-            {/* Tasks Card */}
-            <div className="card-executive p-6 space-y-3">
-              <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider flex items-center gap-2">
-                <Clock className="h-4 w-4 text-[#449bd5]" />
-                Follow-up Tasks ({tasks.length})
-              </h2>
+            {/* Next Action & Overdue Alerts (Phase 5 Block 1 Canonical Daily Operations) */}
+            <div className="card-executive p-6 space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <CheckSquare className="h-4 w-4 text-[#449bd5]" />
+                  <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider">
+                    Next Recommended Action: <span className="font-semibold text-[#449bd5] normal-case">{nextActionTitle}</span>
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setIsCreateTaskOpen(true)}
+                  className="btn-secondary text-xs flex items-center gap-1.5 py-1 px-2.5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Task
+                </button>
+              </div>
 
-              {tasks.length === 0 ? (
-                <p className="text-xs text-slate-400 italic">No tasks assigned to this lead.</p>
+              {/* Next Action Banner */}
+              {earliestOpenTask ? (
+                <div className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 ${
+                  deriveIsOverdue(earliestOpenTask.due_at)
+                    ? 'bg-rose-50/70 border-rose-200/80 text-rose-950'
+                    : 'bg-indigo-50/50 border-indigo-100 text-slate-800'
+                }`}>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${
+                        earliestOpenTask.priority === 'critical' ? 'bg-rose-100 text-rose-700' :
+                        earliestOpenTask.priority === 'high' ? 'bg-amber-100 text-amber-800' :
+                        'bg-blue-100 text-[#08254f]'
+                      }`}>
+                        {earliestOpenTask.priority || 'normal'}
+                      </span>
+                      <span className="text-xs font-semibold">{earliestOpenTask.title}</span>
+                      {deriveIsOverdue(earliestOpenTask.due_at) && (
+                        <span className="px-1.5 py-0.2 text-[10px] font-bold bg-rose-600 text-white rounded">
+                          OVERDUE
+                        </span>
+                      )}
+                    </div>
+                    {earliestOpenTask.description && (
+                      <p className="text-xs text-slate-600">{earliestOpenTask.description}</p>
+                    )}
+                    <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Due: {earliestOpenTask.due_at ? new Date(earliestOpenTask.due_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'No due time'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => setReschedulingTask(earliestOpenTask)}
+                      className="px-2 py-1 text-xs font-medium rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                    >
+                      Reschedule
+                    </button>
+                    <button
+                      onClick={() => handleToggleTask(earliestOpenTask)}
+                      className="btn-crimson py-1 px-2.5 text-xs flex items-center gap-1"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Complete
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <div className="space-y-2">
-                  {tasks.map((task) => {
-                    const isCompleted = task.status === 'completed';
-                    return (
-                      <div
-                        key={task.id}
-                        className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
-                          isCompleted ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-200/80'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => handleToggleTask(task)}
-                            className={`p-1 rounded-lg border transition-colors ${
-                              isCompleted
-                                ? 'bg-emerald-500 text-white border-emerald-500'
-                                : 'border-slate-300 text-transparent hover:border-[#449bd5]'
-                            }`}
-                          >
-                            <CheckCircle2 className="h-4 w-4" />
-                          </button>
-                          <div>
-                            <p className={`text-xs font-semibold ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                              {task.title}
-                            </p>
-                            {task.description && (
-                              <p className="text-[11px] text-slate-500">{task.description}</p>
+                <div className="p-3.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-slate-700">No Next Action Scheduled</p>
+                    <p className="text-[11px] text-slate-500">This lead has no open tasks in the pipeline queue.</p>
+                  </div>
+                  <button
+                    onClick={() => setIsCreateTaskOpen(true)}
+                    className="btn-secondary text-xs flex items-center gap-1"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Schedule Next Action
+                  </button>
+                </div>
+              )}
+
+              {/* Overdue Alert banner if multiple overdue */}
+              {overdueTasks.length > 0 && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-2.5 text-xs text-rose-800">
+                  <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                  <span>
+                    <strong>{overdueTasks.length} Overdue Task{overdueTasks.length > 1 ? 's' : ''}:</strong> Action is past due on this lead. Please complete or reschedule.
+                  </span>
+                </div>
+              )}
+
+              {/* Task list details */}
+              <div className="pt-2 space-y-2">
+                <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  All Lead Tasks ({tasks.length})
+                </h3>
+                {tasks.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">No tasks assigned to this lead.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {tasks.map((task) => {
+                      const isCompleted = task.status === 'completed';
+                      const isOverdue = !isCompleted && deriveIsOverdue(task.due_at);
+                      return (
+                        <div
+                          key={task.id}
+                          className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                            isCompleted
+                              ? 'bg-slate-50 border-slate-100 opacity-60'
+                              : isOverdue
+                              ? 'bg-rose-50/30 border-rose-200/70'
+                              : 'bg-white border-slate-200/80'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => handleToggleTask(task)}
+                              className={`p-1 rounded-lg border transition-colors ${
+                                isCompleted
+                                  ? 'bg-emerald-500 text-white border-emerald-500'
+                                  : 'border-slate-300 text-transparent hover:border-[#449bd5]'
+                              }`}
+                              title={isCompleted ? 'Mark pending' : 'Complete task'}
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                            </button>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className={`text-xs font-semibold ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                                  {task.title}
+                                </p>
+                                {task.priority && task.priority !== 'normal' && !isCompleted && (
+                                  <span className={`px-1.5 py-0.2 text-[9px] font-bold uppercase rounded ${
+                                    task.priority === 'critical' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'
+                                  }`}>
+                                    {task.priority}
+                                  </span>
+                                )}
+                              </div>
+                              {task.description && (
+                                <p className="text-[11px] text-slate-500">{task.description}</p>
+                              )}
+                              <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                {task.due_at && (
+                                  <span className={`flex items-center gap-1 ${isOverdue ? 'text-rose-600 font-semibold' : ''}`}>
+                                    <Clock className="h-3 w-3" />
+                                    {new Date(task.due_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                    {isOverdue && ' (Overdue)'}
+                                  </span>
+                                )}
+                                <span>• {task.task_source || 'manual'}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 text-[10px] uppercase font-semibold rounded bg-slate-100 text-slate-600">
+                              {task.task_type}
+                            </span>
+                            {!isCompleted && (
+                              <button
+                                onClick={() => setReschedulingTask(task)}
+                                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                                title="Reschedule task"
+                              >
+                                <Calendar className="h-3.5 w-3.5" />
+                              </button>
                             )}
                           </div>
                         </div>
-                        <span className="px-2 py-0.5 text-[10px] uppercase font-semibold rounded bg-slate-100 text-slate-600">
-                          {task.task_type}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Lead Enrollment & Revenue Card (Phase 4 Block 3) */}
@@ -758,6 +906,26 @@ export function LeadDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Daily Operations Modals */}
+      <CreateTaskModal
+        isOpen={isCreateTaskOpen}
+        onClose={() => setIsCreateTaskOpen(false)}
+        onCreated={loadLeadData}
+        initialLeadId={lead.id}
+        leadName={fullName}
+      />
+
+      {reschedulingTask && (
+        <RescheduleTaskModal
+          isOpen={Boolean(reschedulingTask)}
+          onClose={() => setReschedulingTask(null)}
+          onRescheduled={loadLeadData}
+          taskId={reschedulingTask.id}
+          taskTitle={reschedulingTask.title}
+          currentDueAt={reschedulingTask.due_at}
+        />
+      )}
     </Layout>
   );
 }
