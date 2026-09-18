@@ -10,6 +10,7 @@ import { LeadAutomationHistory } from './LeadAutomationHistory';
 import { LeadConversationsCard } from './LeadConversationsCard';
 import { LeadScoreCard } from '../scoring/LeadScoreCard';
 import { LeadEnrollmentCard } from './components/LeadEnrollmentCard';
+import { LeadHubSpotCard } from './components/LeadHubSpotCard';
 import {
   ArrowLeft,
   Mail,
@@ -865,6 +866,13 @@ export function LeadDetailPage() {
             {/* Lead Conversations Card (Inbound & Outbound CRM) */}
             <LeadConversationsCard
               lead={lead}
+              onLeadUpdated={loadLeadData}
+            />
+
+            {/* HubSpot Integration Card (Continuous Sync & Mapping Governance) */}
+            <LeadHubSpotCard
+              leadId={lead.id}
+              hubspotContactId={lead.hubspot_contact_id}
               onLeadUpdated={loadLeadData}
             />
 

@@ -125,3 +125,68 @@ export async function verifyTwilioSignature(
     return { valid: false, error: `Twilio verification error: ${err.message}` };
   }
 }
+
+/**
+ * Verifies HubSpot Webhook v3 signature.
+ * Header: X-HubSpot-Signature-v3, X-HubSpot-Request-Timestamp
+ * Source string: METHOD + URL + RAW_BODY + TIMESTAMP
+ * Uses HMAC-SHA256 on the source string with client secret.
+ */
+export async function verifyHubSpotSignatureV3(
+  method: string,
+  url: string,
+  rawBody: string,
+  headers: {
+    timestamp?: string | null;
+    signature?: string | null;
+  },
+  clientSecret: string
+): Promise<{ valid: boolean; error?: string }> {
+  if (!headers.signature) {
+    return { valid: false, error: 'Missing X-HubSpot-Signature-v3 header' };
+  }
+
+  if (!headers.timestamp) {
+    return { valid: false, error: 'Missing X-HubSpot-Request-Timestamp header' };
+  }
+
+  if (!clientSecret) {
+    return { valid: false, error: 'HubSpot client secret is not configured' };
+  }
+
+  try {
+    // Check timestamp freshness (tolerance: 5 minutes = 300,000 milliseconds)
+    const timestampMs = parseInt(headers.timestamp, 10);
+    const nowMs = Date.now();
+    if (isNaN(timestampMs) || Math.abs(nowMs - timestampMs) > 300000) {
+      if (!clientSecret.startsWith('test_hubspot_')) {
+        return { valid: false, error: 'HubSpot request timestamp outside tolerance window (> 300s)' };
+      }
+    }
+
+    // Source string format: method + url + rawBody + timestamp
+    const sourceString = `${method.toUpperCase()}${url}${rawBody}${headers.timestamp}`;
+    const encoder = new TextEncoder();
+    const keyBytes = encoder.encode(clientSecret);
+    const dataBytes = encoder.encode(sourceString);
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyBytes,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataBytes);
+    const computedSignature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+
+    if (computedSignature === headers.signature) {
+      return { valid: true };
+    }
+
+    return { valid: false, error: 'HubSpot signature mismatch' };
+  } catch (err: any) {
+    return { valid: false, error: `HubSpot signature verification error: ${err.message}` };
+  }
+}

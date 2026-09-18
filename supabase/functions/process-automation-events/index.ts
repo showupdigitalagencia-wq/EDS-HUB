@@ -186,6 +186,13 @@ Deno.serve(async (req) => {
       }
 
       for (const auto of automations) {
+        // Automation Safety: Suppress integration-originated events unless explicitly allowed
+        const isIntegrationOrigin = event.payload?.change_origin === 'hubspot_sync' || event.payload?.source === 'hubspot';
+        const allowIntegration = auto.trigger_config?.allow_integration_triggers === true;
+        if (isIntegrationOrigin && !allowIntegration) {
+          continue;
+        }
+
         // Guard against duplicate active enrollment
         const { data: existingActive } = await db
           .from('automation_runs')

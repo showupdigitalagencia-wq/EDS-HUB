@@ -47,6 +47,11 @@ Deno.serve(async (req) => {
       url_configured: !!Deno.env.get('SUPABASE_URL'),
       service_role_configured: !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
     },
+    hubspot: {
+      access_token_configured: !!Deno.env.get('HUBSPOT_ACCESS_TOKEN'),
+      client_secret_configured: !!Deno.env.get('HUBSPOT_CLIENT_SECRET'),
+      operational_status: Deno.env.get('HUBSPOT_ACCESS_TOKEN') ? 'Configured' : 'Configuration Required',
+    },
   };
 
   return new Response(

@@ -15,12 +15,20 @@ import {
   BookOpen,
   Edit2,
   X,
+  Share2,
 } from 'lucide-react';
 import type { AppSettings, Course } from '../../types';
 import { fetchCourses, updateCourse, formatCurrency } from '../revenue/services/revenue-service';
+import { HubSpotIntegrationView } from '../integrations/hubspot/HubSpotIntegrationView';
 
 export function SystemSetupPage() {
-  const [activeTab, setActiveTab] = useState<'general' | 'courses' | 'data-management'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'courses' | 'data-management' | 'integrations'>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'integrations') return 'integrations';
+    }
+    return 'general';
+  });
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -223,7 +231,7 @@ export function SystemSetupPage() {
             }`}
           >
             <BookOpen className="h-4 w-4" />
-            Catálogo de Cursos
+            Course Catalog
           </button>
           <button
             type="button"
@@ -236,6 +244,18 @@ export function SystemSetupPage() {
           >
             <Database className="h-4 w-4" />
             Data Management
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('integrations')}
+            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading ${
+              activeTab === 'integrations'
+                ? 'border-[#08254f] text-[#08254f]'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Share2 className="h-4 w-4" />
+            Integrations
           </button>
         </div>
 
@@ -634,6 +654,15 @@ export function SystemSetupPage() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* =============================================================== */}
+        {/* TAB 4: INTEGRATIONS (HUBSPOT CONTINUOUS SYNC)                   */}
+        {/* =============================================================== */}
+        {activeTab === 'integrations' && (
+          <div className="card-executive p-6">
+            <HubSpotIntegrationView />
           </div>
         )}
       </div>

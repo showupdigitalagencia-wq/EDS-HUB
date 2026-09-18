@@ -1993,3 +1993,240 @@ export interface DailyOperationsFilter {
   limit?: number;
   offset?: number;
 }
+
+// =============================================================================
+// HubSpot Continuous Sync & Mapping Governance Types
+// =============================================================================
+
+export type IntegrationConnectionStatus =
+  | 'configuration_required'
+  | 'connected'
+  | 'degraded'
+  | 'disconnected';
+
+export type IntegrationEntityLinkStatus =
+  | 'active'
+  | 'conflict'
+  | 'archived'
+  | 'disconnected';
+
+export type IntegrationFieldMappingDirection =
+  | 'hubspot_to_eds'
+  | 'eds_to_hubspot'
+  | 'bidirectional';
+
+export type IntegrationSourceOfTruth =
+  | 'hubspot'
+  | 'eds'
+  | 'bidirectional_newest'
+  | 'manual_conflict';
+
+export type IntegrationTargetType =
+  | 'lead_field'
+  | 'lead_course_interest'
+  | 'integration_metadata';
+
+export type IntegrationTransformRule =
+  | 'none'
+  | 'phone_digits'
+  | 'phone_e164'
+  | 'email_normalize'
+  | 'qualification_status_enum'
+  | 'course_interest_lookup'
+  | 'boolean_toggle'
+  | 'timestamp_utc';
+
+export type IntegrationSyncDirection = 'inbound' | 'outbound';
+
+export type IntegrationSyncStatus =
+  | 'received'
+  | 'processing'
+  | 'completed'
+  | 'ignored_duplicate'
+  | 'ignored_echo'
+  | 'ignored_stale'
+  | 'conflict'
+  | 'failed'
+  | 'dead_letter';
+
+export type IntegrationConflictType =
+  | 'MULTIPLE_EMAIL_MATCH'
+  | 'MULTIPLE_PHONE_MATCH'
+  | 'EMAIL_COLLISION'
+  | 'PHONE_COLLISION'
+  | 'MAPPING_VALUE_UNKNOWN'
+  | 'TYPE_CONVERSION_FAILED'
+  | 'CONCURRENT_FIELD_UPDATE'
+  | 'EXTERNAL_ENTITY_MERGED';
+
+export type IntegrationConflictStatus =
+  | 'pending_review'
+  | 'resolved_hubspot_wins'
+  | 'resolved_eds_wins'
+  | 'resolved_manual_edit'
+  | 'dismissed';
+
+export interface IntegrationConnection {
+  id: string;
+  provider: 'hubspot';
+  status: IntegrationConnectionStatus;
+  portal_id: string | null;
+  account_name: string | null;
+  sync_enabled: boolean;
+  inbound_webhook_enabled: boolean;
+  outbound_sync_enabled: boolean;
+  auto_suppress_automations: boolean;
+  last_health_check_at: string | null;
+  health_status_message: string | null;
+  last_successful_api_call_at: string | null;
+  last_webhook_at: string | null;
+  last_sync_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationEntityLink {
+  id: string;
+  integration: 'hubspot';
+  entity_type: 'lead';
+  eds_entity_id: string;
+  external_entity_id: string;
+  status: IntegrationEntityLinkStatus;
+  last_synced_hash: string | null;
+  external_updated_at: string | null;
+  conflict_reason: string | null;
+  last_inbound_sync_at: string | null;
+  last_outbound_sync_at: string | null;
+  linked_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationFieldMapping {
+  id: string;
+  integration: 'hubspot';
+  entity_type: 'lead';
+  external_property: string;
+  eds_target: string;
+  target_type: IntegrationTargetType;
+  direction: IntegrationFieldMappingDirection;
+  source_of_truth: IntegrationSourceOfTruth;
+  transform_rule: IntegrationTransformRule;
+  allow_clear: boolean;
+  is_active: boolean;
+  mapping_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationFieldMappingHistory {
+  id: string;
+  mapping_id: string;
+  external_property: string;
+  eds_target: string;
+  target_type: IntegrationTargetType;
+  direction: IntegrationFieldMappingDirection;
+  source_of_truth: IntegrationSourceOfTruth;
+  transform_rule: IntegrationTransformRule;
+  allow_clear: boolean;
+  mapping_version: number;
+  changed_by: string | null;
+  change_reason: string | null;
+  created_at: string;
+}
+
+export interface IntegrationSyncEvent {
+  id: string;
+  integration: 'hubspot';
+  direction: IntegrationSyncDirection;
+  entity_type: 'lead';
+  eds_entity_id: string | null;
+  external_entity_id: string | null;
+  event_type: string;
+  external_event_id: string | null;
+  external_event_timestamp: string | null;
+  mapping_version: number | null;
+  payload_hash: string;
+  status: IntegrationSyncStatus;
+  attempt_count: number;
+  max_attempts: number;
+  next_retry_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  change_summary: Record<string, any>;
+  created_at: string;
+  processed_at: string | null;
+}
+
+export interface IntegrationOutboxItem {
+  id: string;
+  integration: 'hubspot';
+  entity_type: 'lead';
+  eds_entity_id: string;
+  external_entity_id: string | null;
+  event_type: string;
+  payload: Record<string, any>;
+  payload_hash: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'dead_letter';
+  attempt_count: number;
+  max_attempts: number;
+  next_retry_at: string;
+  last_error: string | null;
+  created_at: string;
+  processed_at: string | null;
+}
+
+export interface IntegrationConflict {
+  id: string;
+  integration: 'hubspot';
+  entity_type: 'lead';
+  eds_entity_id: string | null;
+  external_entity_id: string | null;
+  conflict_type: IntegrationConflictType;
+  conflict_summary: string;
+  field_name: string | null;
+  hubspot_data: Record<string, any>;
+  eds_data: Record<string, any>;
+  status: IntegrationConflictStatus;
+  resolution_notes: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+export interface IntegrationPropertyCache {
+  id: string;
+  integration: 'hubspot';
+  property_name: string;
+  label: string;
+  property_type: string;
+  field_type: string;
+  options: any[] | null;
+  is_custom: boolean;
+  is_archived: boolean;
+  last_refreshed_at: string;
+}
+
+export interface HubSpotSyncMetrics {
+  provider: 'hubspot';
+  status: IntegrationConnectionStatus;
+  portal_id: string | null;
+  account_name: string | null;
+  sync_enabled: boolean;
+  linked_count: number;
+  pending_outbox: number;
+  sync_errors: number;
+  conflicts_count: number;
+  last_sync_at: string | null;
+  last_health_check_at: string | null;
+  health_status_message: string | null;
+}
+
+export interface HubSpotDryRunResult {
+  scanned: number;
+  matched: number;
+  would_create: number;
+  would_update: number;
+  conflicts: number;
+  skipped: number;
+}
