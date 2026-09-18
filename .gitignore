@@ -36,3 +36,8 @@ supabase/functions/.env*
 
 # Temporary scratch scripts
 scratch/
+
+# HubSpot CLI config (contains local credentials)
+hubspot.config.yml
+hubspot.config.yaml
+.hscli/
