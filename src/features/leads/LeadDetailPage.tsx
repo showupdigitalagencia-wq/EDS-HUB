@@ -679,7 +679,7 @@ export function LeadDetailPage() {
                 <div className="flex items-center gap-2">
                   <CheckSquare className="h-4 w-4 text-[#449bd5]" />
                   <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider">
-                    Next Recommended Action: <span className="font-semibold text-[#449bd5] normal-case">{nextActionTitle}</span>
+                    Next Action: <span className="font-semibold text-[#449bd5] normal-case">{nextActionTitle}</span>
                   </h2>
                 </div>
                 <button

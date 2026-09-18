@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { createCrmTask } from '../services/work-queue-service';
-import type { TaskPriority, TaskType, TaskSource } from '../../../types/database';
+import type { TaskPriority, TaskType } from '../../../types/database';
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -13,7 +13,6 @@ interface CreateTaskModalProps {
   leadName?: string | null;
   initialTitle?: string;
   initialPriority?: TaskPriority;
-  initialTaskSource?: TaskSource;
   initialEnrollmentId?: string | null;
   initialSessionId?: string | null;
   initialEngagementId?: string | null;
@@ -29,7 +28,6 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   leadName,
   initialTitle = '',
   initialPriority = 'normal',
-  initialTaskSource = 'manual',
   initialEnrollmentId,
   initialSessionId,
   initialEngagementId,
@@ -78,7 +76,6 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         dueAt: dueDate ? new Date(dueDate).toISOString() : null,
         priority,
         description: description.trim() || undefined,
-        taskSource: initialTaskSource,
         enrollmentId: initialEnrollmentId || undefined,
         courseSessionId: initialSessionId || undefined,
         postCourseEngagementId: initialEngagementId || undefined,

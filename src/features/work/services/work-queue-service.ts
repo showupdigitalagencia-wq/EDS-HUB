@@ -151,6 +151,53 @@ export function deriveWorkItemPriority(
   }
 }
 
+/**
+ * Sorts work items canonically according to the priority hierarchy:
+ * 1. OVERDUE FIRST (is_overdue = true ahead of is_overdue = false)
+ * 2. Priority: critical -> high -> normal -> low
+ * 3. Earliest due date (due_at ASC NULLS LAST)
+ * 4. Oldest waiting / created_at (detected_at ASC)
+ * 5. Deterministic ID tiebreaker
+ */
+export function sortWorkItems(items: WorkItem[]): WorkItem[] {
+  const priorityRank: Record<TaskPriority, number> = {
+    critical: 1,
+    high: 2,
+    normal: 3,
+    low: 4,
+  };
+
+  return [...items].sort((a, b) => {
+    // 1. OVERDUE FIRST
+    if (a.is_overdue !== b.is_overdue) {
+      return a.is_overdue ? -1 : 1;
+    }
+
+    // 2. Priority deterministic order
+    const pA = priorityRank[a.priority] || 5;
+    const pB = priorityRank[b.priority] || 5;
+    if (pA !== pB) return pA - pB;
+
+    // 3. Earliest due date (nulls last)
+    if (a.due_at && b.due_at) {
+      const diff = new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
+      if (diff !== 0) return diff;
+    } else if (a.due_at && !b.due_at) {
+      return -1;
+    } else if (!a.due_at && b.due_at) {
+      return 1;
+    }
+
+    // 4. Oldest waiting / created_at (earliest detected_at first)
+    const tA = a.detected_at ? new Date(a.detected_at).getTime() : 0;
+    const tB = b.detected_at ? new Date(b.detected_at).getTime() : 0;
+    if (tA !== tB) return tA - tB;
+
+    // 5. Deterministic ID tiebreaker
+    return a.id.localeCompare(b.id);
+  });
+}
+
 // -----------------------------------------------------------------------------
 // Database & RPC Invocations
 // -----------------------------------------------------------------------------
@@ -180,11 +227,16 @@ export async function fetchDailyOperationsQueue(
   });
 
   if (error) throw new Error(error.message);
-  return data as DailyOperationsQueueResponse;
+  const response = data as DailyOperationsQueueResponse;
+  return {
+    ...response,
+    items: sortWorkItems(response.items || []),
+  };
 }
 
 /**
- * Creates a new CRM task idempotently with audit logging
+ * Creates a new CRM task idempotently with audit logging.
+ * Enforces task_source = 'manual' to prevent spoofing from UI/client.
  */
 export async function createCrmTask(payload: {
   leadId: string;
@@ -199,6 +251,7 @@ export async function createCrmTask(payload: {
   postCourseEngagementId?: string;
   idempotencyKey?: string;
 }): Promise<{ success: boolean; task_id: string; already_existed?: boolean }> {
+  // Always enforce 'manual' task source for user-created CRM tasks
   const { data, error } = await supabase.rpc('create_crm_task', {
     p_lead_id: payload.leadId,
     p_title: payload.title,
@@ -206,7 +259,7 @@ export async function createCrmTask(payload: {
     p_due_at: payload.dueAt || null,
     p_priority: payload.priority || 'normal',
     p_description: payload.description || null,
-    p_task_source: payload.taskSource || 'manual',
+    p_task_source: 'manual', // Client cannot spoof provenance
     p_enrollment_id: payload.enrollmentId || null,
     p_course_session_id: payload.courseSessionId || null,
     p_post_course_engagement_id: payload.postCourseEngagementId || null,

@@ -4,6 +4,7 @@ import {
   deriveIsToday,
   deriveNextAction,
   deriveWorkItemPriority,
+  sortWorkItems,
   exportWorkQueueCSV,
   fetchDailyOperationsDashboard,
   fetchDailyOperationsQueue,
@@ -994,6 +995,212 @@ describe('PHASE 5 — BLOCK 1: DAILY OPERATIONS & WORK QUEUE SUITE', () => {
       expect(csv).toContain('Urgent prep call');
       expect(csv).toContain('Dr. Jane Smith');
       expect(csv).toContain('critical');
+    });
+  });
+
+  // ==========================================
+  // 22. Final Integrity & Security Verifications
+  // ==========================================
+  describe('Task Source Spoof Prevention & Overdue-First Sorting', () => {
+    it('manual UI task is always source manual', async () => {
+      (supabase.rpc as any).mockResolvedValueOnce({
+        data: { success: true, task_id: 't-manual-1' },
+        error: null,
+      });
+
+      await createCrmTask({
+        leadId: 'lead-1',
+        title: 'Call doctor',
+      });
+
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'create_crm_task',
+        expect.objectContaining({
+          p_task_source: 'manual',
+        })
+      );
+    });
+
+    it('manual task cannot spoof task_source = automation/system/post_course/course_operations', async () => {
+      (supabase.rpc as any).mockResolvedValueOnce({
+        data: { success: true, task_id: 't-manual-2' },
+        error: null,
+      });
+
+      // Even if an attacker attempts to pass a spoofed source:
+      await createCrmTask({
+        leadId: 'lead-1',
+        title: 'Spoofed system task',
+        taskSource: 'automation' as any,
+      });
+
+      // The service forces 'manual' and does not forward the spoofed value
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'create_crm_task',
+        expect.objectContaining({
+          p_task_source: 'manual',
+        })
+      );
+    });
+
+    it('overdue normal task sorts before non-overdue high task', () => {
+      const overdueNormal: WorkItem = {
+        id: 'item-overdue-normal',
+        type: 'TASK',
+        category: 'today',
+        priority: 'normal',
+        title: 'Overdue call',
+        description: null,
+        due_at: new Date(Date.now() - 3600 * 1000).toISOString(),
+        is_overdue: true,
+        detected_at: new Date().toISOString(),
+        lead_id: 'l-1',
+        lead_name: 'Lead A',
+        lead_email: null,
+        lead_phone: null,
+        contact_preference: null,
+        lead_score: null,
+        pipeline_stage: null,
+        reason_code: null,
+        context_id: 't-1',
+        context_type: 'task',
+        primary_action: { type: 'complete_task', label: 'Complete' },
+      };
+
+      const upcomingHigh: WorkItem = {
+        id: 'item-upcoming-high',
+        type: 'TASK',
+        category: 'today',
+        priority: 'high',
+        title: 'Upcoming high priority task',
+        description: null,
+        due_at: new Date(Date.now() + 3600 * 1000).toISOString(),
+        is_overdue: false,
+        detected_at: new Date().toISOString(),
+        lead_id: 'l-2',
+        lead_name: 'Lead B',
+        lead_email: null,
+        lead_phone: null,
+        contact_preference: null,
+        lead_score: null,
+        pipeline_stage: null,
+        reason_code: null,
+        context_id: 't-2',
+        context_type: 'task',
+        primary_action: { type: 'complete_task', label: 'Complete' },
+      };
+
+      const sorted = sortWorkItems([upcomingHigh, overdueNormal]);
+      // Overdue first!
+      expect(sorted[0].id).toBe('item-overdue-normal');
+      expect(sorted[1].id).toBe('item-upcoming-high');
+    });
+
+    it('within overdue tasks critical/high priority sorts correctly', () => {
+      const overdueNormal: WorkItem = {
+        id: 'item-overdue-normal',
+        type: 'TASK',
+        category: 'today',
+        priority: 'normal',
+        title: 'Overdue Normal',
+        description: null,
+        due_at: new Date(Date.now() - 3600 * 1000).toISOString(),
+        is_overdue: true,
+        detected_at: new Date().toISOString(),
+        lead_id: 'l-1',
+        lead_name: 'Lead A',
+        lead_email: null,
+        lead_phone: null,
+        contact_preference: null,
+        lead_score: null,
+        pipeline_stage: null,
+        reason_code: null,
+        context_id: 't-1',
+        context_type: 'task',
+        primary_action: { type: 'complete_task', label: 'Complete' },
+      };
+
+      const overdueCritical: WorkItem = {
+        id: 'item-overdue-critical',
+        type: 'TASK',
+        category: 'today',
+        priority: 'critical',
+        title: 'Overdue Critical',
+        description: null,
+        due_at: new Date(Date.now() - 3600 * 1000).toISOString(),
+        is_overdue: true,
+        detected_at: new Date().toISOString(),
+        lead_id: 'l-2',
+        lead_name: 'Lead B',
+        lead_email: null,
+        lead_phone: null,
+        contact_preference: null,
+        lead_score: null,
+        pipeline_stage: null,
+        reason_code: null,
+        context_id: 't-2',
+        context_type: 'task',
+        primary_action: { type: 'complete_task', label: 'Complete' },
+      };
+
+      const sorted = sortWorkItems([overdueNormal, overdueCritical]);
+      expect(sorted[0].id).toBe('item-overdue-critical');
+      expect(sorted[1].id).toBe('item-overdue-normal');
+    });
+
+    it('deterministic ties remain stable', () => {
+      const itemA: WorkItem = {
+        id: 'item-a',
+        type: 'TASK',
+        category: 'today',
+        priority: 'normal',
+        title: 'Tie A',
+        description: null,
+        due_at: '2026-09-18T12:00:00Z',
+        is_overdue: false,
+        detected_at: '2026-09-17T12:00:00Z',
+        lead_id: 'l-1',
+        lead_name: 'Lead A',
+        lead_email: null,
+        lead_phone: null,
+        contact_preference: null,
+        lead_score: null,
+        pipeline_stage: null,
+        reason_code: null,
+        context_id: 't-1',
+        context_type: 'task',
+        primary_action: { type: 'complete_task', label: 'Complete' },
+      };
+
+      const itemB: WorkItem = {
+        id: 'item-b',
+        type: 'TASK',
+        category: 'today',
+        priority: 'normal',
+        title: 'Tie B',
+        description: null,
+        due_at: '2026-09-18T12:00:00Z',
+        is_overdue: false,
+        detected_at: '2026-09-17T12:00:00Z',
+        lead_id: 'l-2',
+        lead_name: 'Lead B',
+        lead_email: null,
+        lead_phone: null,
+        contact_preference: null,
+        lead_score: null,
+        pipeline_stage: null,
+        reason_code: null,
+        context_id: 't-2',
+        context_type: 'task',
+        primary_action: { type: 'complete_task', label: 'Complete' },
+      };
+
+      const sorted1 = sortWorkItems([itemB, itemA]);
+      const sorted2 = sortWorkItems([itemA, itemB]);
+      expect(sorted1[0].id).toBe('item-a');
+      expect(sorted1[1].id).toBe('item-b');
+      expect(sorted2[0].id).toBe('item-a');
+      expect(sorted2[1].id).toBe('item-b');
     });
   });
 });
