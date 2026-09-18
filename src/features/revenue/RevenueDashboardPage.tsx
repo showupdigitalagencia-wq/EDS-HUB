@@ -217,34 +217,40 @@ export function RevenueDashboardPage() {
         ) : metrics ? (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* 1. KPIs Section */}
-            <RevenueKpisWidget kpis={metrics.kpis} currency={metrics.goals.default_currency} />
+            {metrics.kpis && (
+              <RevenueKpisWidget kpis={metrics.kpis} currency={metrics.goals?.default_currency || 'USD'} />
+            )}
 
             {/* 2. Monthly Goals Progress */}
-            <CommercialGoalsWidget goals={metrics.goals} kpis={metrics.kpis} />
+            {metrics.goals && metrics.kpis && (
+              <CommercialGoalsWidget goals={metrics.goals} kpis={metrics.kpis} />
+            )}
 
             {/* 3. Conversions & Velocity */}
-            <ConversionAndVelocityWidget
-              cohorts={metrics.cohorts}
-              velocity={metrics.velocity}
-              currency={metrics.goals.default_currency}
-            />
+            {metrics.cohorts && (
+              <ConversionAndVelocityWidget
+                cohorts={metrics.cohorts}
+                velocity={metrics.velocity || []}
+                currency={metrics.goals?.default_currency || 'USD'}
+              />
+            )}
 
             {/* 4. Course Performance Breakdown */}
             <CourseRevenueWidget
-              courses={metrics.course_performance}
-              currency={metrics.goals.default_currency}
+              courses={metrics.course_performance || []}
+              currency={metrics.goals?.default_currency || 'USD'}
               periodLabel={activeRangeLabel}
             />
 
             {/* 5. Source Performance Breakdown */}
             <SourceRevenueWidget
-              sources={metrics.source_performance}
-              currency={metrics.goals.default_currency}
+              sources={metrics.source_performance || []}
+              currency={metrics.goals?.default_currency || 'USD'}
               periodLabel={activeRangeLabel}
             />
 
             {/* 6. Approved, Not Enrolled Actionable Queue */}
-            <ApprovedNotEnrolledWidget leads={metrics.approved_not_enrolled} />
+            <ApprovedNotEnrolledWidget leads={metrics.approved_not_enrolled || []} />
           </div>
         ) : null}
       </div>
