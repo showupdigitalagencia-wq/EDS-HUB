@@ -14,10 +14,13 @@ export const SalesFunnelWidget: React.FC<SalesFunnelWidgetProps> = ({
   qualification,
   onExportPipeline,
 }) => {
-  const { funnel, current_distribution, movements_in_period } = pipeline;
+  const { funnel = [], current_distribution = [], movements_in_period = 0 } = pipeline || {};
+
+  const safeFunnel = Array.isArray(funnel) ? funnel : [];
+  const safeDistribution = Array.isArray(current_distribution) ? current_distribution : [];
 
   // Find max leads entered in funnel to scale bars
-  const maxEntered = Math.max(...funnel.map((f) => f.unique_leads_entered), 1);
+  const maxEntered = Math.max(...safeFunnel.map((f) => f?.unique_leads_entered ?? 0), 1);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -63,9 +66,9 @@ export const SalesFunnelWidget: React.FC<SalesFunnelWidgetProps> = ({
 
           {/* Funnel Stages List */}
           <div className="space-y-4 my-4">
-            {funnel.map((stage, idx) => {
+            {safeFunnel.map((stage, idx) => {
               const widthPct = Math.max(
-                Math.round((stage.unique_leads_entered / maxEntered) * 100),
+                Math.round(((stage.unique_leads_entered ?? 0) / maxEntered) * 100),
                 8
               );
 
@@ -157,7 +160,7 @@ export const SalesFunnelWidget: React.FC<SalesFunnelWidgetProps> = ({
               Estágio Atual dos Leads
             </h4>
             <div className="space-y-1.5">
-              {current_distribution.map((stage) => (
+              {safeDistribution.map((stage) => (
                 <div
                   key={stage.stage_id}
                   className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-slate-50 border-b border-slate-100/60 text-xs transition-colors"
@@ -167,10 +170,10 @@ export const SalesFunnelWidget: React.FC<SalesFunnelWidgetProps> = ({
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-[#08254f]">
-                      {stage.lead_count}
+                      {stage.lead_count ?? 0}
                     </span>
                     <span className="text-slate-400 w-12 text-right">
-                      {stage.percentage.toFixed(1)}%
+                      {(stage.percentage ?? 0).toFixed(1)}%
                     </span>
                   </div>
                 </div>
@@ -184,7 +187,7 @@ export const SalesFunnelWidget: React.FC<SalesFunnelWidgetProps> = ({
               Status de Qualificação
             </h4>
             <div className="grid grid-cols-2 gap-2">
-              {qualification.distribution.map((q) => (
+              {(qualification?.distribution || []).map((q) => (
                 <div
                   key={q.status}
                   className="p-3 rounded-xl border border-slate-200/80 bg-slate-50/70 flex items-center justify-between hover:bg-white hover:shadow-xs transition-all"
@@ -192,11 +195,11 @@ export const SalesFunnelWidget: React.FC<SalesFunnelWidgetProps> = ({
                   <div>
                     <p className="text-[11px] font-semibold text-slate-600">{q.label}</p>
                     <p className="text-base font-extrabold text-[#08254f] mt-0.5 font-heading">
-                      {q.lead_count}
+                      {q.lead_count ?? 0}
                     </p>
                   </div>
                   <span className="text-[10px] font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                    {q.percentage.toFixed(1)}%
+                    {(q.percentage ?? 0).toFixed(1)}%
                   </span>
                 </div>
               ))}

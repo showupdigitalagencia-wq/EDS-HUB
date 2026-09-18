@@ -40,14 +40,14 @@ export const TasksAndConversationsWidget: React.FC<TasksAndConversationsWidgetPr
             <div className="p-3.5 rounded-xl border border-slate-200/80 bg-[#f8fafc]">
               <p className="text-[11px] text-slate-500 font-medium">Pendentes</p>
               <p className="text-xl font-extrabold text-[#08254f] font-heading mt-1">
-                {tasks.pending_tasks}
+                {tasks?.pending_tasks ?? 0}
               </p>
             </div>
 
             <div className="p-3.5 rounded-xl border border-amber-200/80 bg-amber-50/40">
               <p className="text-[11px] text-amber-800 font-semibold">Vencem Hoje</p>
               <p className="text-xl font-extrabold text-amber-900 font-heading mt-1">
-                {tasks.due_today}
+                {tasks?.due_today ?? 0}
               </p>
             </div>
 
@@ -57,14 +57,14 @@ export const TasksAndConversationsWidget: React.FC<TasksAndConversationsWidgetPr
                 Atrasadas
               </p>
               <p className="text-xl font-extrabold text-[#8a1c1c] font-heading mt-1">
-                {tasks.overdue}
+                {tasks?.overdue ?? 0}
               </p>
             </div>
 
             <div className="p-3.5 rounded-xl border border-emerald-200/80 bg-emerald-50/40">
               <p className="text-[11px] text-emerald-800 font-semibold">Concluídas</p>
               <p className="text-xl font-extrabold text-emerald-800 font-heading mt-1">
-                {tasks.completed_all_time}
+                {tasks?.completed_all_time ?? 0}
               </p>
             </div>
           </div>
@@ -111,7 +111,7 @@ export const TasksAndConversationsWidget: React.FC<TasksAndConversationsWidgetPr
               <div>
                 <p className="text-xs text-slate-500 font-medium">Conversas Abertas</p>
                 <p className="text-2xl font-extrabold text-[#08254f] font-heading mt-1">
-                  {snapshot.open_conversations}
+                  {snapshot?.open_conversations ?? 0}
                 </p>
               </div>
               <MessageSquare className="w-7 h-7 text-slate-300" />
@@ -121,7 +121,7 @@ export const TasksAndConversationsWidget: React.FC<TasksAndConversationsWidgetPr
               <div>
                 <p className="text-xs text-[#08254f] font-bold">Não Lidas</p>
                 <p className="text-2xl font-extrabold text-[#08254f] font-heading mt-1">
-                  {snapshot.unread_conversations}
+                  {snapshot?.unread_conversations ?? 0}
                 </p>
               </div>
               <div className="p-2 rounded-full bg-[#08254f] text-white">

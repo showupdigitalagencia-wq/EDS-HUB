@@ -112,10 +112,18 @@ export class ErrorBoundary extends Component<Props, State> {
                 </div>
               </div>
 
-              <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+              <p className="text-sm text-slate-600 mb-4 leading-relaxed">
                 A aplicação encontrou uma inconsistência temporária. Nenhuma informação foi perdida.
                 Tente recarregar a página para restaurar o estado do sistema.
               </p>
+
+              {/* Safe diagnostic info (Section 22) */}
+              <div className="mb-6 p-3 rounded-xl bg-slate-100 border border-slate-200 text-xs text-slate-700 font-mono break-words">
+                <span className="font-bold text-slate-900">
+                  {this.state.error?.name || 'Error'}:
+                </span>{' '}
+                {this.state.error?.message?.slice(0, 150) || 'Erro desconhecido'}
+              </div>
 
               <div className="flex flex-col sm:flex-row gap-3">
                 <button

@@ -8,7 +8,7 @@ interface ActivityTrendWidgetProps {
 }
 
 export const ActivityTrendWidget: React.FC<ActivityTrendWidgetProps> = ({
-  trend,
+  trend = [],
   periodLabel,
 }) => {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
@@ -19,10 +19,12 @@ export const ActivityTrendWidget: React.FC<ActivityTrendWidgetProps> = ({
   const paddingTop = 12;
   const availableHeight = chartHeight - paddingBottom - paddingTop;
 
+  const safeTrend = Array.isArray(trend) ? trend : [];
+
   // Calculate max daily value across all metrics to normalize height
   const maxVal = Math.max(
-    ...trend.map((t) =>
-      Math.max(t.new_leads, t.outbound_messages, t.inbound_replies, t.stage_movements)
+    ...safeTrend.map((t) =>
+      Math.max(t?.new_leads ?? 0, t?.outbound_messages ?? 0, t?.inbound_replies ?? 0, t?.stage_movements ?? 0)
     ),
     5
   );
@@ -68,7 +70,7 @@ export const ActivityTrendWidget: React.FC<ActivityTrendWidgetProps> = ({
         </div>
       </div>
 
-      {trend.length === 0 ? (
+      {safeTrend.length === 0 ? (
         <div className="py-12 text-center text-slate-400 text-xs">
           Nenhum dado de atividade para o período selecionado ({periodLabel})
         </div>
@@ -77,7 +79,7 @@ export const ActivityTrendWidget: React.FC<ActivityTrendWidgetProps> = ({
           {/* SVG Bar / Multi-bar Chart */}
           <div className="overflow-x-auto">
             <div className="min-w-[600px] h-48 relative flex items-end justify-between px-2 pt-4 pb-6 border-b border-slate-100">
-              {trend.map((day, idx) => {
+              {safeTrend.map((day, idx) => {
                 const dateParts = day.date.split('-');
                 const displayDate = `${dateParts[2]}/${dateParts[1]}`;
                 const isHovered = hoveredIdx === idx;

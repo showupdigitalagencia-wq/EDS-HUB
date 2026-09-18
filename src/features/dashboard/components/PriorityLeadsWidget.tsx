@@ -9,9 +9,10 @@ interface PriorityLeadsWidgetProps {
 }
 
 export const PriorityLeadsWidget: React.FC<PriorityLeadsWidgetProps> = ({
-  leads,
+  leads = [],
   onExportCsv,
 }) => {
+  const safeLeads = Array.isArray(leads) ? leads : [];
   const getBadgeColor = (category: string) => {
     switch (category) {
       case 'very_hot':
@@ -76,7 +77,7 @@ export const PriorityLeadsWidget: React.FC<PriorityLeadsWidgetProps> = ({
           </div>
         </div>
 
-        {leads.length === 0 ? (
+        {safeLeads.length === 0 ? (
           <div className="py-12 text-center">
             <Flame className="w-8 h-8 text-slate-300 mx-auto mb-2" />
             <p className="text-sm font-semibold text-slate-600">Nenhum lead com score calculado</p>
@@ -95,7 +96,7 @@ export const PriorityLeadsWidget: React.FC<PriorityLeadsWidgetProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100/70">
-                {leads.map((lead) => {
+                {safeLeads.map((lead) => {
                   const fullName =
                     [lead.first_name, lead.last_name].filter(Boolean).join(' ') ||
                     lead.email ||

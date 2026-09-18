@@ -267,7 +267,7 @@ export const SalesDashboardPage: React.FC = () => {
           {metrics && (
             <div className="space-y-8">
               {/* Row 0: Commercial & Revenue Highlights Bar */}
-              {revMetrics && (
+              {revMetrics && revMetrics.kpis && (
                 <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-700 shadow-2xs">
@@ -281,25 +281,25 @@ export const SalesDashboardPage: React.FC = () => {
                         <div>
                           <span className="text-slate-400">Net Revenue:</span>{' '}
                           <strong className="text-emerald-700 font-extrabold text-sm">
-                            {formatCurrency(revMetrics.kpis.net_revenue, revMetrics.goals.default_currency)}
+                            {formatCurrency(revMetrics.kpis?.net_revenue ?? 0, revMetrics.goals?.default_currency || 'USD')}
                           </strong>
                         </div>
                         <div>
                           <span className="text-slate-400">Matrículas:</span>{' '}
                           <strong className="text-[#08254f] font-extrabold text-sm">
-                            {revMetrics.kpis.confirmed_enrollments_count}
+                            {revMetrics.kpis?.confirmed_enrollments_count ?? 0}
                           </strong>
                         </div>
                         <div>
                           <span className="text-slate-400">Ticket Médio:</span>{' '}
                           <strong className="text-slate-800 font-bold">
-                            {formatTicket(revMetrics.kpis.average_ticket, revMetrics.goals.default_currency)}
+                            {formatTicket(revMetrics.kpis?.average_ticket ?? 0, revMetrics.goals?.default_currency || 'USD')}
                           </strong>
                         </div>
                         <div>
                           <span className="text-slate-400">Approved Not Enrolled:</span>{' '}
                           <strong className="text-amber-700 font-bold">
-                            {revMetrics.approved_not_enrolled.length}
+                            {revMetrics.approved_not_enrolled?.length ?? 0}
                           </strong>
                         </div>
                       </div>
@@ -330,22 +330,22 @@ export const SalesDashboardPage: React.FC = () => {
               {/* Row 3: Priority Leads & Needs Attention */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <PriorityLeadsWidget
-                  leads={metrics.priority_leads}
+                  leads={metrics.priority_leads || []}
                   onExportCsv={() =>
-                    exportPriorityLeadsToCsv(metrics.priority_leads, boundaries.label)
+                    exportPriorityLeadsToCsv(metrics.priority_leads || [], boundaries.label)
                   }
                 />
                 <NeedsAttentionWidget
-                  items={metrics.needs_attention}
+                  items={metrics.needs_attention || []}
                   onExportCsv={() =>
-                    exportNeedsAttentionToCsv(metrics.needs_attention, boundaries.label)
+                    exportNeedsAttentionToCsv(metrics.needs_attention || [], boundaries.label)
                   }
                 />
               </div>
 
               {/* Row 4: Activity Trend */}
               <ActivityTrendWidget
-                trend={metrics.activity.trend}
+                trend={metrics.activity?.trend || []}
                 periodLabel={boundaries.label}
               />
 

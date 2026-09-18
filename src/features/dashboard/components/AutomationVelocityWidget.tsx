@@ -11,13 +11,15 @@ export const AutomationVelocityWidget: React.FC<AutomationVelocityWidgetProps> =
   automation,
 }) => {
   const {
-    active_workflows,
-    active_sequences,
-    period_runs_total,
-    period_runs_completed,
-    period_runs_failed,
-    sequences_performance,
-  } = automation;
+    active_workflows = 0,
+    active_sequences = 0,
+    period_runs_total = 0,
+    period_runs_completed = 0,
+    period_runs_failed = 0,
+    sequences_performance = [],
+  } = automation || {};
+
+  const safeSequences = Array.isArray(sequences_performance) ? sequences_performance : [];
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs">
@@ -94,7 +96,7 @@ export const AutomationVelocityWidget: React.FC<AutomationVelocityWidgetProps> =
           Performance das Sequências (Atribuição Estrita de Respostas)
         </h4>
 
-        {sequences_performance.length === 0 ? (
+        {safeSequences.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-xs">
             Nenhuma sequência de follow-up cadastrada
           </div>
@@ -113,7 +115,7 @@ export const AutomationVelocityWidget: React.FC<AutomationVelocityWidgetProps> =
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100/70">
-                {sequences_performance.map((seq) => (
+                {safeSequences.map((seq) => (
                   <tr key={seq.sequence_id} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="py-3 pr-2 font-semibold text-slate-900 group-hover:text-[#08254f] transition-colors">
                       {seq.sequence_name}

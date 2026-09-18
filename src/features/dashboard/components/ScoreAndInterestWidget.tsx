@@ -11,8 +11,10 @@ export const ScoreAndInterestWidget: React.FC<ScoreAndInterestWidgetProps> = ({
   scoring,
   demographics,
 }) => {
-  const { distribution, thresholds, average_score } = scoring;
-  const { course_interest } = demographics;
+  const { distribution = [], thresholds, average_score = 0 } = scoring || {};
+  const { course_interest = [] } = demographics || {};
+  const safeDistribution = Array.isArray(distribution) ? distribution : [];
+  const safeCourseInterest = Array.isArray(course_interest) ? course_interest : [];
 
   const getScoreColor = (cat: string) => {
     switch (cat) {
@@ -55,11 +57,11 @@ export const ScoreAndInterestWidget: React.FC<ScoreAndInterestWidgetProps> = ({
 
           <div className="mb-4 p-3.5 bg-[#f8fafc] rounded-xl border border-slate-200/80 flex items-center justify-between">
             <span className="text-xs text-slate-600 font-medium">Score Médio Geral</span>
-            <span className="text-lg font-extrabold text-[#08254f] font-heading">{average_score.toFixed(1)} pts</span>
+            <span className="text-lg font-extrabold text-[#08254f] font-heading">{(average_score ?? 0).toFixed(1)} pts</span>
           </div>
 
           <div className="space-y-3">
-            {distribution.map((band) => (
+            {safeDistribution.map((band) => (
               <div key={band.category} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-800 flex items-center gap-2">
@@ -121,22 +123,22 @@ export const ScoreAndInterestWidget: React.FC<ScoreAndInterestWidgetProps> = ({
             </span>
           </div>
 
-          {course_interest.length === 0 ? (
+          {safeCourseInterest.length === 0 ? (
             <div className="py-12 text-center text-slate-400 text-xs">
               Nenhum interesse por curso registrado
             </div>
           ) : (
             <div className="space-y-3">
-              {course_interest.slice(0, 7).map((c, idx) => (
+              {safeCourseInterest.slice(0, 7).map((c, idx) => (
                 <div key={`${c.course_name}-${idx}`} className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-slate-800 truncate max-w-[200px]" title={c.course_name}>
                       {c.course_name}
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-[#08254f]">{c.lead_count}</span>
+                      <span className="font-bold text-[#08254f]">{c.lead_count ?? 0}</span>
                       <span className="text-slate-400 w-12 text-right">
-                        {c.percentage.toFixed(1)}%
+                        {(c.percentage ?? 0).toFixed(1)}%
                       </span>
                     </div>
                   </div>
@@ -144,7 +146,7 @@ export const ScoreAndInterestWidget: React.FC<ScoreAndInterestWidgetProps> = ({
                   <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full bg-[#449bd5] transition-all duration-500"
-                      style={{ width: `${Math.max(c.percentage, 0)}%` }}
+                      style={{ width: `${Math.max(c.percentage ?? 0, 0)}%` }}
                     />
                   </div>
                 </div>

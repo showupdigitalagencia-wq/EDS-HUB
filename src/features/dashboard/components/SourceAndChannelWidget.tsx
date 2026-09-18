@@ -9,7 +9,9 @@ interface SourceAndChannelWidgetProps {
 export const SourceAndChannelWidget: React.FC<SourceAndChannelWidgetProps> = ({
   demographics,
 }) => {
-  const { sources, contact_preference } = demographics;
+  const { sources = [], contact_preference = [] } = demographics || {};
+  const safeSources = Array.isArray(sources) ? sources : [];
+  const safeContactPreference = Array.isArray(contact_preference) ? contact_preference : [];
 
   const getSourceLabel = (src: string) => {
     switch (src.toLowerCase()) {
@@ -66,16 +68,16 @@ export const SourceAndChannelWidget: React.FC<SourceAndChannelWidgetProps> = ({
           </div>
 
           <div className="space-y-3">
-            {sources.map((s) => (
+            {safeSources.map((s) => (
               <div key={s.source} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-800">
                     {getSourceLabel(s.source)}
                   </span>
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-[#08254f]">{s.lead_count}</span>
+                    <span className="font-bold text-[#08254f]">{s.lead_count ?? 0}</span>
                     <span className="text-slate-400 w-12 text-right">
-                      {s.percentage.toFixed(1)}%
+                      {(s.percentage ?? 0).toFixed(1)}%
                     </span>
                   </div>
                 </div>
@@ -83,7 +85,7 @@ export const SourceAndChannelWidget: React.FC<SourceAndChannelWidgetProps> = ({
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full bg-[#08254f] transition-all duration-500"
-                    style={{ width: `${Math.max(s.percentage, 0)}%` }}
+                    style={{ width: `${Math.max(s.percentage ?? 0, 0)}%` }}
                   />
                 </div>
               </div>
@@ -119,7 +121,7 @@ export const SourceAndChannelWidget: React.FC<SourceAndChannelWidgetProps> = ({
           </div>
 
           <div className="grid grid-cols-3 gap-3 my-2">
-            {contact_preference.map((p) => (
+            {safeContactPreference.map((p) => (
               <div
                 key={p.preference}
                 className="p-4 rounded-xl border border-slate-200/80 bg-[#f8fafc] flex flex-col items-center text-center justify-center hover:bg-white hover:shadow-xs transition-all"
@@ -131,10 +133,10 @@ export const SourceAndChannelWidget: React.FC<SourceAndChannelWidgetProps> = ({
                   {p.preference}
                 </span>
                 <span className="text-xl font-extrabold text-[#08254f] font-heading mt-1">
-                  {p.lead_count}
+                  {p.lead_count ?? 0}
                 </span>
                 <span className="text-[11px] text-slate-400 mt-0.5 font-semibold">
-                  {p.percentage.toFixed(1)}%
+                  {(p.percentage ?? 0).toFixed(1)}%
                 </span>
               </div>
             ))}

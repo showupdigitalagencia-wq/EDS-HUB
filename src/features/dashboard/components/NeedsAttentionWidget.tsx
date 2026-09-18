@@ -9,9 +9,10 @@ interface NeedsAttentionWidgetProps {
 }
 
 export const NeedsAttentionWidget: React.FC<NeedsAttentionWidgetProps> = ({
-  items,
+  items = [],
   onExportCsv,
 }) => {
+  const safeItems = Array.isArray(items) ? items : [];
   const getReasonBadge = (code: string) => {
     switch (code) {
       case 'HIGH_SCORE_NO_NEXT_ACTION':
@@ -65,7 +66,7 @@ export const NeedsAttentionWidget: React.FC<NeedsAttentionWidgetProps> = ({
           </div>
         </div>
 
-        {items.length === 0 ? (
+        {safeItems.length === 0 ? (
           <div className="py-12 text-center">
             <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
             <p className="text-sm font-semibold text-slate-700">Tudo em dia!</p>
@@ -85,7 +86,7 @@ export const NeedsAttentionWidget: React.FC<NeedsAttentionWidgetProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100/70">
-                {items.map((item, idx) => (
+                {safeItems.map((item, idx) => (
                   <tr key={`${item.lead_id}-${item.reason_code}-${idx}`} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="py-3 pr-2">
                       <div className="font-semibold text-slate-900 group-hover:text-[#08254f] transition-colors">{item.lead_name}</div>

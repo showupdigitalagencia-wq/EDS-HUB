@@ -69,17 +69,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setIsLoading(false);
           }
         })
-        .catch((err) => {
-          console.error('[AuthProvider] getSession error:', err);
+        .catch(async (err) => {
+          console.warn('[AuthProvider] getSession error, recovering auth state safely:', err);
+          try {
+            await supabase.auth.signOut().catch(() => {});
+          } catch {
+            // Ignore signOut errors during corrupted token recovery
+          }
           if (isMounted) {
             clearTimeout(timeoutId);
+            setSession(null);
+            setAppUser(null);
             setIsLoading(false);
           }
         });
     } catch (syncErr) {
-      console.error('[AuthProvider] synchronous getSession error:', syncErr);
+      console.warn('[AuthProvider] synchronous getSession error, recovering auth state:', syncErr);
+      try {
+        supabase.auth.signOut().catch(() => {});
+      } catch {
+        // Ignore signOut errors
+      }
       if (isMounted) {
         clearTimeout(timeoutId);
+        setSession(null);
+        setAppUser(null);
         setIsLoading(false);
       }
     }
