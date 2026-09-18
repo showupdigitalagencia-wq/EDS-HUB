@@ -40,4 +40,6 @@ scratch/
 # HubSpot CLI config (contains local credentials)
 hubspot.config.yml
 hubspot.config.yaml
+*hubspot.config.yml
 .hscli/
+.hs/
