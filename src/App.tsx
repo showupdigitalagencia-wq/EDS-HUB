@@ -9,15 +9,21 @@ import { LoadingScreen } from './components/LoadingScreen';
 import { LoginPage } from './features/auth/LoginPage';
 import { PublicFormPage } from './features/forms/public/PublicFormPage';
 
-// Helper for lazy loading named exports
+// Helper for lazy loading named exports (with fallback to default export)
 function lazyNamed<T extends Record<string, any>, K extends keyof T>(
   factory: () => Promise<T>,
   name: K
 ) {
   return lazy(() =>
-    factory().then((module) => ({
-      default: module[name],
-    }))
+    factory().then((module) => {
+      const Component = module[name] || (module as any).default;
+      if (!Component) {
+        throw new Error(`Lazy route component "${String(name)}" was not found in module.`);
+      }
+      return {
+        default: Component,
+      };
+    })
   );
 }
 

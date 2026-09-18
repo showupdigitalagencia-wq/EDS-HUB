@@ -26,7 +26,17 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     this.setState({ errorInfo });
-    console.error('[EDS HUB ErrorBoundary caught exception]:', error, errorInfo);
+    console.error('EDS HUB ErrorBoundary:', error, errorInfo);
+
+    // Record error in window for programmatic inspection in tests/CDP
+    if (typeof window !== 'undefined') {
+      (window as any).__EDS_ERROR__ = {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+        componentStack: errorInfo?.componentStack,
+      };
+    }
 
     // Auto-recover from chunk loading errors (e.g. after a new production deployment)
     const isChunkLoadFailed =
@@ -41,17 +51,20 @@ export class ErrorBoundary extends Component<Props, State> {
       // Only auto-reload if we haven't reloaded in the last 15 seconds
       if (!lastReload || now - parseInt(lastReload, 10) > 15000) {
         sessionStorage.setItem(storageKey, now.toString());
-        window.location.reload();
+        // Force cache bust on chunk load failure
+        window.location.href = window.location.pathname + '?reload=' + Date.now();
       }
     }
   }
 
   private handleRetry = (): void => {
+    sessionStorage.removeItem('eds_chunk_reload_ts');
     this.setState({ hasError: false, error: null, errorInfo: null });
-    window.location.reload();
+    window.location.href = window.location.pathname + '?reload=' + Date.now();
   };
 
   private handleGoHome = (): void => {
+    sessionStorage.removeItem('eds_chunk_reload_ts');
     this.setState({ hasError: false, error: null, errorInfo: null });
     window.location.href = '/';
   };
@@ -79,7 +92,12 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
 
             {/* Error Card */}
-            <div className="bg-white/95 backdrop-blur-md rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/20 text-left">
+            <div
+              id="eds-error-boundary-card"
+              data-error-name={this.state.error?.name || 'Error'}
+              data-error-message={this.state.error?.message || 'Unknown error'}
+              className="bg-white/95 backdrop-blur-md rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/20 text-left"
+            >
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200/80 flex items-center justify-center shrink-0">
                   <AlertTriangle className="w-6 h-6 text-amber-600" />

@@ -46,58 +46,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, 5000);
 
     // Get initial session
-    supabase.auth
-      .getSession()
-      .then(({ data: { session: s } }) => {
-        if (!isMounted) return;
-        setSession(s);
-        if (s?.user) {
-          fetchAppUser(s.user.id)
-            .catch((err) => {
-              console.warn('[AuthProvider] fetchAppUser error:', err);
-              if (isMounted) setAppUser(null);
-            })
-            .finally(() => {
-              if (isMounted) {
-                clearTimeout(timeoutId);
-                setIsLoading(false);
-              }
-            });
-        } else {
-          clearTimeout(timeoutId);
-          setIsLoading(false);
-        }
-      })
-      .catch((err) => {
-        console.error('[AuthProvider] getSession error:', err);
-        if (isMounted) {
-          clearTimeout(timeoutId);
-          setIsLoading(false);
-        }
-      });
+    try {
+      supabase.auth
+        .getSession()
+        .then(({ data: { session: s } }) => {
+          if (!isMounted) return;
+          setSession(s);
+          if (s?.user) {
+            fetchAppUser(s.user.id)
+              .catch((err) => {
+                console.warn('[AuthProvider] fetchAppUser error:', err);
+                if (isMounted) setAppUser(null);
+              })
+              .finally(() => {
+                if (isMounted) {
+                  clearTimeout(timeoutId);
+                  setIsLoading(false);
+                }
+              });
+          } else {
+            clearTimeout(timeoutId);
+            setIsLoading(false);
+          }
+        })
+        .catch((err) => {
+          console.error('[AuthProvider] getSession error:', err);
+          if (isMounted) {
+            clearTimeout(timeoutId);
+            setIsLoading(false);
+          }
+        });
+    } catch (syncErr) {
+      console.error('[AuthProvider] synchronous getSession error:', syncErr);
+      if (isMounted) {
+        clearTimeout(timeoutId);
+        setIsLoading(false);
+      }
+    }
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, s) => {
-        if (!isMounted) return;
-        setSession(s);
-        if (s?.user) {
-          try {
-            await fetchAppUser(s.user.id);
-          } catch (err) {
-            console.warn('[AuthProvider] onAuthStateChange fetchAppUser error:', err);
-            if (isMounted) setAppUser(null);
+    let subscription: { unsubscribe: () => void } | null = null;
+    try {
+      const { data } = supabase.auth.onAuthStateChange(
+        async (_event, s) => {
+          if (!isMounted) return;
+          setSession(s);
+          if (s?.user) {
+            try {
+              await fetchAppUser(s.user.id);
+            } catch (err) {
+              console.warn('[AuthProvider] onAuthStateChange fetchAppUser error:', err);
+              if (isMounted) setAppUser(null);
+            }
+          } else {
+            setAppUser(null);
           }
-        } else {
-          setAppUser(null);
         }
-      }
-    );
+      );
+      subscription = data.subscription;
+    } catch (syncErr) {
+      console.error('[AuthProvider] synchronous onAuthStateChange error:', syncErr);
+    }
 
     return () => {
       isMounted = false;
       clearTimeout(timeoutId);
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, [fetchAppUser]);
 
