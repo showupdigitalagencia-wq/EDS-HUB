@@ -4,34 +4,36 @@ import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
-import type { Lead, PipelineStage, Tag, LeadNote, Task, LeadActivity, ContactPreference, QualificationStatus } from '../../types';
-import { getQualificationStatusBadge, getQualificationStatusLabel } from './utils/qualificationMapping';
-import { LeadAutomationHistory } from './LeadAutomationHistory';
-import { LeadConversationsCard } from './LeadConversationsCard';
-import { LeadScoreCard } from '../scoring/LeadScoreCard';
+import type { Lead, PipelineStage, Tag, LeadNote, Task, LeadActivity, ContactPreference } from '../../types';
 import { LeadEnrollmentCard } from './components/LeadEnrollmentCard';
 import { LeadHubSpotCard } from './components/LeadHubSpotCard';
+import { LeadQuickActionBar } from './components/LeadQuickActionBar';
+import { LeadTaskModal } from './components/LeadTaskModal';
+import { LeadTaskList } from './components/LeadTaskList';
+import { LeadTimeline } from './components/LeadTimeline';
+import { RescheduleTaskModal } from '../work/components/RescheduleTaskModal';
+import {
+  formatSessionMonthYear,
+  resolveAttentionState,
+  type FormattedCourseInterest,
+} from '../pipeline/components/MinimalLeadCard';
 import {
   ArrowLeft,
   Mail,
   Phone,
   Tag as TagIcon,
   FileText,
-  CheckCircle2,
-  Clock,
   Edit2,
   Save,
   Trash2,
   Plus,
-  Activity,
-  User,
   Award,
+  GraduationCap,
+  Share2,
+  AlertTriangle,
+  AlertCircle,
 } from 'lucide-react';
 import { moveLeadToAlumni } from '../courses/services/post-course-service';
-import { deriveNextAction, deriveIsOverdue, completeCrmTask } from '../work/services/work-queue-service';
-import { CreateTaskModal } from '../work/components/CreateTaskModal';
-import { RescheduleTaskModal } from '../work/components/RescheduleTaskModal';
-import { AlertCircle, Calendar, CheckSquare } from 'lucide-react';
 
 export function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -44,6 +46,7 @@ export function LeadDetailPage() {
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activities, setActivities] = useState<LeadActivity[]>([]);
+  const [courseInterests, setCourseInterests] = useState<FormattedCourseInterest[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +58,7 @@ export function LeadDetailPage() {
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editPref, setEditPref] = useState<ContactPreference>('email');
-  const [editQualStatus, setEditQualStatus] = useState<QualificationStatus | ''>('');
+  const [editReferredBy, setEditReferredBy] = useState('');
   const [editCourseInterest, setEditCourseInterest] = useState('');
 
   // New Note state
@@ -68,8 +71,9 @@ export function LeadDetailPage() {
   // Move to Alumni state
   const [isMovingAlumni, setIsMovingAlumni] = useState(false);
 
-  // Daily Operations Tasks states
-  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  // Lead Task Modal state (Generic vs Payment Reminder)
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [taskModalMode, setTaskModalMode] = useState<'generic' | 'payment'>('generic');
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
 
   const loadLeadData = useCallback(async () => {
@@ -78,14 +82,20 @@ export function LeadDetailPage() {
     setError(null);
 
     try {
-      const [leadRes, stagesRes, allTagsRes, notesRes, tasksRes, actRes] = await Promise.all([
-        supabase.from('leads').select('*').eq('id', id).single(),
-        supabase.from('pipeline_stages').select('*').order('sort_order', { ascending: true }),
-        supabase.from('tags').select('*').order('name', { ascending: true }),
-        supabase.from('lead_notes').select('*').eq('lead_id', id).order('created_at', { ascending: false }),
-        supabase.from('tasks').select('*').eq('lead_id', id).order('created_at', { ascending: false }),
-        supabase.from('lead_activities').select('*').eq('lead_id', id).order('created_at', { ascending: false }),
-      ]);
+      const [leadRes, stagesRes, allTagsRes, notesRes, tasksRes, actRes, interestsRes] =
+        await Promise.all([
+          supabase.from('leads').select('*').eq('id', id).single(),
+          supabase.from('pipeline_stages').select('*').order('sort_order', { ascending: true }),
+          supabase.from('tags').select('*').order('name', { ascending: true }),
+          supabase.from('lead_notes').select('*').eq('lead_id', id).order('created_at', { ascending: false }),
+          supabase.from('tasks').select('*').eq('lead_id', id).order('created_at', { ascending: false }),
+          supabase.from('lead_activities').select('*').eq('lead_id', id).order('created_at', { ascending: false }),
+          supabase
+            .from('lead_course_interests')
+            .select('priority, course:courses(name), session:course_sessions(title, start_date)')
+            .eq('lead_id', id)
+            .order('priority', { ascending: true }),
+        ]);
 
       if (leadRes.error || !leadRes.data) {
         throw new Error('Lead not found or inaccessible.');
@@ -96,16 +106,29 @@ export function LeadDetailPage() {
       setEditFirstName(l.first_name || '');
       setEditLastName(l.last_name || '');
       setEditEmail(l.email || '');
-      setEditPhone(l.phone_raw || '');
+      setEditPhone(l.phone_raw || l.phone_e164 || '');
       setEditPref(l.contact_preference);
-      setEditQualStatus(l.qualification_status || '');
+      setEditReferredBy(l.referred_by || '');
       setEditCourseInterest(l.course_interest || '');
 
       if (stagesRes.data) setStages(stagesRes.data);
       if (allTagsRes.data) setAllTags(allTagsRes.data);
       if (notesRes.data) setNotes(notesRes.data);
       if (tasksRes.data) setTasks(tasksRes.data);
-      if (actRes.data) setActivities(actRes.data);
+      if (actRes.data) setActivities(actRes.data as LeadActivity[]);
+
+      // Format normalized course interests
+      if (interestsRes.data && interestsRes.data.length > 0) {
+        const formatted: FormattedCourseInterest[] = interestsRes.data.map((row: any) => ({
+          courseName: row.course?.name || 'Curso',
+          sessionTitle: row.session?.title,
+          startDate: row.session?.start_date,
+          priority: row.priority,
+        }));
+        setCourseInterests(formatted);
+      } else {
+        setCourseInterests([]);
+      }
 
       // Fetch lead's assigned tags
       const { data: tagLinks } = await supabase
@@ -118,7 +141,7 @@ export function LeadDetailPage() {
         setLeadTags(assigned);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading lead');
+      setError(err instanceof Error ? err.message : 'Erro ao carregar dados do lead');
     } finally {
       setIsLoading(false);
     }
@@ -132,8 +155,8 @@ export function LeadDetailPage() {
   const handleSaveContact = async () => {
     if (!lead) return;
     try {
-      const newQualStatus = editQualStatus ? (editQualStatus as QualificationStatus) : null;
-      const hasQualChanged = newQualStatus !== lead.qualification_status;
+      const cleanPhone = editPhone.trim();
+      const phoneE164 = cleanPhone.startsWith('+') ? cleanPhone : null;
 
       const { error: updateErr } = await supabase
         .from('leads')
@@ -141,10 +164,10 @@ export function LeadDetailPage() {
           first_name: editFirstName.trim() || null,
           last_name: editLastName.trim() || null,
           email: editEmail.trim().toLowerCase() || null,
-          phone_raw: editPhone.trim() || null,
-          phone_e164: editPhone.trim().startsWith('+') ? editPhone.trim() : null,
+          phone_raw: cleanPhone || null,
+          phone_e164: phoneE164,
           contact_preference: editPref,
-          qualification_status: newQualStatus,
+          referred_by: editReferredBy.trim() || null,
           course_interest: editCourseInterest.trim() || null,
           updated_at: new Date().toISOString(),
         })
@@ -152,23 +175,10 @@ export function LeadDetailPage() {
 
       if (updateErr) throw updateErr;
 
-      if (hasQualChanged) {
-        await supabase.from('lead_activities').insert({
-          lead_id: lead.id,
-          activity_type: 'qualification_status_changed',
-          actor_type: 'user',
-          summary: `Qualification status updated to: ${getQualificationStatusLabel(newQualStatus)}`,
-          metadata: {
-            qualification_status: newQualStatus,
-            previous_status: lead.qualification_status,
-          },
-        });
-      }
-
       setIsEditing(false);
       loadLeadData();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update lead');
+      alert(err instanceof Error ? err.message : 'Falha ao atualizar dados do lead');
     }
   };
 
@@ -190,14 +200,14 @@ export function LeadDetailPage() {
         lead_id: lead.id,
         activity_type: 'note_created',
         actor_type: 'user',
-        summary: 'Note added to lead',
+        summary: 'Nota adicionada ao lead',
         metadata: { snippet: newNoteContent.trim().substring(0, 100) },
       });
 
       setNewNoteContent('');
       loadLeadData();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to add note');
+      alert(err instanceof Error ? err.message : 'Falha ao adicionar nota');
     } finally {
       setIsAddingNote(false);
     }
@@ -205,33 +215,12 @@ export function LeadDetailPage() {
 
   // Delete Note
   const handleDeleteNote = async (noteId: string) => {
-    if (!confirm('Are you sure you want to delete this note?')) return;
+    if (!confirm('Deseja excluir esta nota?')) return;
     try {
       await supabase.from('lead_notes').delete().eq('id', noteId);
       loadLeadData();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete note');
-    }
-  };
-
-  // Toggle Task Status (using canonical completeCrmTask for completion)
-  const handleToggleTask = async (task: Task) => {
-    try {
-      if (task.status !== 'completed') {
-        await completeCrmTask(task.id);
-      } else {
-        await supabase
-          .from('tasks')
-          .update({
-            status: 'pending',
-            completed_at: null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', task.id);
-      }
-      loadLeadData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update task');
+      alert(err instanceof Error ? err.message : 'Falha ao excluir nota');
     }
   };
 
@@ -244,12 +233,12 @@ export function LeadDetailPage() {
         lead_id: lead.id,
         activity_type: 'tag_added',
         actor_type: 'user',
-        summary: 'Tag added to lead',
+        summary: 'Tag vinculada ao lead',
         metadata: { tag_id: tagId },
       });
       loadLeadData();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to attach tag');
+      alert(err instanceof Error ? err.message : 'Falha ao vincular tag');
     }
   };
 
@@ -262,12 +251,12 @@ export function LeadDetailPage() {
         lead_id: lead.id,
         activity_type: 'tag_removed',
         actor_type: 'user',
-        summary: 'Tag removed from lead',
+        summary: 'Tag removida do lead',
         metadata: { tag_id: tagId },
       });
       loadLeadData();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to remove tag');
+      alert(err instanceof Error ? err.message : 'Falha ao remover tag');
     }
   };
 
@@ -297,7 +286,7 @@ export function LeadDetailPage() {
         setNewTagName('');
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create tag');
+      alert(err instanceof Error ? err.message : 'Falha ao criar tag');
     }
   };
 
@@ -321,319 +310,306 @@ export function LeadDetailPage() {
 
   if (isLoading) {
     return (
-      <Layout title="Lead Profile">
-        <LoadingState message="Loading lead profile..." />
+      <Layout title="Perfil do Lead">
+        <LoadingState message="Carregando perfil operacional..." />
       </Layout>
     );
   }
 
   if (error || !lead) {
     return (
-      <Layout title="Lead Profile">
-        <ErrorState message={error || 'Lead not found'} onRetry={() => navigate('/leads')} />
+      <Layout title="Perfil do Lead">
+        <ErrorState message={error || 'Lead não encontrado'} onRetry={() => navigate('/leads')} />
       </Layout>
     );
   }
 
   const currentStage = stages.find((s) => s.id === lead.pipeline_stage_id);
-  const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed Lead';
+  const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Lead sem nome';
 
-  // Work Queue Next Action & Overdue calculations (Canonical Work Queue Engine)
-  const nextActionResult = deriveNextAction(tasks);
-  const nextActionTitle = nextActionResult.nextTask ? nextActionResult.nextTask.title : 'No next action scheduled';
-  const openTasks = tasks.filter((t) => t.status === 'pending');
-  const overdueTasks = openTasks.filter((t) => deriveIsOverdue(t.due_at));
-  const earliestOpenTask = openTasks.slice().sort((a, b) => {
-    const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity;
-    const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity;
-    if (aDue !== bDue) return aDue - bDue;
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-  })[0];
+  // Operational attention state (evidence-backed only)
+  const attentionState = resolveAttentionState(
+    lead,
+    activities.map((a) => a.summary)
+  );
+
+  const phoneDisplay = lead.phone_raw || lead.phone_e164 || null;
+  const emailDisplay = lead.email ? lead.email.trim() : null;
 
   return (
     <Layout title={`Lead: ${fullName}`}>
-      <div className="space-y-6">
-        {/* Navigation Breadcrumb & Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Link
-              to="/leads"
-              className="p-2 rounded-xl border border-slate-200/80 hover:bg-white text-slate-500 hover:text-slate-800 transition-colors shadow-xs"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">{fullName}</h1>
-                {currentStage && (
-                  <span className="px-2.5 py-0.5 text-xs font-semibold rounded-lg bg-[#08254f]/8 text-[#08254f] border border-[#08254f]/20">
-                    {currentStage.name}
-                  </span>
-                )}
+      <div className="space-y-5">
+        {/* Top Header Card — Strict Operational Hierarchy */}
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
+          {/* Breadcrumb & Top Actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Link
+                to="/leads"
+                className="p-2 rounded-xl border border-slate-200/80 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors shadow-xs"
+                title="Voltar para a lista de leads"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Link>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  {/* 1. Lead Name (Strongest visual emphasis) */}
+                  <h1 className="text-xl sm:text-2xl font-bold text-[#08254f] tracking-tight font-heading">
+                    {fullName}
+                  </h1>
+
+                  {/* 2. Stage Badge */}
+                  {currentStage && (
+                    <span className="px-2.5 py-0.5 text-xs font-bold rounded-lg bg-[#08254f]/10 text-[#08254f] border border-[#08254f]/20">
+                      {currentStage.name}
+                    </span>
+                  )}
+
+                  {/* Operational Attention State (when applicable) */}
+                  {attentionState && (
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-lg border ${
+                        attentionState.variant === 'error'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : attentionState.variant === 'warning'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : attentionState.variant === 'info'
+                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                          : 'bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {attentionState.variant === 'error' && <AlertCircle className="h-3.5 w-3.5 text-rose-500" />}
+                      {attentionState.variant === 'warning' && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
+                      {attentionState.label}
+                    </span>
+                  )}
+                </div>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Lead ID: <span className="font-mono text-slate-600">{lead.id}</span> • Source: <span className="capitalize font-medium text-slate-700">{lead.source}</span>
-              </p>
+            </div>
+
+            {/* Header Action Buttons */}
+            <div className="flex items-center gap-2 self-start sm:self-center">
+              {currentStage?.code !== 'alumni' && (
+                <button
+                  type="button"
+                  onClick={handlePromoteToAlumni}
+                  disabled={isMovingAlumni}
+                  title="Promover para Alumni"
+                  className="btn-secondary text-xs text-[#08254f] border-slate-200 hover:border-slate-300 py-1.5 px-3"
+                >
+                  <Award className="h-3.5 w-3.5 text-amber-500" />
+                  <span>{isMovingAlumni ? 'Movendo...' : 'Mover para Alumni'}</span>
+                </button>
+              )}
+              {!isEditing ? (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="btn-secondary text-xs py-1.5 px-3"
+                >
+                  <Edit2 className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Editar Lead</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSaveContact}
+                  className="btn-crimson text-xs py-1.5 px-3"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  <span>Salvar Alterações</span>
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {currentStage?.code !== 'alumni' && (
-              <button
-                onClick={handlePromoteToAlumni}
-                disabled={isMovingAlumni}
-                title="Promover para Alumni"
-                className="btn-secondary text-xs text-[#08254f] border-slate-200 hover:border-slate-300"
-              >
-                <Award className="h-4 w-4 text-amber-500" />
-                {isMovingAlumni ? 'Movendo...' : 'Mover para Alumni'}
-              </button>
+          {/* Secondary Header Row: Contact Info & Referred By */}
+          <div className="flex flex-wrap items-center gap-y-2 gap-x-5 text-xs text-slate-600 pt-2 border-t border-slate-100">
+            {/* Phone */}
+            <div className="flex items-center gap-1.5 font-medium">
+              <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <span>{phoneDisplay || <span className="text-slate-400 italic">Telefone não informado</span>}</span>
+            </div>
+
+            {/* Email */}
+            <div className="flex items-center gap-1.5 font-medium">
+              <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <span>{emailDisplay || <span className="text-slate-400 italic">Email não informado</span>}</span>
+            </div>
+
+            {/* Referred By (rendered only if present) */}
+            {lead.referred_by && (
+              <div className="flex items-center gap-1.5 font-medium text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/80">
+                <Share2 className="h-3.5 w-3.5 text-[#449bd5] shrink-0" />
+                <span>
+                  Quem indicou: <strong className="font-semibold text-[#08254f]">{lead.referred_by}</strong>
+                </span>
+              </div>
             )}
-            {!isEditing ? (
-              <button
-                onClick={() => setIsEditing(true)}
-                className="btn-secondary text-xs"
-              >
-                <Edit2 className="h-4 w-4 text-slate-500" />
-                Edit Lead
-              </button>
-            ) : (
-              <button
-                onClick={handleSaveContact}
-                className="btn-crimson text-xs"
-              >
-                <Save className="h-4 w-4" />
-                Save Changes
-              </button>
-            )}
+          </div>
+
+          {/* 3. Course Interests (Up to 3 Prioritized Interests) */}
+          <div className="pt-2 border-t border-slate-100/80">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                <GraduationCap className="h-3.5 w-3.5 text-[#449bd5]" />
+                Cursos de Interesse:
+              </span>
+
+              {courseInterests.length > 0 ? (
+                courseInterests.map((interest, idx) => {
+                  const dateLabel = formatSessionMonthYear(interest.startDate);
+                  const label = dateLabel ? `${interest.courseName} • ${dateLabel}` : interest.courseName;
+
+                  return (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold bg-slate-50 text-slate-800 border border-slate-200/80 rounded-lg shadow-2xs"
+                      title={label}
+                    >
+                      <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
+                      <span>{label}</span>
+                      {interest.priority && (
+                        <span className="text-[10px] font-bold text-slate-400">
+                          #{interest.priority}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })
+              ) : lead.course_interest ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold bg-slate-50 text-slate-800 border border-slate-200/80 rounded-lg">
+                  <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
+                  <span>{lead.course_interest}</span>
+                </span>
+              ) : (
+                <span className="text-xs text-slate-400 italic">
+                  Sem curso de interesse
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* 2-Column Grid Layout */}
+        {/* Quick Action Bar — One-Touch Operational Actions */}
+        <LeadQuickActionBar
+          lead={lead}
+          onOpenTaskModal={() => {
+            setTaskModalMode('generic');
+            setIsTaskModalOpen(true);
+          }}
+          onOpenPaymentModal={() => {
+            setTaskModalMode('payment');
+            setIsTaskModalOpen(true);
+          }}
+          onActivityLogged={loadLeadData}
+        />
+
+        {/* Edit Lead Details Inline Panel (when editing is active) */}
+        {isEditing && (
+          <div className="card-executive p-5 space-y-4 border-2 border-[#449bd5]/40 bg-blue-50/20">
+            <h3 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider flex items-center gap-2">
+              <Edit2 className="h-4 w-4 text-[#449bd5]" />
+              Editar Informações de Contato
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Nome</label>
+                <input
+                  type="text"
+                  value={editFirstName}
+                  onChange={(e) => setEditFirstName(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Sobrenome</label>
+                <input
+                  type="text"
+                  value={editLastName}
+                  onChange={(e) => setEditLastName(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Email</label>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Telefone</label>
+                <input
+                  type="tel"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Quem indicou?</label>
+                <input
+                  type="text"
+                  value={editReferredBy}
+                  onChange={(e) => setEditReferredBy(e.target.value)}
+                  placeholder="Ex: Dr. Roberto"
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Curso de Interesse (Legado)</label>
+                <input
+                  type="text"
+                  value={editCourseInterest}
+                  onChange={(e) => setEditCourseInterest(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="btn-secondary text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveContact}
+                className="btn-crimson text-xs"
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 2-Column Operational Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Contact Details, Tags, Notes, Tasks */}
+          {/* Primary Column (Left 2 cols): Tasks, Timeline, Notes */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Contact Information Card */}
-            <div className="card-executive p-6">
-              <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider mb-4 flex items-center gap-2">
-                <User className="h-4 w-4 text-[#449bd5]" />
-                Contact Details
-              </h2>
+            {/* 1. Tasks Section */}
+            <LeadTaskList
+              tasks={tasks}
+              onOpenCreateTask={() => {
+                setTaskModalMode('generic');
+                setIsTaskModalOpen(true);
+              }}
+              onTaskUpdated={loadLeadData}
+            />
 
-              {!isEditing ? (
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-xs text-slate-500 block mb-0.5">First Name</span>
-                    <span className="font-medium text-slate-800">{lead.first_name || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-gray-400 block mb-0.5">Last Name</span>
-                    <span className="font-medium text-gray-800">{lead.last_name || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-gray-400 block mb-0.5">Email Address</span>
-                    <span className="font-medium text-gray-800 flex items-center gap-1.5">
-                      <Mail className="h-3.5 w-3.5 text-gray-400" />
-                      {lead.email || '—'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-gray-400 block mb-0.5">Phone</span>
-                    <span className="font-medium text-gray-800 flex items-center gap-1.5">
-                      <Phone className="h-3.5 w-3.5 text-gray-400" />
-                      {lead.phone_raw || '—'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-gray-400 block mb-0.5">Contact Preference</span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-md bg-gray-100 text-gray-700 capitalize">
-                      {lead.contact_preference}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-gray-400 block mb-0.5">Qualification Status</span>
-                    {lead.qualification_status ? (
-                      (() => {
-                        const badge = getQualificationStatusBadge(lead.qualification_status);
-                        return (
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 text-xs font-semibold rounded-md border ${badge.bg} ${badge.text} ${badge.border}`}
-                          >
-                            {badge.label}
-                          </span>
-                        );
-                      })()
-                    ) : (
-                      <span className="text-xs text-gray-400 italic">None</span>
-                    )}
-                  </div>
-                  <div>
-                    <span className="text-xs text-gray-400 block mb-0.5">Course of Interest</span>
-                    <span className="font-medium text-gray-800 text-xs">
-                      {lead.course_interest || '—'}
-                    </span>
-                  </div>
-                  {lead.hubspot_contact_id && (
-                    <div>
-                      <span className="text-xs text-gray-400 block mb-0.5">HubSpot Contact ID</span>
-                      <span className="font-mono text-xs text-gray-700 bg-gray-50 px-2 py-0.5 rounded border border-gray-200">
-                        {lead.hubspot_contact_id}
-                      </span>
-                    </div>
-                  )}
-                  <div>
-                    <span className="text-xs text-gray-400 block mb-0.5">Created Date</span>
-                    <span className="text-gray-600 text-xs">
-                      {new Date(lead.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-semibold text-gray-700 block mb-1">First Name</label>
-                    <input
-                      type="text"
-                      value={editFirstName}
-                      onChange={(e) => setEditFirstName(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-brand-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-700 block mb-1">Last Name</label>
-                    <input
-                      type="text"
-                      value={editLastName}
-                      onChange={(e) => setEditLastName(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-brand-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-700 block mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={editEmail}
-                      onChange={(e) => setEditEmail(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-brand-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-700 block mb-1">Phone</label>
-                    <input
-                      type="tel"
-                      value={editPhone}
-                      onChange={(e) => setEditPhone(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-brand-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-700 block mb-1">Preference</label>
-                    <select
-                      value={editPref}
-                      onChange={(e) => setEditPref(e.target.value as ContactPreference)}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white"
-                    >
-                      <option value="email">Email</option>
-                      <option value="sms">SMS</option>
-                      <option value="call">Call</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-700 block mb-1">Qualification Status</label>
-                    <select
-                      value={editQualStatus}
-                      onChange={(e) => setEditQualStatus(e.target.value as QualificationStatus | '')}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white"
-                    >
-                      <option value="">None</option>
-                      <option value="no_response">No Response</option>
-                      <option value="some_response">Some Response</option>
-                      <option value="interested">Interested</option>
-                      <option value="hot">Hot</option>
-                      <option value="confirmed">Confirmed</option>
-                    </select>
-                  </div>
-                  <div className="col-span-2">
-                    <label className="text-xs font-semibold text-gray-700 block mb-1">Course of Interest</label>
-                    <input
-                      type="text"
-                      value={editCourseInterest}
-                      onChange={(e) => setEditCourseInterest(e.target.value)}
-                      placeholder="e.g. Intensive, Wisdom"
-                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-brand-500"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* 2. Operational Activity Timeline */}
+            <LeadTimeline activities={activities} />
 
-            {/* Tags Management Card */}
-            <div className="card-executive p-6">
-              <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider mb-3 flex items-center gap-2">
-                <TagIcon className="h-4 w-4 text-[#449bd5]" />
-                Tags & Segments
-              </h2>
-
-              <div className="flex flex-wrap gap-2 mb-4">
-                {leadTags.length > 0 ? (
-                  leadTags.map((t) => (
-                    <span
-                      key={t.id}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-[#449bd5]/10 text-[#08254f] border border-[#449bd5]/20 rounded-lg"
-                    >
-                      #{t.name}
-                      <button
-                        onClick={() => handleRemoveTag(t.id)}
-                        className="hover:text-red-600 transition-colors"
-                        title="Remove tag"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))
-                ) : (
-                  <p className="text-xs text-slate-400 italic">No tags assigned to this lead.</p>
-                )}
-              </div>
-
-              <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-100 items-center">
-                <span className="text-xs font-medium text-slate-500">Attach existing:</span>
-                {allTags
-                  .filter((t) => !leadTags.some((lt) => lt.id === t.id))
-                  .slice(0, 6)
-                  .map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => handleAttachTag(t.id)}
-                      className="px-2 py-0.5 text-xs rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-                    >
-                      + {t.name}
-                    </button>
-                  ))}
-
-                <div className="flex items-center gap-1 ml-auto">
-                  <input
-                    type="text"
-                    value={newTagName}
-                    onChange={(e) => setNewTagName(e.target.value)}
-                    placeholder="New tag..."
-                    className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#449bd5]"
-                  />
-                  <button
-                    onClick={handleCreateAndAttachTag}
-                    className="btn-crimson px-2.5 py-1 text-xs"
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Lead Notes Card */}
-            <div className="card-executive p-6 space-y-4">
+            {/* 3. Notes Section */}
+            <div className="card-executive p-5 space-y-4">
               <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider flex items-center gap-2">
                 <FileText className="h-4 w-4 text-[#449bd5]" />
-                Notes ({notes.length})
+                Notas Internas ({notes.length})
               </h2>
 
               <form onSubmit={handleAddNote} className="space-y-2">
@@ -641,7 +617,7 @@ export function LeadDetailPage() {
                   rows={2}
                   value={newNoteContent}
                   onChange={(e) => setNewNoteContent(e.target.value)}
-                  placeholder="Add a confidential note or conversation summary..."
+                  placeholder="Adicionar nota interna ou resumo de conversa..."
                   className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5]"
                 />
                 <div className="flex justify-end">
@@ -651,279 +627,131 @@ export function LeadDetailPage() {
                     className="btn-crimson text-xs disabled:opacity-50"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    Save Note
+                    <span>Salvar Nota</span>
                   </button>
                 </div>
               </form>
 
-              <div className="space-y-3 pt-2">
+              <div className="space-y-2.5 pt-1">
                 {notes.map((note) => (
-                  <div key={note.id} className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1.5">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
+                  <div
+                    key={note.id}
+                    className="p-3 bg-slate-50/70 border border-slate-100 rounded-xl space-y-1"
+                  >
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
                       <span>{new Date(note.created_at).toLocaleString()}</span>
                       <button
+                        type="button"
                         onClick={() => handleDeleteNote(note.id)}
                         className="text-slate-400 hover:text-red-600 transition-colors"
+                        title="Excluir nota"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <p className="text-xs text-slate-800 whitespace-pre-wrap">{note.content}</p>
+                    <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+                      {note.content}
+                    </p>
                   </div>
                 ))}
               </div>
             </div>
+          </div>
 
-            {/* Next Action & Overdue Alerts (Phase 5 Block 1 Canonical Daily Operations) */}
-            <div className="card-executive p-6 space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <CheckSquare className="h-4 w-4 text-[#449bd5]" />
-                  <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider">
-                    Next Action: <span className="font-semibold text-[#449bd5] normal-case">{nextActionTitle}</span>
-                  </h2>
-                </div>
-                <button
-                  onClick={() => setIsCreateTaskOpen(true)}
-                  className="btn-secondary text-xs flex items-center gap-1.5 py-1 px-2.5"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Task
-                </button>
-              </div>
-
-              {/* Next Action Banner */}
-              {earliestOpenTask ? (
-                <div className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 ${
-                  deriveIsOverdue(earliestOpenTask.due_at)
-                    ? 'bg-rose-50/70 border-rose-200/80 text-rose-950'
-                    : 'bg-indigo-50/50 border-indigo-100 text-slate-800'
-                }`}>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${
-                        earliestOpenTask.priority === 'critical' ? 'bg-rose-100 text-rose-700' :
-                        earliestOpenTask.priority === 'high' ? 'bg-amber-100 text-amber-800' :
-                        'bg-blue-100 text-[#08254f]'
-                      }`}>
-                        {earliestOpenTask.priority || 'normal'}
-                      </span>
-                      <span className="text-xs font-semibold">{earliestOpenTask.title}</span>
-                      {deriveIsOverdue(earliestOpenTask.due_at) && (
-                        <span className="px-1.5 py-0.2 text-[10px] font-bold bg-rose-600 text-white rounded">
-                          OVERDUE
-                        </span>
-                      )}
-                    </div>
-                    {earliestOpenTask.description && (
-                      <p className="text-xs text-slate-600">{earliestOpenTask.description}</p>
-                    )}
-                    <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      Due: {earliestOpenTask.due_at ? new Date(earliestOpenTask.due_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'No due time'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => setReschedulingTask(earliestOpenTask)}
-                      className="px-2 py-1 text-xs font-medium rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
-                    >
-                      Reschedule
-                    </button>
-                    <button
-                      onClick={() => handleToggleTask(earliestOpenTask)}
-                      className="btn-crimson py-1 px-2.5 text-xs flex items-center gap-1"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Complete
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-3.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <p className="text-xs font-semibold text-slate-700">No Next Action Scheduled</p>
-                    <p className="text-[11px] text-slate-500">This lead has no open tasks in the pipeline queue.</p>
-                  </div>
-                  <button
-                    onClick={() => setIsCreateTaskOpen(true)}
-                    className="btn-secondary text-xs flex items-center gap-1"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Schedule Next Action
-                  </button>
-                </div>
-              )}
-
-              {/* Overdue Alert banner if multiple overdue */}
-              {overdueTasks.length > 0 && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-2.5 text-xs text-rose-800">
-                  <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
-                  <span>
-                    <strong>{overdueTasks.length} Overdue Task{overdueTasks.length > 1 ? 's' : ''}:</strong> Action is past due on this lead. Please complete or reschedule.
-                  </span>
-                </div>
-              )}
-
-              {/* Task list details */}
-              <div className="pt-2 space-y-2">
-                <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  All Lead Tasks ({tasks.length})
-                </h3>
-                {tasks.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">No tasks assigned to this lead.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {tasks.map((task) => {
-                      const isCompleted = task.status === 'completed';
-                      const isOverdue = !isCompleted && deriveIsOverdue(task.due_at);
-                      return (
-                        <div
-                          key={task.id}
-                          className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
-                            isCompleted
-                              ? 'bg-slate-50 border-slate-100 opacity-60'
-                              : isOverdue
-                              ? 'bg-rose-50/30 border-rose-200/70'
-                              : 'bg-white border-slate-200/80'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => handleToggleTask(task)}
-                              className={`p-1 rounded-lg border transition-colors ${
-                                isCompleted
-                                  ? 'bg-emerald-500 text-white border-emerald-500'
-                                  : 'border-slate-300 text-transparent hover:border-[#449bd5]'
-                              }`}
-                              title={isCompleted ? 'Mark pending' : 'Complete task'}
-                            >
-                              <CheckCircle2 className="h-4 w-4" />
-                            </button>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <p className={`text-xs font-semibold ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                                  {task.title}
-                                </p>
-                                {task.priority && task.priority !== 'normal' && !isCompleted && (
-                                  <span className={`px-1.5 py-0.2 text-[9px] font-bold uppercase rounded ${
-                                    task.priority === 'critical' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'
-                                  }`}>
-                                    {task.priority}
-                                  </span>
-                                )}
-                              </div>
-                              {task.description && (
-                                <p className="text-[11px] text-slate-500">{task.description}</p>
-                              )}
-                              <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                                {task.due_at && (
-                                  <span className={`flex items-center gap-1 ${isOverdue ? 'text-rose-600 font-semibold' : ''}`}>
-                                    <Clock className="h-3 w-3" />
-                                    {new Date(task.due_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                                    {isOverdue && ' (Overdue)'}
-                                  </span>
-                                )}
-                                <span>• {task.task_source || 'manual'}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 text-[10px] uppercase font-semibold rounded bg-slate-100 text-slate-600">
-                              {task.task_type}
-                            </span>
-                            {!isCompleted && (
-                              <button
-                                onClick={() => setReschedulingTask(task)}
-                                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-                                title="Reschedule task"
-                              >
-                                <Calendar className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Lead Enrollment & Revenue Card (Phase 4 Block 3) */}
-            <LeadEnrollmentCard
-              leadId={lead.id}
-              leadSource={lead.source}
-              onEnrollmentChanged={loadLeadData}
-            />
-
-            {/* Lead Priority Score Card (Phase 4 Sales Intelligence) */}
-            <LeadScoreCard
-              lead={lead}
-              onLeadUpdated={loadLeadData}
-            />
-
-            {/* Lead Conversations Card (Inbound & Outbound CRM) */}
-            <LeadConversationsCard
-              lead={lead}
-              onLeadUpdated={loadLeadData}
-            />
-
-            {/* HubSpot Integration Card (Continuous Sync & Mapping Governance) */}
+          {/* Secondary Column (Right 1 col): HubSpot, Enrollment, Tags */}
+          <div className="space-y-6">
+            {/* HubSpot Integration Card — Reused for Coexistence Visibility */}
             <LeadHubSpotCard
               leadId={lead.id}
               hubspotContactId={lead.hubspot_contact_id}
               onLeadUpdated={loadLeadData}
             />
 
-            {/* Automation History Card */}
-            <LeadAutomationHistory
+            {/* Lead Enrollment Card (Phase 4 Block 3) */}
+            <LeadEnrollmentCard
               leadId={lead.id}
-              leadName={`${lead.first_name || ''} ${lead.last_name || ''}`.trim() || (lead.email ?? undefined)}
+              leadSource={lead.source}
+              onEnrollmentChanged={loadLeadData}
             />
-          </div>
 
-          {/* Right Column: Complete Timeline (Append-Only Lead Activities) */}
-          <div className="space-y-6">
-            <div className="card-executive p-6 sticky top-6">
-              <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Activity className="h-4 w-4 text-[#449bd5]" />
-                Audit Timeline ({activities.length})
+            {/* Tags Management Card */}
+            <div className="card-executive p-5 space-y-3">
+              <h2 className="text-xs font-bold text-[#08254f] font-heading uppercase tracking-wider flex items-center gap-2">
+                <TagIcon className="h-4 w-4 text-[#449bd5]" />
+                Tags ({leadTags.length})
               </h2>
 
-              <div className="relative pl-6 space-y-5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-                {activities.map((act) => (
-                  <div key={act.id} className="relative text-xs">
-                    <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-white border-2 border-[#449bd5] flex items-center justify-center" />
-                    <div className="space-y-0.5">
-                      <div className="flex items-center justify-between text-[11px] text-slate-400">
-                        <span className="font-semibold text-slate-700 capitalize">
-                          {act.activity_type.replace(/_/g, ' ')}
-                        </span>
-                        <span>{new Date(act.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                      <p className="text-slate-600 leading-normal">{act.summary}</p>
-                      <span className="text-[10px] text-slate-400">
-                        {new Date(act.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+              <div className="flex flex-wrap gap-1.5">
+                {leadTags.length > 0 ? (
+                  leadTags.map((t) => (
+                    <span
+                      key={t.id}
+                      className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-medium bg-[#449bd5]/10 text-[#08254f] border border-[#449bd5]/20 rounded-md"
+                    >
+                      #{t.name}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(t.id)}
+                        className="hover:text-red-600 transition-colors"
+                        title="Remover tag"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-400 italic">Nenhuma tag vinculada.</p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-1 pt-2 border-t border-slate-100 items-center">
+                {allTags
+                  .filter((t) => !leadTags.some((lt) => lt.id === t.id))
+                  .slice(0, 4)
+                  .map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => handleAttachTag(t.id)}
+                      className="px-2 py-0.5 text-[11px] rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+                    >
+                      + {t.name}
+                    </button>
+                  ))}
+
+                <div className="flex items-center gap-1 ml-auto pt-1 w-full sm:w-auto">
+                  <input
+                    type="text"
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    placeholder="Nova tag..."
+                    className="px-2 py-1 text-xs border border-slate-200 rounded-lg w-28 focus:outline-none focus:ring-1 focus:ring-[#449bd5]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCreateAndAttachTag}
+                    className="btn-crimson px-2 py-1 text-xs"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Daily Operations Modals */}
-      <CreateTaskModal
-        isOpen={isCreateTaskOpen}
-        onClose={() => setIsCreateTaskOpen(false)}
-        onCreated={loadLeadData}
-        initialLeadId={lead.id}
+      {/* Simplified Task Modal (Generic Task & Payment Reminder) */}
+      <LeadTaskModal
+        isOpen={isTaskModalOpen}
+        onClose={() => setIsTaskModalOpen(false)}
+        onTaskCreated={loadLeadData}
+        leadId={lead.id}
         leadName={fullName}
+        mode={taskModalMode}
       />
 
+      {/* Reschedule Task Modal (when needed) */}
       {reschedulingTask && (
         <RescheduleTaskModal
           isOpen={Boolean(reschedulingTask)}

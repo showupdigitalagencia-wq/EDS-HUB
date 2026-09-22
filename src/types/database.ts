@@ -59,7 +59,15 @@ export type ActivityType =
   | 'future_course_interest_added'
   | 'task_created'
   | 'task_rescheduled'
-  | 'task_completed';
+  | 'task_completed'
+  | 'hubspot_contact_linked'
+  | 'hubspot_field_updated'
+  | 'hubspot_outbound_synced'
+  | 'hubspot_sync_conflict'
+  | 'call_manual_attempt'
+  | 'whatsapp_contact_attempt'
+  | 'email_manual_attempt'
+  | 'sms_manual_attempt';
 export type ActorType = 'system' | 'user';
 export type StageChangeReason =
   | 'initial_assignment'
