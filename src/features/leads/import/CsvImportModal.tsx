@@ -443,6 +443,7 @@ export function CsvImportModal({ isOpen, onClose, onImportComplete }: CsvImportM
               initialStageId,
               payload: {
                 source: result.extracted.source,
+                source_detail: 'csv_import',
                 first_name: result.extracted.firstName || null,
                 last_name: result.extracted.lastName || null,
                 email: result.extracted.email || null,

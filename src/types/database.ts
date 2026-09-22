@@ -90,7 +90,7 @@ export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'can
 
 export interface AppUser {
   user_id: string;
-  singleton_key: number;
+  singleton_key?: number | null;
   email: string;
   display_name: string;
   is_active: boolean;

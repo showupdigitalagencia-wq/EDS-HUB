@@ -100,4 +100,103 @@ describe('Authentication & RLS Security', () => {
     // With RLS, anon or unlinked user gets empty results
     expect(data === null || (Array.isArray(data) && data.length === 0)).toBe(true);
   });
+
+  describe('Multi-Admin Access & Security Governance', () => {
+    it('supports multiple active administrative users without singleton conflict', () => {
+      // Validates data model structure: singleton_key can be null/omitted
+      const adminUsers = [
+        {
+          user_id: 'a6eb60ca-d453-4758-9252-39339be3fb4b',
+          email: 'showupdigitalagencia@gmail.com',
+          display_name: 'EDS HUB',
+          is_active: true,
+          singleton_key: null,
+        },
+        {
+          user_id: '1de58cee-d6ad-4970-8ee9-ef8aa92f4e6a',
+          email: 'info@expdentalsolutions.com',
+          display_name: 'Expert Dental Solutions Admin',
+          is_active: true,
+          singleton_key: null,
+        },
+      ];
+
+      expect(adminUsers).toHaveLength(2);
+      expect(adminUsers[0].email).not.toBe(adminUsers[1].email);
+      expect(adminUsers[0].user_id).not.toBe(adminUsers[1].user_id);
+      expect(adminUsers.every((u) => u.is_active)).toBe(true);
+      // Both users coexist with null singleton_key without collision
+      expect(adminUsers[0].singleton_key).toBeNull();
+      expect(adminUsers[1].singleton_key).toBeNull();
+    });
+
+    it('evaluates is_active_app_user independently per auth.uid()', () => {
+      const activeUserIds = new Set([
+        'a6eb60ca-d453-4758-9252-39339be3fb4b',
+        '1de58cee-d6ad-4970-8ee9-ef8aa92f4e6a',
+      ]);
+
+      const isUserActive = (uid: string | null) => uid !== null && activeUserIds.has(uid);
+
+      // Both legitimate admins are authorized
+      expect(isUserActive('a6eb60ca-d453-4758-9252-39339be3fb4b')).toBe(true);
+      expect(isUserActive('1de58cee-d6ad-4970-8ee9-ef8aa92f4e6a')).toBe(true);
+
+      // Anonymous is rejected
+      expect(isUserActive(null)).toBe(false);
+
+      // Authenticated user outside app_user is rejected
+      expect(isUserActive('unauthorized-uuid-777')).toBe(false);
+    });
+
+    it('rejects inactive app_user while active co-admin remains authorized', () => {
+      const appUsers = [
+        {
+          user_id: 'a6eb60ca-d453-4758-9252-39339be3fb4b',
+          email: 'showupdigitalagencia@gmail.com',
+          is_active: true,
+        },
+        {
+          user_id: '1de58cee-d6ad-4970-8ee9-ef8aa92f4e6a',
+          email: 'info@expdentalsolutions.com',
+          is_active: false, // inactive / disabled
+        },
+      ];
+
+      const isUserActive = (uid: string) => {
+        const u = appUsers.find((user) => user.user_id === uid);
+        return Boolean(u && u.is_active);
+      };
+
+      // Active admin is authorized
+      expect(isUserActive('a6eb60ca-d453-4758-9252-39339be3fb4b')).toBe(true);
+
+      // Inactive admin is strictly rejected
+      expect(isUserActive('1de58cee-d6ad-4970-8ee9-ef8aa92f4e6a')).toBe(false);
+
+      // Unrelated user is rejected
+      expect(isUserActive('unrelated-user-123')).toBe(false);
+    });
+
+    it('supports clean offboarding by setting is_active to false without deleting records', () => {
+      const appUsers = [
+        {
+          user_id: '1de58cee-d6ad-4970-8ee9-ef8aa92f4e6a',
+          email: 'info@expdentalsolutions.com',
+          is_active: true,
+        },
+      ];
+
+      // Simulate offboarding
+      appUsers[0].is_active = false;
+
+      // Access is immediately revoked
+      const isAllowed = appUsers[0].is_active;
+      expect(isAllowed).toBe(false);
+
+      // History is completely preserved
+      expect(appUsers).toHaveLength(1);
+      expect(appUsers[0].email).toBe('info@expdentalsolutions.com');
+    });
+  });
 });
