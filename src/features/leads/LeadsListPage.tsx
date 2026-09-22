@@ -288,33 +288,35 @@ export function LeadsListPage() {
 
   return (
     <Layout
-      title="Leads & Contatos"
-      subtitle="Base operacional de contatos com filtros por curso, turma e estágio"
+      eyebrow="CRM COMERCIAL"
+      title="Contatos"
+      subtitle="Organize e acompanhe seus contatos com filtros por curso, turma e estágio."
+      actions={
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsImportOpen(true)}
+            className="btn-secondary text-xs"
+          >
+            <Upload className="h-3.5 w-3.5 text-slate-500" />
+            <span>Importar CSV</span>
+          </button>
+          <button
+            onClick={() => setIsNewLeadOpen(true)}
+            className="btn-crimson text-xs"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>Novo Lead</span>
+          </button>
+        </div>
+      }
     >
       <div className="space-y-4">
         {/* Top Controls Bar */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold px-3 py-1.5 bg-white border border-slate-200/80 rounded-xl text-slate-700 shadow-2xs">
-              Total: <strong className="text-[#08254f]">{totalCount}</strong> leads
+              Total: <strong className="text-[#08254f]">{totalCount}</strong> contatos
             </span>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => setIsImportOpen(true)}
-              className="btn-secondary text-xs"
-            >
-              <Upload className="h-3.5 w-3.5 text-slate-500" />
-              <span>Importar CSV</span>
-            </button>
-            <button
-              onClick={() => setIsNewLeadOpen(true)}
-              className="btn-crimson text-xs"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Novo Lead</span>
-            </button>
           </div>
         </div>
 
@@ -533,19 +535,102 @@ export function LeadsListPage() {
           )}
         </div>
 
-        {/* Content Table */}
+        {/* Content Table / Cards */}
         {isLoading ? (
-          <LoadingState message="Carregando leads..." />
+          <LoadingState message="Carregando contatos..." />
         ) : error ? (
           <ErrorState message={error} onRetry={fetchLeads} />
         ) : leads.length === 0 ? (
           <EmptyState
-            title="Nenhum lead encontrado"
-            message="Crie seu primeiro lead manualmente ou ajuste os filtros acima."
+            title="Nenhum contato encontrado"
+            message="Crie seu primeiro contato manualmente ou ajuste os filtros acima."
           />
         ) : (
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
+            {/* 1. Mobile Card-Based Contact List (< sm) */}
+            <div className="sm:hidden divide-y divide-slate-100">
+              {leads.map((lead) => {
+                const fullName =
+                  [lead.first_name, lead.last_name].filter(Boolean).join(' ') ||
+                  'Contato sem nome';
+                const stage = stageMap[lead.pipeline_stage_id];
+                const interests = (lead as any).lead_course_interests || [];
+
+                return (
+                  <div
+                    key={lead.id}
+                    onClick={() => navigate(`/leads/${lead.id}`)}
+                    className="p-4 hover:bg-slate-50 transition-colors cursor-pointer space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="text-sm font-bold text-[#08254f] font-heading">
+                          {fullName}
+                        </h4>
+                        {lead.external_lead_id && (
+                          <span className="text-[10px] text-slate-400">
+                            ID: {lead.external_lead_id}
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-full border shrink-0 ${getStageBadgeStyle(
+                          stage?.code,
+                        )}`}
+                      >
+                        {stage?.name || 'Novo Lead'}
+                      </span>
+                    </div>
+
+                    {/* Course Interests */}
+                    <div className="flex flex-wrap gap-1">
+                      {interests.length > 0 ? (
+                        interests
+                          .sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99))
+                          .slice(0, 2)
+                          .map((interest: any, idx: number) => {
+                            const formattedDate = formatSessionMonthYear(interest.session?.start_date);
+                            const label = formattedDate
+                              ? `${interest.course?.name || 'Curso'} • ${formattedDate}`
+                              : interest.course?.name || 'Curso';
+                            return (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-slate-50 text-slate-700 rounded border border-slate-200/70"
+                              >
+                                {label}
+                              </span>
+                            );
+                          })
+                      ) : lead.course_interest ? (
+                        <span className="px-2 py-0.5 text-[10px] font-medium bg-slate-50 text-slate-700 rounded border border-slate-200/70">
+                          {lead.course_interest}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {/* Contact Methods */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 pt-1 border-t border-slate-100/70">
+                      {lead.phone_raw && (
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+                          <span>{lead.phone_raw}</span>
+                        </div>
+                      )}
+                      {lead.email && (
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                          <span className="truncate max-w-[190px]">{lead.email}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 2. Desktop Spacious Table (>= sm) */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
                 <thead className="bg-[#f8fafc] text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/80">
                   <tr>

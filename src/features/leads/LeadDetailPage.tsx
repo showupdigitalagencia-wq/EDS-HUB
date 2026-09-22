@@ -337,20 +337,30 @@ export function LeadDetailPage() {
   const emailDisplay = lead.email ? lead.email.trim() : null;
 
   return (
-    <Layout title={`Lead: ${fullName}`}>
+    <Layout
+      eyebrow="CRM COMERCIAL"
+      title="Perfil do Contato"
+      subtitle="Dados de contato, comunicação, tarefas operacionais e histórico"
+    >
       <div className="space-y-5">
-        {/* Top Header Card — Strict Operational Hierarchy */}
+        {/* Top Header Card — Executive Profile Hierarchy */}
         <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
-          {/* Breadcrumb & Top Actions */}
+          {/* Identity & Top Actions */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3">
               <Link
                 to="/leads"
-                className="p-2 rounded-xl border border-slate-200/80 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors shadow-xs"
-                title="Voltar para a lista de leads"
+                className="p-2 rounded-xl border border-slate-200/80 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors shadow-xs shrink-0"
+                title="Voltar para a lista de contatos"
               >
                 <ArrowLeft className="h-5 w-5" />
               </Link>
+
+              {/* Profile Avatar Tile */}
+              <div className="w-11 h-11 rounded-2xl bg-[#08254f] text-white flex items-center justify-center text-sm font-bold shadow-xs shrink-0 font-heading">
+                {lead.first_name?.charAt(0)?.toUpperCase() || 'C'}
+              </div>
+
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2.5 flex-wrap">
                   {/* 1. Lead Name (Strongest visual emphasis) */}
@@ -408,7 +418,7 @@ export function LeadDetailPage() {
                   className="btn-secondary text-xs py-1.5 px-3"
                 >
                   <Edit2 className="h-3.5 w-3.5 text-slate-500" />
-                  <span>Editar Lead</span>
+                  <span>Editar Contato</span>
                 </button>
               ) : (
                 <button

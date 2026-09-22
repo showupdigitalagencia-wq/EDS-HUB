@@ -2,24 +2,24 @@ import { useEffect, useCallback } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../features/auth/AuthProvider';
 import {
-  LayoutDashboard,
-  Users,
   Kanban,
-  Mail,
-  FileText,
-  Settings,
-  LogOut,
-  ClipboardList,
-  Workflow,
-  GitFork,
+  Users,
+  CheckSquare,
+  LayoutDashboard,
   Inbox,
-  Target,
-  Activity,
-  DollarSign,
   GraduationCap,
   Award,
-  CheckSquare,
+  Mail,
+  Workflow,
+  GitFork,
+  ClipboardList,
   BarChart3,
+  DollarSign,
+  FileText,
+  Target,
+  Activity,
+  Settings,
+  LogOut,
   X,
 } from 'lucide-react';
 import edsLogo from '../assets/eds-logo.png';
@@ -31,51 +31,57 @@ interface NavGroup {
     name: string;
     href: string;
     icon: React.ComponentType<{ className?: string }>;
+    testId?: string;
   }>;
 }
 
 const navigationGroups: NavGroup[] = [
   {
-    label: 'OPERACIONAL',
+    label: 'COMERCIAL',
     isPrimary: true,
     items: [
-      { name: 'Pipeline', href: '/pipeline', icon: Kanban },
-      { name: 'Leads', href: '/leads', icon: Users },
-      { name: 'Work', href: '/work', icon: CheckSquare },
-      { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-      { name: 'Inbox', href: '/inbox', icon: Inbox },
+      { name: 'Pipeline', href: '/pipeline', icon: Kanban, testId: 'nav-pipeline' },
+      { name: 'Contatos', href: '/leads', icon: Users, testId: 'nav-leads' },
+      { name: 'Tarefas', href: '/work', icon: CheckSquare, testId: 'nav-work' },
+    ],
+  },
+  {
+    label: 'VISÃO GERAL',
+    items: [
+      { name: 'Dashboard', href: '/', icon: LayoutDashboard, testId: 'nav-home' },
+      { name: 'Inbox', href: '/inbox', icon: Inbox, testId: 'nav-inbox' },
     ],
   },
   {
     label: 'CURSOS',
     items: [
-      { name: 'Course Operations', href: '/courses/operations', icon: GraduationCap },
-      { name: 'Post-Course & Alumni', href: '/courses/post-course', icon: Award },
+      { name: 'Course Operations', href: '/courses/operations', icon: GraduationCap, testId: 'nav-courses-operations' },
+      { name: 'Post-Course & Alumni', href: '/courses/post-course', icon: Award, testId: 'nav-courses-post-course' },
     ],
   },
   {
-    label: 'ENGAJAMENTO',
+    label: 'MARKETING',
     items: [
-      { name: 'Campaigns', href: '/campaigns', icon: Mail },
-      { name: 'Automations', href: '/automations', icon: Workflow },
-      { name: 'Sequences', href: '/sequences', icon: GitFork },
-      { name: 'Forms', href: '/forms', icon: ClipboardList },
+      { name: 'Campaigns', href: '/campaigns', icon: Mail, testId: 'nav-campaigns' },
+      { name: 'Automations', href: '/automations', icon: Workflow, testId: 'nav-automations' },
+      { name: 'Sequences', href: '/sequences', icon: GitFork, testId: 'nav-sequences' },
+      { name: 'Forms', href: '/forms', icon: ClipboardList, testId: 'nav-forms' },
     ],
   },
   {
-    label: 'GESTÃO & RELATÓRIOS',
+    label: 'GESTÃO',
     items: [
-      { name: 'Reports', href: '/reports', icon: BarChart3 },
-      { name: 'Revenue', href: '/dashboard/revenue', icon: DollarSign },
+      { name: 'Reports', href: '/reports', icon: BarChart3, testId: 'nav-reports' },
+      { name: 'Revenue', href: '/dashboard/revenue', icon: DollarSign, testId: 'nav-dashboard-revenue' },
     ],
   },
   {
     label: 'SISTEMA',
     items: [
-      { name: 'Templates', href: '/templates', icon: FileText },
-      { name: 'Lead Scoring', href: '/scoring', icon: Target },
-      { name: 'Foundation Status', href: '/foundation', icon: Activity },
-      { name: 'Settings', href: '/settings', icon: Settings },
+      { name: 'Templates', href: '/templates', icon: FileText, testId: 'nav-templates' },
+      { name: 'Lead Scoring', href: '/scoring', icon: Target, testId: 'nav-scoring' },
+      { name: 'Foundation Status', href: '/foundation', icon: Activity, testId: 'nav-foundation' },
+      { name: 'Settings', href: '/settings', icon: Settings, testId: 'nav-settings' },
     ],
   },
 ];
@@ -89,7 +95,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const { appUser, signOut } = useAuth();
   const location = useLocation();
 
-  // Close on Escape key press
+  // Close on Escape key
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape' && mobileOpen && onCloseMobile) {
@@ -123,14 +129,17 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
 
   const renderNavContent = (isMobile: boolean) => (
     <>
-      {/* Brand Header with Official Logo */}
-      <div className="px-5 py-4 border-b border-white/10 bg-[#061e40] flex items-center justify-between">
-        <NavLink to="/" onClick={handleNavClick} className="flex items-center gap-2 group block">
+      {/* 1. Branded Sidebar Header Area with Prominent Official Logo */}
+      <div className="px-6 py-5 border-b border-white/10 bg-[#061a38] flex items-center justify-between">
+        <NavLink to="/" onClick={handleNavClick} className="flex flex-col gap-1.5 group block">
           <img
             src={edsLogo}
             alt="Expert Dental Solutions"
-            className="h-8 sm:h-9 w-auto max-w-[170px] sm:max-w-[190px] object-contain transition-transform group-hover:scale-[1.02]"
+            className="h-9 sm:h-10 w-auto max-w-[180px] sm:max-w-[195px] object-contain transition-transform group-hover:scale-[1.02]"
           />
+          <p className="text-[10px] tracking-wider uppercase font-semibold text-blue-200/60 font-heading pl-0.5">
+            Expert Dental Solutions
+          </p>
         </NavLink>
         {isMobile && onCloseMobile && (
           <button
@@ -145,16 +154,16 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
         )}
       </div>
 
-      {/* Navigation Groups */}
-      <nav className="flex-1 px-3 py-3.5 space-y-5 overflow-y-auto">
+      {/* 2. Grouped Navigation with Clear Hierarchy */}
+      <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
         {navigationGroups.map((group) => {
           const isPrimary = Boolean(group.isPrimary);
 
           return (
             <div key={group.label} className="space-y-1">
               <p
-                className={`px-3 text-[10px] font-bold uppercase tracking-widest ${
-                  isPrimary ? 'text-blue-200/80 font-heading' : 'text-slate-400/60'
+                className={`px-3 text-[10px] font-bold uppercase tracking-wider ${
+                  isPrimary ? 'text-blue-200/90 font-heading' : 'text-slate-400/60'
                 }`}
               >
                 {group.label}
@@ -169,33 +178,31 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
                   <NavLink
                     key={item.href}
                     to={item.href}
-                    id={`nav-${item.href.replace('/', '') || 'home'}`}
+                    id={item.testId}
                     onClick={handleNavClick}
-                    className={`group relative flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all duration-150 ${
+                    className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all duration-150 ${
                       isActive
-                        ? 'bg-white/12 text-white font-semibold shadow-xs'
+                        ? 'bg-white/14 text-white font-semibold shadow-xs'
                         : isPrimary
-                        ? 'text-slate-200 hover:bg-white/6 hover:text-white font-medium'
+                        ? 'text-slate-200 hover:bg-white/8 hover:text-white font-medium'
                         : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
                     }`}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      {/* Active Indicator Accent */}
-                      {isActive && (
-                        <span className="absolute left-0 inset-y-2 w-1 bg-[#8a1c1c] rounded-r-full" />
-                      )}
+                    {/* Active Accent Indicator */}
+                    {isActive && (
+                      <span className="absolute left-0 inset-y-2 w-1 bg-[#8a1c1c] rounded-r-full" />
+                    )}
 
-                      <item.icon
-                        className={`h-4 w-4 shrink-0 transition-colors ${
-                          isActive
-                            ? 'text-[#449bd5]'
-                            : isPrimary
-                            ? 'text-slate-300 group-hover:text-white'
-                            : 'text-slate-500 group-hover:text-slate-300'
-                        }`}
-                      />
-                      <span className="truncate">{item.name}</span>
-                    </div>
+                    <item.icon
+                      className={`h-4 w-4 shrink-0 transition-colors ${
+                        isActive
+                          ? 'text-[#449bd5]'
+                          : isPrimary
+                          ? 'text-slate-300 group-hover:text-white'
+                          : 'text-slate-500 group-hover:text-slate-300'
+                      }`}
+                    />
+                    <span className="truncate">{item.name}</span>
                   </NavLink>
                 );
               })}
@@ -204,8 +211,8 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
         })}
       </nav>
 
-      {/* User Footer Profile */}
-      <div className="border-t border-white/10 p-3 bg-[#061e40]">
+      {/* 3. Elegant Sidebar Footer Area */}
+      <div className="border-t border-white/10 p-3.5 bg-[#061a38]">
         <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-white/5 border border-white/5 mb-2">
           <div className="w-8 h-8 rounded-full bg-[#449bd5] text-white flex items-center justify-center text-xs font-bold shadow-xs">
             {appUser?.display_name?.charAt(0)?.toUpperCase() || 'U'}
@@ -238,23 +245,20 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
 
   return (
     <>
-      {/* 1. Desktop Fixed Sidebar (visible only on >= lg) */}
-      <aside className="hidden lg:flex fixed inset-y-0 left-0 w-64 bg-[#08254f] text-white flex-col z-30 shadow-xl border-r border-[#0d3368]">
+      {/* Desktop Fixed Sidebar (visible only on >= lg, width ~240px) */}
+      <aside className="hidden lg:flex fixed inset-y-0 left-0 w-60 bg-[#08254f] text-white flex-col z-30 shadow-xl border-r border-[#061a38]">
         {renderNavContent(false)}
       </aside>
 
-      {/* 2. Mobile Drawer & Backdrop Overlay (visible only on < lg when open) */}
+      {/* Mobile Drawer Overlay (if opened via secondary drawer triggers) */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          {/* Backdrop */}
           <div
             id="mobile-sidebar-backdrop"
             onClick={onCloseMobile}
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity duration-200"
             aria-hidden="true"
           />
-
-          {/* Drawer */}
           <aside
             id="mobile-sidebar-drawer"
             className="relative w-72 max-w-[85vw] bg-[#08254f] text-white flex flex-col z-50 shadow-2xl h-full"

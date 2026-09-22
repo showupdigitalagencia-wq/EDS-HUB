@@ -211,7 +211,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Dr. João Silva"
-              className="w-full px-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f] focus:border-transparent transition-all"
+              className="input-standard"
             />
           </div>
 
@@ -226,7 +226,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="doutor@exemplo.com"
-                className="w-full px-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f] focus:border-transparent transition-all"
+                className="input-standard"
               />
             </div>
             <div>
@@ -238,7 +238,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="(11) 98765-4321"
-                className="w-full px-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f] focus:border-transparent transition-all"
+                className="input-standard"
               />
             </div>
           </div>
@@ -262,9 +262,9 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
               return (
                 <div
                   key={idx}
-                  className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2 relative"
+                  className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2.5 relative"
                 >
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-[#08254f]">
                       Curso de Interesse {idx + 1}
                     </span>
@@ -272,7 +272,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
                       <button
                         type="button"
                         onClick={() => handleRemoveInterest(idx)}
-                        className="text-slate-400 hover:text-rose-600 transition-colors"
+                        className="text-slate-400 hover:text-rose-600 transition-colors p-1"
                         title="Remover este curso"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -280,7 +280,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {/* Curso */}
                     <div>
                       <label className="block text-[10px] font-medium text-slate-500 mb-1">
@@ -289,7 +289,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
                       <select
                         value={interest.courseId}
                         onChange={(e) => handleCourseChange(idx, e.target.value)}
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#08254f]"
+                        className="input-standard text-xs"
                       >
                         <option value="">Selecione um curso...</option>
                         {courses.map((c) => (
@@ -309,7 +309,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
                         value={interest.sessionId}
                         onChange={(e) => handleSessionChange(idx, e.target.value)}
                         disabled={!interest.courseId}
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#08254f] disabled:bg-gray-100 disabled:text-gray-400"
+                        className="input-standard text-xs disabled:bg-gray-100 disabled:text-gray-400"
                       >
                         <option value="">Sem turma definida</option>
                         {availableSessions.map((s) => {
@@ -332,7 +332,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
               <button
                 type="button"
                 onClick={handleAddInterest}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#449bd5] hover:text-[#08254f] transition-colors py-1"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#449bd5] hover:text-[#08254f] transition-colors py-1 cursor-pointer"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>+ Adicionar outro curso</span>
@@ -349,8 +349,8 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
               type="text"
               value={referredBy}
               onChange={(e) => setReferredBy(e.target.value)}
-              placeholder="Ex: Dra. Camila ou Dr. Pedro"
-              className="w-full px-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f] focus:border-transparent transition-all"
+              placeholder="Ex: Dr. Roberto / Indicação clínica"
+              className="input-standard"
             />
           </div>
 

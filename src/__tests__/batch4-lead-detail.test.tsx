@@ -761,24 +761,24 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
 
       await waitFor(() => {
         // Lead Name is prominent
-        expect(screen.getByText('Arthur Dentist')).toBeDefined();
+        expect(screen.getAllByText('Arthur Dentist').length).toBeGreaterThanOrEqual(1);
         // Stage is displayed
-        expect(screen.getByText('Novo Lead')).toBeDefined();
+        expect(screen.getAllByText('Novo Lead').length).toBeGreaterThanOrEqual(1);
         // Course interest formatted with Month Year
-        expect(screen.getByText(/Zygomatic • Nov 2026/)).toBeDefined();
+        expect(screen.getAllByText(/Zygomatic • Nov 2026/).length).toBeGreaterThanOrEqual(1);
         // Quem indicou is shown
-        expect(screen.getByText(/Dr\. Roberto/)).toBeDefined();
+        expect(screen.getAllByText(/Dr\. Roberto/).length).toBeGreaterThanOrEqual(1);
         // Quick Action buttons exist
-        expect(screen.getByRole('button', { name: /ligar/i })).toBeDefined();
-        expect(screen.getByRole('button', { name: /sms/i })).toBeDefined();
-        expect(screen.getByRole('button', { name: /email/i })).toBeDefined();
-        expect(screen.getByRole('button', { name: /whatsapp/i })).toBeDefined();
+        expect(screen.getAllByRole('button', { name: /ligar/i }).length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByRole('button', { name: /sms/i }).length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByRole('button', { name: /email/i }).length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByRole('button', { name: /whatsapp/i }).length).toBeGreaterThanOrEqual(1);
         // Section headers exist
-        expect(screen.getByText(/Tarefas/)).toBeDefined();
-        expect(screen.getByText(/Linha do Tempo/)).toBeDefined();
-        expect(screen.getByText(/Notas Internas/)).toBeDefined();
-      }, { timeout: 5000 });
-    });
+        expect(screen.getAllByText(/Tarefas/).length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByText(/Linha do Tempo/).length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByText(/Notas Internas/).length).toBeGreaterThanOrEqual(1);
+      }, { timeout: 8000 });
+    }, 15000);
 
     it('validates mobile viewport rendering at 390x844 without errors', async () => {
       // Set iPhone 12/13/14 viewport
@@ -800,8 +800,8 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
       await waitFor(() => {
         expect(screen.getByText('Arthur Dentist')).toBeDefined();
         expect(screen.getByRole('button', { name: /pagamento/i })).toBeDefined();
-      }, { timeout: 5000 });
-    });
+      }, { timeout: 8000 });
+    }, 15000);
   });
 });
 

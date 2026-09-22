@@ -5,8 +5,10 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { Sidebar } from '../components/Sidebar';
 import { Layout } from '../components/Layout';
+import { MobileBottomNav } from '../components/MobileBottomNav';
+import { MobileMenuSheet } from '../components/MobileMenuSheet';
 
-// Mock AuthProvider context for Sidebar and Layout tests
+// Mock AuthProvider context for Sidebar, Layout, and MobileMenuSheet tests
 vi.mock('../features/auth/AuthProvider', () => ({
   useAuth: () => ({
     session: { user: { id: 'test-user-id' } },
@@ -33,7 +35,7 @@ function CrashingComponent({ shouldThrow }: { shouldThrow: boolean }) {
   return <div>Component rendered successfully</div>;
 }
 
-describe('Phase 5 — Responsive & Stability Suite', () => {
+describe('Batch 4.2 — Premium Global UI System & Responsive Suite', () => {
   let consoleErrorSpy: any;
 
   beforeEach(() => {
@@ -69,7 +71,6 @@ describe('Phase 5 — Responsive & Stability Suite', () => {
       expect(screen.getByText(/A aplicação encontrou uma inconsistência temporária/i)).toBeInTheDocument();
       expect(screen.getByText('Recarregar Página')).toBeInTheDocument();
       expect(screen.getByText('Início')).toBeInTheDocument();
-      // Does not expose raw exception stack to the end user
       expect(screen.queryByText(/at CrashingComponent/i)).not.toBeInTheDocument();
     });
 
@@ -101,72 +102,177 @@ describe('Phase 5 — Responsive & Stability Suite', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 3. Responsive Navigation & Mobile Drawer
+  // 3. Desktop Sidebar — Brand Prominence & Operational Navigation
   // ---------------------------------------------------------------------------
-  describe('Responsive Sidebar & Mobile Navigation', () => {
-    it('renders desktop sidebar navigation groups and items', () => {
+  describe('Desktop Sidebar Branding and Navigation Hierarchy', () => {
+    it('renders official EDS logo asset and subtitle in branded header', () => {
       render(
         <MemoryRouter>
           <Sidebar />
         </MemoryRouter>
       );
 
-      // Verify core navigation links exist
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
-      expect(screen.getByText('Work')).toBeInTheDocument();
-      expect(screen.getByText('Reports')).toBeInTheDocument();
+      // Official EDS logo asset must be rendered with proper alt text
+      const logos = screen.getAllByAltText('Expert Dental Solutions');
+      expect(logos.length).toBeGreaterThanOrEqual(1);
+      expect(logos[0].getAttribute('src')).toContain('eds-logo.png');
+
+      // Tagline/subtitle
+      expect(screen.getAllByText('Expert Dental Solutions').length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('renders primary operational items: Pipeline, Contatos, Tarefas', () => {
+      render(
+        <MemoryRouter>
+          <Sidebar />
+        </MemoryRouter>
+      );
+
+      // Primary operational items in COMERCIAL group
+      expect(screen.getByText('COMERCIAL')).toBeInTheDocument();
       expect(screen.getByText('Pipeline')).toBeInTheDocument();
+      expect(screen.getByText('Contatos')).toBeInTheDocument();
+      expect(screen.getByText('Tarefas')).toBeInTheDocument();
+
+      // Secondary groups
+      expect(screen.getByText('Dashboard')).toBeInTheDocument();
       expect(screen.getByText('Course Operations')).toBeInTheDocument();
-      expect(screen.getByText('Post-Course & Alumni')).toBeInTheDocument();
-      expect(screen.getByText('Forms')).toBeInTheDocument();
+      expect(screen.getByText('Reports')).toBeInTheDocument();
+      expect(screen.getByText('Settings')).toBeInTheDocument();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 4. Mobile Bottom Navigation (REQUIRED)
+  // ---------------------------------------------------------------------------
+  describe('Mobile Bottom Navigation (Fixed, 4 Exact Items)', () => {
+    it('renders exactly the 4 required items in exact order: Contatos, Pipeline, Tarefas, Menu', () => {
+      render(
+        <MemoryRouter initialEntries={['/leads']}>
+          <MobileBottomNav onOpenMenu={vi.fn()} />
+        </MemoryRouter>
+      );
+
+      const navEl = document.getElementById('mobile-bottom-nav');
+      expect(navEl).toBeInTheDocument();
+
+      const contactsBtn = document.getElementById('mobile-nav-contacts');
+      const pipelineBtn = document.getElementById('mobile-nav-pipeline');
+      const tasksBtn = document.getElementById('mobile-nav-tasks');
+      const menuBtn = document.getElementById('mobile-nav-menu');
+
+      expect(contactsBtn).toBeInTheDocument();
+      expect(pipelineBtn).toBeInTheDocument();
+      expect(tasksBtn).toBeInTheDocument();
+      expect(menuBtn).toBeInTheDocument();
+
+      // Check text labels
+      expect(contactsBtn).toHaveTextContent('Contatos');
+      expect(pipelineBtn).toHaveTextContent('Pipeline');
+      expect(tasksBtn).toHaveTextContent('Tarefas');
+      expect(menuBtn).toHaveTextContent('Menu');
+    });
+
+    it('highlights active item based on current route', () => {
+      const { unmount } = render(
+        <MemoryRouter initialEntries={['/pipeline']}>
+          <MobileBottomNav onOpenMenu={vi.fn()} />
+        </MemoryRouter>
+      );
+
+      // When on /pipeline, pipeline nav has active styling
+      const pipelineBtn = document.getElementById('mobile-nav-pipeline');
+      expect(pipelineBtn?.className).toContain('text-[#08254f]');
+      unmount();
+
+      // When on /leads, contacts nav has active styling
+      render(
+        <MemoryRouter initialEntries={['/leads']}>
+          <MobileBottomNav onOpenMenu={vi.fn()} />
+        </MemoryRouter>
+      );
+
+      const contactsBtn = document.getElementById('mobile-nav-contacts');
+      expect(contactsBtn?.className).toContain('text-[#08254f]');
+    });
+
+    it('invokes onOpenMenu callback when Menu button is clicked', () => {
+      const onOpenMenuMock = vi.fn();
+      render(
+        <MemoryRouter initialEntries={['/pipeline']}>
+          <MobileBottomNav onOpenMenu={onOpenMenuMock} isMenuOpen={false} />
+        </MemoryRouter>
+      );
+
+      const menuBtn = document.getElementById('mobile-nav-menu')!;
+      fireEvent.click(menuBtn);
+      expect(onOpenMenuMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 5. Mobile Menu Sheet (Slide-over drawer for secondary items)
+  // ---------------------------------------------------------------------------
+  describe('Mobile Menu Sheet (Slide-Over Drawer)', () => {
+    it('renders secondary routes and does NOT duplicate primary operational routes', () => {
+      render(
+        <MemoryRouter>
+          <MobileMenuSheet isOpen={true} onClose={vi.fn()} />
+        </MemoryRouter>
+      );
+
+      const drawer = document.getElementById('mobile-menu-drawer');
+      expect(drawer).toBeInTheDocument();
+
+      // Secondary areas must exist
+      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      expect(screen.getByText('Inbox')).toBeInTheDocument();
+      expect(screen.getByText('Course Operations')).toBeInTheDocument();
+      expect(screen.getByText('Campaigns')).toBeInTheDocument();
       expect(screen.getByText('Automations')).toBeInTheDocument();
-      expect(screen.getByText('Lead Scoring')).toBeInTheDocument();
+      expect(screen.getByText('Templates')).toBeInTheDocument();
+      expect(screen.getByText('Reports')).toBeInTheDocument();
+      expect(screen.getByText('Settings')).toBeInTheDocument();
+
+      // Does not contain duplicate Contatos or Pipeline in the secondary navigation
+      expect(screen.queryByText('Contatos')).not.toBeInTheDocument();
     });
 
-    it('renders mobile drawer when mobileOpen is true', () => {
-      const handleClose = vi.fn();
+    it('closes when close button or backdrop is clicked', () => {
+      const onCloseMock = vi.fn();
       render(
         <MemoryRouter>
-          <Sidebar mobileOpen={true} onCloseMobile={handleClose} />
+          <MobileMenuSheet isOpen={true} onClose={onCloseMock} />
         </MemoryRouter>
       );
 
-      // Backdrop and close button must exist
-      const backdrop = document.getElementById('mobile-sidebar-backdrop');
-      expect(backdrop).toBeInTheDocument();
+      // Close button
+      const closeBtn = document.getElementById('mobile-menu-close-btn')!;
+      fireEvent.click(closeBtn);
+      expect(onCloseMock).toHaveBeenCalledTimes(1);
 
-      const closeBtn = document.getElementById('mobile-sidebar-close-btn');
-      expect(closeBtn).toBeInTheDocument();
-
-      // Clicking backdrop calls onCloseMobile
-      fireEvent.click(backdrop!);
-      expect(handleClose).toHaveBeenCalledTimes(1);
+      // Backdrop
+      const backdrop = document.getElementById('mobile-menu-backdrop')!;
+      fireEvent.click(backdrop);
+      expect(onCloseMock).toHaveBeenCalledTimes(2);
     });
 
-    it('closes mobile drawer when Escape key is pressed', () => {
-      const handleClose = vi.fn();
-      render(
-        <MemoryRouter>
-          <Sidebar mobileOpen={true} onCloseMobile={handleClose} />
-        </MemoryRouter>
-      );
-
-      fireEvent.keyDown(window, { key: 'Escape' });
-      expect(handleClose).toHaveBeenCalledTimes(1);
-    });
-
-    it('locks body scroll when mobile drawer is opened', () => {
+    it('closes on Escape key press and locks body scroll', () => {
+      const onCloseMock = vi.fn();
       const { rerender } = render(
         <MemoryRouter>
-          <Sidebar mobileOpen={true} onCloseMobile={vi.fn()} />
+          <MobileMenuSheet isOpen={true} onClose={onCloseMock} />
         </MemoryRouter>
       );
 
       expect(document.body.style.overflow).toBe('hidden');
 
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onCloseMock).toHaveBeenCalledTimes(1);
+
       rerender(
         <MemoryRouter>
-          <Sidebar mobileOpen={false} onCloseMobile={vi.fn()} />
+          <MobileMenuSheet isOpen={false} onClose={onCloseMock} />
         </MemoryRouter>
       );
 
@@ -175,46 +281,51 @@ describe('Phase 5 — Responsive & Stability Suite', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 4. Responsive Layout Component
+  // 6. Responsive Layout Shell & Standardized Header
   // ---------------------------------------------------------------------------
-  describe('Responsive Layout Header and Viewport Structure', () => {
-    it('renders page title and children with responsive classes', () => {
+  describe('Responsive Layout Shell Integration', () => {
+    it('renders standardized page header with eyebrow, title, subtitle, and actions', () => {
       render(
         <MemoryRouter>
-          <Layout title="Test Operations View" subtitle="Subheader info">
+          <Layout
+            eyebrow="CRM COMERCIAL"
+            title="Pipeline"
+            subtitle="Organize e acompanhe seus contatos."
+            actions={<button id="test-primary-cta">Novo Lead</button>}
+          >
             <div>Main page body content</div>
           </Layout>
         </MemoryRouter>
       );
 
-      // Both mobile and desktop headers contain the title
-      const titleEls = screen.getAllByText('Test Operations View');
-      expect(titleEls.length).toBeGreaterThanOrEqual(1);
-
+      expect(screen.getByText('CRM COMERCIAL')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'Pipeline' })).toBeInTheDocument();
+      expect(screen.getByText('Organize e acompanhe seus contatos.')).toBeInTheDocument();
+      expect(screen.getByText('Novo Lead')).toBeInTheDocument();
       expect(screen.getByText('Main page body content')).toBeInTheDocument();
 
-      // Hamburger button exists for mobile viewports
-      const hamburger = document.getElementById('mobile-menu-toggle-btn');
-      expect(hamburger).toBeInTheDocument();
-      expect(hamburger).toHaveAttribute('aria-label', 'Abrir menu lateral');
+      // Fixed mobile bottom nav is present in Layout
+      expect(document.getElementById('mobile-bottom-nav')).toBeInTheDocument();
     });
 
-    it('opens mobile drawer when hamburger button is clicked', () => {
+    it('opens MobileMenuSheet when Menu button is clicked in Layout', () => {
       render(
         <MemoryRouter>
-          <Layout title="Responsive View">
-            <div>Content</div>
+          <Layout title="Test Page">
+            <div>Body</div>
           </Layout>
         </MemoryRouter>
       );
 
-      const hamburger = document.getElementById('mobile-menu-toggle-btn')!;
-      expect(document.getElementById('mobile-sidebar-backdrop')).not.toBeInTheDocument();
+      // Menu sheet is initially closed
+      expect(document.getElementById('mobile-menu-drawer')).not.toBeInTheDocument();
 
-      fireEvent.click(hamburger);
+      // Click Menu in bottom nav
+      const menuBtn = document.getElementById('mobile-nav-menu')!;
+      fireEvent.click(menuBtn);
 
-      expect(document.getElementById('mobile-sidebar-backdrop')).toBeInTheDocument();
-      expect(document.getElementById('mobile-sidebar-drawer')).toBeInTheDocument();
+      // Menu sheet is now open
+      expect(document.getElementById('mobile-menu-drawer')).toBeInTheDocument();
     });
   });
 });

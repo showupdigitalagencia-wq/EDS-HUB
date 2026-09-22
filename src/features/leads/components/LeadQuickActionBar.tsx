@@ -155,7 +155,7 @@ export function LeadQuickActionBar({
               </button>
             )}
 
-            {/* 4. WhatsApp — Official recognizable glyph */}
+            {/* 4. WhatsApp — Official recognizable glyph & green CTA */}
             {hasPhone ? (
               <a
                 href={`https://wa.me/${digitsOnly}`}
@@ -164,9 +164,9 @@ export function LeadQuickActionBar({
                 role="button"
                 onClick={() => logIntentNonBlocking('whatsapp_contact_attempt', 'WhatsApp aberto', 'whatsapp')}
                 title={`Abrir WhatsApp para ${digitsOnly}`}
-                className={`${actionBaseClass} bg-emerald-50/80 hover:bg-emerald-100/80 text-emerald-900 border-emerald-200/80 hover:border-emerald-300 shadow-2xs cursor-pointer`}
+                className={`${actionBaseClass} bg-[#25d366] hover:bg-[#20ba5a] text-white border-transparent shadow-xs cursor-pointer active:translate-y-0.5`}
               >
-                <WhatsAppIcon className="h-4 w-4 text-emerald-600 shrink-0" />
+                <WhatsAppIcon className="h-4 w-4 text-white shrink-0" />
                 <span>WhatsApp</span>
               </a>
             ) : (

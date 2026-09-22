@@ -138,7 +138,7 @@ describe('Authenticated Full App Integration Tests', () => {
     );
 
     expect(screen.queryByText('Algo deu errado')).toBeNull();
-    expect(screen.getAllByText('Commercial Pipeline').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Pipeline').length).toBeGreaterThan(0);
   });
 
   it('renders SalesDashboardPage gracefully when RPC throws an error', async () => {
