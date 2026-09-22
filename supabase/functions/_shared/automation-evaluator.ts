@@ -145,12 +145,78 @@ export function evaluateCondition(
   }
 }
 
+export interface CheckPreferenceContext {
+  source?: string | null;
+  source_detail?: string | null;
+  isInitialOutreach?: boolean;
+  hasValidEmail?: boolean;
+  hasValidPhone?: boolean;
+}
+
 export function checkContactPreference(
   actionType: string,
-  leadPreference: string | null | undefined
+  leadPreference: string | null | undefined,
+  context?: CheckPreferenceContext
 ): { allowed: boolean; channel?: 'email' | 'sms' | 'call'; skip_reason_code?: string; skip_reason_message?: string } {
   const pref = (leadPreference || 'email').toLowerCase();
 
+  // If this is initial automated outreach, evaluate source-based routing rules
+  if (context?.isInitialOutreach) {
+    if (context.source === 'form' || context.source_detail === 'website') {
+      return {
+        allowed: false,
+        skip_reason_code: 'WEBSITE_INITIAL_OUTREACH_SUPPRESSED',
+        skip_reason_message: 'Website leads require manual client initial outreach',
+      };
+    }
+
+    if (context.source_detail && ['hubspot_sync', 'hubspot_historical', 'csv_import'].includes(context.source_detail)) {
+      return {
+        allowed: false,
+        skip_reason_code: 'HISTORICAL_IMPORT_SUPPRESSED',
+        skip_reason_message: 'Historical import leads are excluded from automatic initial contact',
+      };
+    }
+
+    if (context.source === 'meta') {
+      if (actionType === 'send_email') {
+        if (context.hasValidEmail === false) {
+          return {
+            allowed: false,
+            channel: 'email',
+            skip_reason_code: 'NO_VALID_EMAIL',
+            skip_reason_message: 'Meta lead does not have a valid email address',
+          };
+        }
+        return { allowed: true, channel: 'email' };
+      }
+
+      if (actionType === 'send_sms') {
+        if (context.hasValidPhone === false) {
+          return {
+            allowed: false,
+            channel: 'sms',
+            skip_reason_code: 'NO_VALID_PHONE',
+            skip_reason_message: 'Meta lead does not have a valid phone number',
+          };
+        }
+        return { allowed: true, channel: 'sms' };
+      }
+
+      if (actionType === 'create_call_task') {
+        return {
+          allowed: pref === 'call',
+          channel: 'call',
+          skip_reason_code: pref === 'call' ? undefined : 'CONTACT_PREFERENCE_MISMATCH',
+          skip_reason_message: pref === 'call' ? undefined : `Lead prefers ${pref.toUpperCase()}`,
+        };
+      }
+
+      return { allowed: true };
+    }
+  }
+
+  // Standard non-initial action check (preserves single channel preference)
   if (actionType === 'send_email') {
     if (pref !== 'email') {
       return {

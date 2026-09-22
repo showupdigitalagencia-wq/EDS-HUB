@@ -6,30 +6,36 @@
  * Canonical mapping table from CSV status values to pipeline stage codes.
  */
 export const CSV_STATUS_TO_STAGE_CODE: Record<string, string> = {
-  // Captura (capture)
+  // Novo Lead / Captura (capture)
   'new': 'capture',
   'new lead': 'capture',
   'newlead': 'capture',
   'captura': 'capture',
   'capture': 'capture',
+  'novo lead': 'capture',
+  'novo_lead': 'capture',
+  'novo': 'capture',
 
-  // Qualificação (qualification)
+  // Respondido / Qualificação (qualification)
   'qualified': 'qualification',
   'qualification': 'qualification',
   'qualificacao': 'qualification',
   'qualificação': 'qualification',
+  'respondido': 'qualification',
 
-  // Aquisição (acquisition)
+  // Interessado / Aquisição (acquisition)
   'opportunity': 'acquisition',
   'acquisition': 'acquisition',
   'aquisicao': 'acquisition',
   'aquisição': 'acquisition',
+  'interessado': 'acquisition',
 
-  // Aprovação (approval)
+  // Quente / Aprovação (approval)
   'approved': 'approval',
   'approval': 'approval',
   'aprovacao': 'approval',
   'aprovação': 'approval',
+  'quente': 'approval',
 
   // Matrícula (enrollment)
   'enrolled': 'enrollment',
