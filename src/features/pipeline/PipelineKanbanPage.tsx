@@ -6,7 +6,6 @@ import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import type { Lead, PipelineStage } from '../../types';
 import {
-  Kanban,
   RotateCw,
   Plus,
 } from 'lucide-react';
@@ -233,34 +232,24 @@ export function PipelineKanbanPage() {
     .sort((a, b) => (STAGE_ORDER_MAP[a.code] || 99) - (STAGE_ORDER_MAP[b.code] || 99));
 
   return (
-    <Layout title="Commercial Pipeline">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="p-2.5 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
-                <Kanban className="h-5 w-5" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">
-                  Commercial Pipeline
-                </h1>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Pipeline Comercial • Gestão operacional de leads por estágio do funil
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold px-3 py-1.5 bg-white border border-slate-200/80 rounded-xl text-slate-700 shadow-xs">
+    <Layout
+      title="Commercial Pipeline"
+      subtitle="Pipeline Comercial • Gestão operacional de leads por estágio do funil"
+    >
+      <div className="space-y-4">
+        {/* Controls Bar */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold px-3 py-1.5 bg-white border border-slate-200/80 rounded-xl text-slate-700 shadow-2xs">
               Total de Leads: <strong className="text-[#08254f]">{totalLeads}</strong>
             </span>
+          </div>
+
+          <div className="flex items-center gap-2.5">
             <button
               onClick={loadPipelineData}
               title="Atualizar pipeline"
-              className="p-2 text-slate-500 hover:text-slate-800 hover:bg-white border border-slate-200/80 rounded-xl shadow-xs transition-colors cursor-pointer"
+              className="p-2 text-slate-500 hover:text-slate-800 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:bg-slate-50 transition-colors cursor-pointer"
             >
               <RotateCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
@@ -269,7 +258,7 @@ export function PipelineKanbanPage() {
               className="btn-crimson text-xs"
             >
               <Plus className="h-3.5 w-3.5" />
-              Novo Lead
+              <span>Novo Lead</span>
             </button>
           </div>
         </div>

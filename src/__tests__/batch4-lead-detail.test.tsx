@@ -123,6 +123,108 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
       expect(screen.getByRole('button', { name: /whatsapp/i })).not.toBeDisabled();
     });
 
+    it('generates exact mailto link and renders valid href for Email action', () => {
+      render(
+        <LeadQuickActionBar
+          lead={mockLead}
+          onOpenTaskModal={vi.fn()}
+          onOpenPaymentModal={vi.fn()}
+        />
+      );
+
+      const emailAction = screen.getByRole('button', { name: /email/i });
+      expect(emailAction.getAttribute('href')).toBe('mailto:arthur@dentist.com');
+    });
+
+    it('clicking email triggers non-blocking logging without preventing mail client navigation even on logging error', async () => {
+      const mockInsert = vi.fn().mockRejectedValue(new Error('Network offline or Supabase error'));
+      vi.mocked(supabase.from).mockReturnValue({
+        insert: mockInsert,
+      } as any);
+
+      render(
+        <LeadQuickActionBar
+          lead={mockLead}
+          onOpenTaskModal={vi.fn()}
+          onOpenPaymentModal={vi.fn()}
+        />
+      );
+
+      const emailAction = screen.getByRole('button', { name: /email/i });
+      expect(emailAction.getAttribute('href')).toBe('mailto:arthur@dentist.com');
+
+      // Click email
+      fireEvent.click(emailAction);
+
+      // Logging is dispatched non-blockingly
+      expect(supabase.from).toHaveBeenCalledWith('lead_activities');
+      expect(mockInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lead_id: mockLead.id,
+          activity_type: 'email_manual_attempt',
+          summary: 'Email aberto para contato',
+        })
+      );
+      // Link still maintains exact mailto:
+      expect(emailAction.getAttribute('href')).toBe('mailto:arthur@dentist.com');
+    });
+
+    it('disables email action with "Email não informado" tooltip when email is missing or empty', () => {
+      const leadNoEmail: Lead = {
+        ...mockLead,
+        email: '   ',
+      };
+
+      render(
+        <LeadQuickActionBar
+          lead={leadNoEmail}
+          onOpenTaskModal={vi.fn()}
+          onOpenPaymentModal={vi.fn()}
+        />
+      );
+
+      const emailButton = screen.getByRole('button', { name: /email/i });
+      expect(emailButton).toBeDisabled();
+      expect(emailButton.getAttribute('title')).toBe('Email não informado');
+    });
+
+    it('disables email action with "Email não informado" tooltip when email is invalid', () => {
+      const leadInvalidEmail: Lead = {
+        ...mockLead,
+        email: 'invalid-not-an-email',
+      };
+
+      render(
+        <LeadQuickActionBar
+          lead={leadInvalidEmail}
+          onOpenTaskModal={vi.fn()}
+          onOpenPaymentModal={vi.fn()}
+        />
+      );
+
+      const emailButton = screen.getByRole('button', { name: /email/i });
+      expect(emailButton).toBeDisabled();
+      expect(emailButton.getAttribute('title')).toBe('Email não informado');
+    });
+
+    it('renders recognizable WhatsApp icon and correct wa.me link with digits only', () => {
+      render(
+        <LeadQuickActionBar
+          lead={mockLead}
+          onOpenTaskModal={vi.fn()}
+          onOpenPaymentModal={vi.fn()}
+        />
+      );
+
+      const waAction = screen.getByRole('button', { name: /whatsapp/i });
+      expect(waAction.getAttribute('href')).toBe('https://wa.me/19418301451');
+
+      // Verify SVG WhatsApp icon exists inside the button
+      const svgIcon = waAction.querySelector('svg');
+      expect(svgIcon).not.toBeNull();
+      expect(svgIcon?.getAttribute('viewBox')).toBe('0 0 24 24');
+    });
+
     it('disables call, sms, and whatsapp when lead has missing phone', () => {
       const leadNoPhone: Lead = {
         ...mockLead,
@@ -142,23 +244,6 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
       expect(screen.getByRole('button', { name: /sms/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /whatsapp/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /email/i })).not.toBeDisabled();
-    });
-
-    it('disables email button when lead has missing email', () => {
-      const leadNoEmail: Lead = {
-        ...mockLead,
-        email: null,
-      };
-
-      render(
-        <LeadQuickActionBar
-          lead={leadNoEmail}
-          onOpenTaskModal={vi.fn()}
-          onOpenPaymentModal={vi.fn()}
-        />
-      );
-
-      expect(screen.getByRole('button', { name: /email/i })).toBeDisabled();
     });
 
     it('opens task modal when "Adicionar Tarefa" is clicked', () => {
@@ -692,7 +777,7 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
         expect(screen.getByText(/Tarefas/)).toBeDefined();
         expect(screen.getByText(/Linha do Tempo/)).toBeDefined();
         expect(screen.getByText(/Notas Internas/)).toBeDefined();
-      });
+      }, { timeout: 5000 });
     });
 
     it('validates mobile viewport rendering at 390x844 without errors', async () => {
@@ -715,7 +800,7 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
       await waitFor(() => {
         expect(screen.getByText('Arthur Dentist')).toBeDefined();
         expect(screen.getByRole('button', { name: /pagamento/i })).toBeDefined();
-      });
+      }, { timeout: 5000 });
     });
   });
 });

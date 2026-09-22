@@ -5,20 +5,23 @@ interface EmptyStateProps {
   icon?: ReactNode;
   title?: string;
   message?: string;
+  action?: ReactNode;
 }
 
 export function EmptyState({
   icon,
-  title = 'No data yet',
-  message = 'There is nothing to display at the moment.',
+  title = 'Nenhum dado encontrado',
+  message = 'Não há registros disponíveis no momento.',
+  action,
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-4">
-      <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#e1f0fb] text-[#125e95] mb-4 shadow-xs">
-        {icon || <Inbox className="h-7 w-7 text-[#449bd5]" />}
+    <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+      <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mb-3 shadow-2xs border border-slate-200/60">
+        {icon || <Inbox className="h-5 w-5 text-slate-400" />}
       </div>
-      <h3 className="text-base font-bold text-[#08254f] mb-1 font-heading">{title}</h3>
-      <p className="text-xs text-slate-500 text-center max-w-sm leading-relaxed">{message}</p>
+      <h3 className="text-sm font-bold text-[#08254f] mb-1 font-heading">{title}</h3>
+      <p className="text-xs text-slate-500 max-w-sm leading-relaxed">{message}</p>
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { Activity, Phone, MessageSquare, Mail, CalendarCheck, CheckCircle2, RefreshCw, Clock } from 'lucide-react';
 import type { LeadActivity } from '../../../types';
+import { WhatsAppIcon } from '../../../components/icons/WhatsAppIcon';
 
 interface LeadTimelineProps {
   activities: LeadActivity[];
@@ -124,7 +125,7 @@ function getActivityIcon(type: string) {
     case 'call_manual_attempt':
       return <Phone className="h-3 w-3 text-[#449bd5]" />;
     case 'whatsapp_contact_attempt':
-      return <span className="text-[10px] leading-none">💬</span>;
+      return <WhatsAppIcon className="h-3 w-3 text-emerald-600" />;
     case 'email_dispatched':
     case 'email_manual_attempt':
     case 'email_reply_received':

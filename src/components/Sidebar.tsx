@@ -26,6 +26,7 @@ import edsLogo from '../assets/eds-logo.png';
 
 interface NavGroup {
   label: string;
+  isPrimary?: boolean;
   items: Array<{
     name: string;
     href: string;
@@ -35,35 +36,41 @@ interface NavGroup {
 
 const navigationGroups: NavGroup[] = [
   {
-    label: 'MAIN',
+    label: 'OPERACIONAL',
+    isPrimary: true,
     items: [
-      { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-      { name: 'Work', href: '/work', icon: CheckSquare },
-      { name: 'Reports', href: '/reports', icon: BarChart3 },
-      { name: 'Revenue', href: '/dashboard/revenue', icon: DollarSign },
-      { name: 'Inbox', href: '/inbox', icon: Inbox },
-      { name: 'Leads', href: '/leads', icon: Users },
       { name: 'Pipeline', href: '/pipeline', icon: Kanban },
+      { name: 'Leads', href: '/leads', icon: Users },
+      { name: 'Work', href: '/work', icon: CheckSquare },
+      { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { name: 'Inbox', href: '/inbox', icon: Inbox },
     ],
   },
   {
-    label: 'COURSES',
+    label: 'CURSOS',
     items: [
       { name: 'Course Operations', href: '/courses/operations', icon: GraduationCap },
       { name: 'Post-Course & Alumni', href: '/courses/post-course', icon: Award },
     ],
   },
   {
-    label: 'ENGAGEMENT',
+    label: 'ENGAJAMENTO',
     items: [
-      { name: 'Forms', href: '/forms', icon: ClipboardList },
+      { name: 'Campaigns', href: '/campaigns', icon: Mail },
       { name: 'Automations', href: '/automations', icon: Workflow },
       { name: 'Sequences', href: '/sequences', icon: GitFork },
-      { name: 'Campaigns', href: '/campaigns', icon: Mail },
+      { name: 'Forms', href: '/forms', icon: ClipboardList },
     ],
   },
   {
-    label: 'SYSTEM',
+    label: 'GESTÃO & RELATÓRIOS',
+    items: [
+      { name: 'Reports', href: '/reports', icon: BarChart3 },
+      { name: 'Revenue', href: '/dashboard/revenue', icon: DollarSign },
+    ],
+  },
+  {
+    label: 'SISTEMA',
     items: [
       { name: 'Templates', href: '/templates', icon: FileText },
       { name: 'Lead Scoring', href: '/scoring', icon: Target },
@@ -139,51 +146,67 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
       </div>
 
       {/* Navigation Groups */}
-      <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto">
-        {navigationGroups.map((group) => (
-          <div key={group.label} className="space-y-1">
-            <p className="px-3 text-[10px] font-bold text-blue-200/60 uppercase tracking-widest">
-              {group.label}
-            </p>
-            {group.items.map((item) => {
-              const isActive =
-                item.href === '/'
-                  ? location.pathname === '/' || location.pathname === '/dashboard'
-                  : location.pathname.startsWith(item.href);
+      <nav className="flex-1 px-3 py-3.5 space-y-5 overflow-y-auto">
+        {navigationGroups.map((group) => {
+          const isPrimary = Boolean(group.isPrimary);
 
-              return (
-                <NavLink
-                  key={item.href}
-                  to={item.href}
-                  id={`nav-${item.href.replace('/', '') || 'home'}`}
-                  onClick={handleNavClick}
-                  className={`group relative flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 ${
-                    isActive
-                      ? 'bg-white/12 text-white font-semibold shadow-xs'
-                      : 'text-slate-300 hover:bg-white/6 hover:text-white'
-                  }`}
-                >
-                  {/* Active Indicator Accent */}
-                  {isActive && (
-                    <span className="absolute left-0 inset-y-1.5 w-1 bg-[#8a1c1c] rounded-r-full" />
-                  )}
+          return (
+            <div key={group.label} className="space-y-1">
+              <p
+                className={`px-3 text-[10px] font-bold uppercase tracking-widest ${
+                  isPrimary ? 'text-blue-200/80 font-heading' : 'text-slate-400/60'
+                }`}
+              >
+                {group.label}
+              </p>
+              {group.items.map((item) => {
+                const isActive =
+                  item.href === '/'
+                    ? location.pathname === '/' || location.pathname === '/dashboard'
+                    : location.pathname.startsWith(item.href);
 
-                  <item.icon
-                    className={`h-4 w-4 transition-colors ${
-                      isActive ? 'text-[#449bd5]' : 'text-slate-400 group-hover:text-slate-200'
+                return (
+                  <NavLink
+                    key={item.href}
+                    to={item.href}
+                    id={`nav-${item.href.replace('/', '') || 'home'}`}
+                    onClick={handleNavClick}
+                    className={`group relative flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all duration-150 ${
+                      isActive
+                        ? 'bg-white/12 text-white font-semibold shadow-xs'
+                        : isPrimary
+                        ? 'text-slate-200 hover:bg-white/6 hover:text-white font-medium'
+                        : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
                     }`}
-                  />
-                  <span>{item.name}</span>
-                </NavLink>
-              );
-            })}
-          </div>
-        ))}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {/* Active Indicator Accent */}
+                      {isActive && (
+                        <span className="absolute left-0 inset-y-2 w-1 bg-[#8a1c1c] rounded-r-full" />
+                      )}
+
+                      <item.icon
+                        className={`h-4 w-4 shrink-0 transition-colors ${
+                          isActive
+                            ? 'text-[#449bd5]'
+                            : isPrimary
+                            ? 'text-slate-300 group-hover:text-white'
+                            : 'text-slate-500 group-hover:text-slate-300'
+                        }`}
+                      />
+                      <span className="truncate">{item.name}</span>
+                    </div>
+                  </NavLink>
+                );
+              })}
+            </div>
+          );
+        })}
       </nav>
 
       {/* User Footer Profile */}
       <div className="border-t border-white/10 p-3 bg-[#061e40]">
-        <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/5 border border-white/5 mb-2">
+        <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-white/5 border border-white/5 mb-2">
           <div className="w-8 h-8 rounded-full bg-[#449bd5] text-white flex items-center justify-center text-xs font-bold shadow-xs">
             {appUser?.display_name?.charAt(0)?.toUpperCase() || 'U'}
           </div>

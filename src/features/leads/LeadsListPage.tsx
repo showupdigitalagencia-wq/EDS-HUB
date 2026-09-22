@@ -10,7 +10,6 @@ import { CsvImportModal } from './import/CsvImportModal';
 import type { Lead, PipelineStage, Tag, Course, CourseSession } from '../../types';
 import { formatSessionMonthYear } from '../pipeline/components/MinimalLeadCard';
 import {
-  Users,
   Plus,
   Upload,
   Search,
@@ -288,38 +287,33 @@ export function LeadsListPage() {
   };
 
   return (
-    <Layout title="Leads & Contatos">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="p-2.5 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
-                <Users className="h-5 w-5" />
-              </div>
-              <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">
-                Leads & Contatos
-              </h1>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Base de contatos com filtros operacionais por curso, turma e estágio
-            </p>
+    <Layout
+      title="Leads & Contatos"
+      subtitle="Base operacional de contatos com filtros por curso, turma e estágio"
+    >
+      <div className="space-y-4">
+        {/* Top Controls Bar */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold px-3 py-1.5 bg-white border border-slate-200/80 rounded-xl text-slate-700 shadow-2xs">
+              Total: <strong className="text-[#08254f]">{totalCount}</strong> leads
+            </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <button
               onClick={() => setIsImportOpen(true)}
               className="btn-secondary text-xs"
             >
               <Upload className="h-3.5 w-3.5 text-slate-500" />
-              Importar CSV
+              <span>Importar CSV</span>
             </button>
             <button
               onClick={() => setIsNewLeadOpen(true)}
               className="btn-crimson text-xs"
             >
               <Plus className="h-3.5 w-3.5" />
-              Novo Lead
+              <span>Novo Lead</span>
             </button>
           </div>
         </div>
