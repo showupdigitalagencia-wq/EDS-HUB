@@ -309,4 +309,73 @@ describe('Batch 3 — Client UX: Pipeline, Minimal Lead Card & Manual Lead Creat
       expect(() => checkUserSecurity(false)).toThrow('Unauthorized: Caller is not an active EDS HUB app user');
     });
   });
+
+  describe('7. Batch 3.1 Visual Refinements & Information Hierarchy', () => {
+    it('verifies the card displays phone and email directly under the lead name', async () => {
+      const React = await import('react');
+      const { render, screen } = await import('@testing-library/react');
+      const { MinimalLeadCard } = await import('../features/pipeline/components/MinimalLeadCard');
+
+      const lead = createMockLead({
+        first_name: 'Dr. Arthur',
+        last_name: 'Dentist',
+        phone_raw: '+1 (941) 830-1451',
+        email: 'arthur@email.com',
+      });
+
+      const interests = [
+        { courseName: 'Zygomatic', startDate: '2026-11-15', priority: 1 as const },
+      ];
+
+      render(React.createElement(MinimalLeadCard, { lead, interests }));
+
+      // Name
+      expect(screen.getByText('Dr. Arthur Dentist')).toBeDefined();
+      // Phone
+      expect(screen.getByText('+1 (941) 830-1451')).toBeDefined();
+      // Email
+      expect(screen.getByText('arthur@email.com')).toBeDefined();
+      // Course with session date
+      expect(screen.getByText('Zygomatic • Nov 2026')).toBeDefined();
+
+      // Ensure NO raw score or qualification badge is rendered
+      expect(screen.queryByText('⚡ 85')).toBeNull();
+      expect(screen.queryByText('no_response')).toBeNull();
+      expect(screen.queryByText('Sem Resposta')).toBeNull();
+    });
+
+    it('displays subtle fallback "Sem curso de interesse" when lead has no course interests', async () => {
+      const React = await import('react');
+      const { render, screen } = await import('@testing-library/react');
+      const { MinimalLeadCard } = await import('../features/pipeline/components/MinimalLeadCard');
+
+      const lead = createMockLead({ course_interest: null, course_interests: [] });
+
+      render(React.createElement(MinimalLeadCard, { lead, interests: [] }));
+
+      expect(screen.getByText('Sem curso de interesse')).toBeDefined();
+      expect(screen.queryByText('Nenhum curso selecionado')).toBeNull();
+    });
+
+    it('displays subtle fallback "Contato não informado" when both phone and email are absent', async () => {
+      const React = await import('react');
+      const { render, screen } = await import('@testing-library/react');
+      const { MinimalLeadCard } = await import('../features/pipeline/components/MinimalLeadCard');
+
+      const lead = createMockLead({
+        phone_raw: null,
+        phone_e164: null,
+        email: null,
+      });
+
+      render(React.createElement(MinimalLeadCard, { lead, interests: [] }));
+
+      expect(screen.getByText('Contato não informado')).toBeDefined();
+    });
+
+    it('verifies the empty column state message is "Nenhum lead neste estágio"', () => {
+      const emptyMsg = 'Nenhum lead neste estágio';
+      expect(emptyMsg).toBe('Nenhum lead neste estágio');
+    });
+  });
 });

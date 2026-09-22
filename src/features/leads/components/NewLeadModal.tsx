@@ -266,7 +266,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[11px] font-bold text-[#08254f]">
-                      Interesse #{idx + 1}
+                      Curso de Interesse {idx + 1}
                     </span>
                     {interests.length > 1 && (
                       <button

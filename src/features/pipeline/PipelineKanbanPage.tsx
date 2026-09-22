@@ -313,7 +313,7 @@ export function PipelineKanbanPage() {
                     </div>
 
                     {/* Cards List */}
-                    <div className="p-2.5 flex-1 space-y-2 min-h-[480px] overflow-y-auto max-h-[75vh]">
+                    <div className="p-2.5 flex-1 space-y-2 min-h-[160px] sm:min-h-[220px] overflow-y-auto max-h-[calc(100vh-220px)]">
                       {stageLeads.length > 0 ? (
                         stageLeads.map((lead) => {
                           const interests = leadInterestsMap[lead.id] || [];
@@ -334,8 +334,10 @@ export function PipelineKanbanPage() {
                           );
                         })
                       ) : (
-                        <div className="flex flex-col items-center justify-center p-6 text-center text-slate-400 text-xs italic min-h-[120px]">
-                          Nenhum lead neste estágio
+                        <div className="flex flex-col items-center justify-center py-8 px-3 text-center text-slate-400 text-xs italic min-h-[110px] select-none">
+                          <span className="max-w-[190px] leading-relaxed">
+                            Nenhum lead neste estágio
+                          </span>
                         </div>
                       )}
                     </div>

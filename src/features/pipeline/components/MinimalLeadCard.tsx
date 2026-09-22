@@ -1,6 +1,14 @@
 import React from 'react';
 import type { Lead } from '../../../types';
-import { GripVertical, AlertTriangle, Clock, AlertCircle } from 'lucide-react';
+import {
+  GripVertical,
+  AlertTriangle,
+  Clock,
+  AlertCircle,
+  Phone,
+  Mail,
+  GraduationCap,
+} from 'lucide-react';
 
 export interface FormattedCourseInterest {
   courseName: string;
@@ -119,6 +127,9 @@ export function MinimalLeadCard({
   const hasInterests = displayInterests.length > 0;
   const legacyCourseInterest = !hasInterests && lead.course_interest ? lead.course_interest : null;
 
+  const phoneValue = lead.phone_raw || lead.phone_e164 || null;
+  const emailValue = lead.email ? lead.email.trim() : null;
+
   return (
     <div
       role="article"
@@ -126,11 +137,11 @@ export function MinimalLeadCard({
       draggable
       onDragStart={onDragStart}
       onClick={onClick}
-      className={`p-3 bg-white rounded-xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#449bd5]/50 transition-all duration-150 cursor-grab active:cursor-grabbing space-y-2 select-none group ${
+      className={`p-3 bg-white rounded-xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#449bd5]/50 transition-all duration-150 cursor-grab active:cursor-grabbing space-y-1.5 select-none group ${
         isDragging ? 'opacity-40 scale-95 border-dashed border-[#449bd5]' : ''
       }`}
     >
-      {/* Header: Lead Name + Drag Grip */}
+      {/* 1. Lead Name + Drag Grip (Strongest visual emphasis) */}
       <div className="flex items-start justify-between gap-1.5">
         <h4 className="text-xs font-bold font-heading text-[#08254f] leading-snug line-clamp-1 group-hover:text-[#449bd5] transition-colors">
           {fullName}
@@ -138,8 +149,36 @@ export function MinimalLeadCard({
         <GripVertical className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500 shrink-0 mt-0.5" />
       </div>
 
-      {/* Course Interests (Up to 3, formatted: Course • Month Year) */}
-      <div className="space-y-1">
+      {/* 2 & 3. Phone & Email (Medium emphasis, secondary to name) */}
+      {(phoneValue || emailValue) ? (
+        <div className="space-y-0.5 pt-0.5">
+          {phoneValue && (
+            <div
+              className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate"
+              title={phoneValue}
+            >
+              <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+              <span className="truncate">{phoneValue}</span>
+            </div>
+          )}
+          {emailValue && (
+            <div
+              className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate"
+              title={emailValue}
+            >
+              <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+              <span className="truncate">{emailValue}</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-[10px] text-slate-400 italic pt-0.5">
+          Contato não informado
+        </div>
+      )}
+
+      {/* 4. Course Interests (Up to 3, formatted: Course • Month Year) */}
+      <div className="space-y-1 pt-1 border-t border-slate-100/80">
         {hasInterests ? (
           displayInterests.map((interest, idx) => {
             const formattedDate = formatSessionMonthYear(interest.startDate);
@@ -153,7 +192,10 @@ export function MinimalLeadCard({
                 className="text-[11px] font-medium text-slate-700 bg-slate-50 hover:bg-slate-100/80 px-2 py-0.5 rounded-md border border-slate-100 truncate flex items-center justify-between gap-1"
                 title={label}
               >
-                <span className="truncate">{label}</span>
+                <div className="flex items-center gap-1.5 truncate">
+                  <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
+                  <span className="truncate">{label}</span>
+                </div>
                 {interest.priority && (
                   <span className="text-[9px] font-semibold text-slate-400 shrink-0">
                     #{interest.priority}
@@ -164,19 +206,20 @@ export function MinimalLeadCard({
           })
         ) : legacyCourseInterest ? (
           <div
-            className="text-[11px] font-medium text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100 truncate"
+            className="text-[11px] font-medium text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100 truncate flex items-center gap-1.5"
             title={legacyCourseInterest}
           >
-            {legacyCourseInterest}
+            <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
+            <span className="truncate">{legacyCourseInterest}</span>
           </div>
         ) : (
           <div className="text-[10px] text-slate-400 italic px-0.5">
-            Nenhum curso selecionado
+            Sem curso de interesse
           </div>
         )}
       </div>
 
-      {/* Operational Attention State Indicator (When applicable) */}
+      {/* 5. Operational Attention State Indicator (Only when relevant) */}
       {attentionState && (
         <div className="pt-0.5">
           {attentionState.variant === 'neutral' && (
