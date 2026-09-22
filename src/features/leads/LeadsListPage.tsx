@@ -7,9 +7,8 @@ import { ErrorState } from '../../components/ErrorState';
 import { EmptyState } from '../../components/EmptyState';
 import { NewLeadModal } from './components/NewLeadModal';
 import { CsvImportModal } from './import/CsvImportModal';
-import type { Lead, PipelineStage, Tag } from '../../types';
-import { getQualificationStatusBadge } from './utils/qualificationMapping';
-import { deriveScoreLabel, getScoreLabelBadge } from '../scoring/engine/score-evaluator';
+import type { Lead, PipelineStage, Tag, Course, CourseSession } from '../../types';
+import { formatSessionMonthYear } from '../pipeline/components/MinimalLeadCard';
 import {
   Users,
   Plus,
@@ -20,98 +19,153 @@ import {
   ChevronRight,
   Mail,
   Phone,
-  PhoneCall,
   RotateCw,
-  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  X,
 } from 'lucide-react';
 
 const PAGE_SIZE = 15;
 
+const OPERATIONAL_STAGE_CODES = [
+  'capture',
+  'qualification',
+  'acquisition',
+  'approval',
+  'enrollment',
+] as const;
+
 export function LeadsListPage() {
   const navigate = useNavigate();
 
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const sortParam = searchParams.get('sort');
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [stages, setStages] = useState<PipelineStage[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [sessions, setSessions] = useState<CourseSession[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [leadTagsMap, setLeadTagsMap] = useState<Record<string, Tag[]>>({});
 
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Sorting & Score Filters
-  const [sortBy, setSortBy] = useState<'created_at' | 'lead_score'>(
-    sortParam === 'score' ? 'lead_score' : 'created_at'
-  );
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [scoreFilter, setScoreFilter] = useState<string>('');
+  // Sorting
+  const sortBy = sortParam === 'score' ? 'lead_score' : 'created_at';
+  const sortOrder: 'asc' | 'desc' = 'desc';
 
-  // Filters & Search
+  // Primary Client Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('');
+  const [courseFilter, setCourseFilter] = useState('');
+  const [sessionFilter, setSessionFilter] = useState('');
+
+  // Secondary Filters (behind "Mais filtros")
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('');
   const [preferenceFilter, setPreferenceFilter] = useState('');
-  const [qualificationFilter, setQualificationFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
+  const [scoreFilter, setScoreFilter] = useState('');
 
   // Modals
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
 
-  // 1. Fetch reference data (stages, tags)
+  // 1. Fetch reference data (operational stages, active courses, sessions, tags)
   useEffect(() => {
     async function loadRefs() {
-      const [stagesRes, tagsRes] = await Promise.all([
-        supabase.from('pipeline_stages').select('*').order('sort_order', { ascending: true }),
-        supabase.from('tags').select('*').order('name', { ascending: true }),
+      const [stagesRes, coursesRes, sessionsRes, tagsRes] = await Promise.all([
+        supabase
+          .from('pipeline_stages')
+          .select('*')
+          .order('sort_order', { ascending: true }),
+        supabase
+          .from('courses')
+          .select('*')
+          .eq('active', true)
+          .order('name', { ascending: true }),
+        supabase
+          .from('course_sessions')
+          .select('*, course:courses(name)')
+          .order('start_date', { ascending: true }),
+        supabase
+          .from('tags')
+          .select('*')
+          .order('name', { ascending: true }),
       ]);
-      if (stagesRes.data) setStages(stagesRes.data);
-      if (tagsRes.data) setTags(tagsRes.data);
+
+      if (stagesRes.data) {
+        setStages(stagesRes.data);
+      }
+      if (coursesRes.data) {
+        setCourses(coursesRes.data);
+      }
+      if (sessionsRes.data) {
+        setSessions(sessionsRes.data as CourseSession[]);
+      }
+      if (tagsRes.data) {
+        setTags(tagsRes.data);
+      }
     }
     loadRefs();
   }, []);
 
-  // 2. Fetch leads with server-side pagination & filters
+  // 2. Fetch leads with truly scalable server-side relational filtering & pagination
   const fetchLeads = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      let query = supabase
-        .from('leads')
-        .select('*', { count: 'exact' });
+      // Use !inner relational embed when course/session filter is active, ensuring 100% server-side filtering
+      const hasCourseFilter = Boolean(courseFilter);
+      const hasSessionFilter = Boolean(sessionFilter);
 
-      // Search term
-      if (searchTerm.trim()) {
-        const term = `%${searchTerm.trim()}%`;
-        query = query.or(`first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone_raw.ilike.${term}`);
+      let selectClause =
+        '*, lead_course_interests(course_id, course_session_id, priority, course:courses(name), session:course_sessions(title, start_date))';
+
+      if (hasCourseFilter || hasSessionFilter) {
+        selectClause =
+          '*, lead_course_interests!inner(course_id, course_session_id, priority, course:courses(name), session:course_sessions(title, start_date))';
       }
 
-      // Filter by stage
+      let query = supabase.from('leads').select(selectClause, { count: 'exact' });
+
+      // Primary Filter: Search term (name, email, phone)
+      if (searchTerm.trim()) {
+        const term = `%${searchTerm.trim()}%`;
+        query = query.or(
+          `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone_raw.ilike.${term}`,
+        );
+      }
+
+      // Primary Filter: Pipeline Stage
       if (stageFilter) {
         query = query.eq('pipeline_stage_id', stageFilter);
       }
 
-      // Filter by source
+      // Primary Filter: Course of interest (server-side via relational !inner)
+      if (courseFilter) {
+        query = query.eq('lead_course_interests.course_id', courseFilter);
+      }
+
+      // Primary Filter: Course Session / Date (server-side via relational !inner)
+      if (sessionFilter) {
+        query = query.eq('lead_course_interests.course_session_id', sessionFilter);
+      }
+
+      // Secondary Filter: Source
       if (sourceFilter) {
         query = query.eq('source', sourceFilter);
       }
 
-      // Filter by contact preference
+      // Secondary Filter: Contact Preference
       if (preferenceFilter) {
         query = query.eq('contact_preference', preferenceFilter);
       }
 
-      // Filter by qualification status
-      if (qualificationFilter) {
-        query = query.eq('qualification_status', qualificationFilter);
-      }
-
-      // Filter by lead score band
+      // Secondary Filter: Score Band
       if (scoreFilter === 'very_hot') {
         query = query.gte('lead_score', 75);
       } else if (scoreFilter === 'hot') {
@@ -122,7 +176,7 @@ export function LeadsListPage() {
         query = query.lte('lead_score', 24);
       }
 
-      // Filter by tag if selected
+      // Secondary Filter: Tag filter
       if (tagFilter) {
         const { data: tagMatches } = await supabase
           .from('lead_tags')
@@ -144,38 +198,32 @@ export function LeadsListPage() {
       const to = from + PAGE_SIZE - 1;
 
       const { data, count, error: fetchErr } = await query
-        .order(sortBy, { ascending: sortOrder === 'asc' })
+        .order(sortBy, { ascending: false })
         .range(from, to);
 
       if (fetchErr) throw fetchErr;
 
-      const loadedLeads = (data as Lead[]) || [];
+      const loadedLeads = (data as unknown as Lead[]) || [];
       setLeads(loadedLeads);
       setTotalCount(count || 0);
-
-      // Fetch tags for these leads
-      if (loadedLeads.length > 0) {
-        const leadIds = loadedLeads.map((l) => l.id);
-        const { data: tagLinks } = await supabase
-          .from('lead_tags')
-          .select('lead_id, tag_id, tags(*)')
-          .in('lead_id', leadIds);
-
-        const map: Record<string, Tag[]> = {};
-        if (tagLinks) {
-          tagLinks.forEach((link: any) => {
-            if (!map[link.lead_id]) map[link.lead_id] = [];
-            if (link.tags) map[link.lead_id].push(link.tags);
-          });
-        }
-        setLeadTagsMap(map);
-      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch leads');
+      setError(err instanceof Error ? err.message : 'Falha ao carregar leads');
     } finally {
       setIsLoading(false);
     }
-  }, [searchTerm, stageFilter, sourceFilter, preferenceFilter, qualificationFilter, tagFilter, currentPage]);
+  }, [
+    searchTerm,
+    stageFilter,
+    courseFilter,
+    sessionFilter,
+    sourceFilter,
+    preferenceFilter,
+    tagFilter,
+    scoreFilter,
+    currentPage,
+    sortBy,
+    sortOrder,
+  ]);
 
   useEffect(() => {
     fetchLeads();
@@ -191,26 +239,56 @@ export function LeadsListPage() {
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
+  // Filter operational stages only for primary stage filter
+  const operationalStages = stages.filter((s) =>
+    OPERATIONAL_STAGE_CODES.includes(s.code as any),
+  );
+
   const stageMap = stages.reduce<Record<string, PipelineStage>>((acc, s) => {
     acc[s.id] = s;
     return acc;
   }, {});
 
-  const getStageColor = (sortOrder: number) => {
-    switch (sortOrder) {
-      case 1: return 'bg-sky-50 text-sky-700 border-sky-200';
-      case 2: return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 3: return 'bg-purple-50 text-purple-700 border-purple-200';
-      case 4: return 'bg-indigo-50 text-indigo-700 border-indigo-200';
-      case 5: return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 6: return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 7: return 'bg-gray-50 text-gray-700 border-gray-200';
-      default: return 'bg-gray-50 text-gray-600 border-gray-200';
+  // Sessions filtered by course if courseFilter selected
+  const visibleSessions = courseFilter
+    ? sessions.filter((s) => s.course_id === courseFilter)
+    : sessions;
+
+  const hasActiveSecondaryFilters = Boolean(
+    sourceFilter || preferenceFilter || tagFilter || scoreFilter,
+  );
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setStageFilter('');
+    setCourseFilter('');
+    setSessionFilter('');
+    setSourceFilter('');
+    setPreferenceFilter('');
+    setTagFilter('');
+    setScoreFilter('');
+    setCurrentPage(1);
+  };
+
+  const getStageBadgeStyle = (code?: string) => {
+    switch (code) {
+      case 'capture':
+        return 'bg-slate-100 text-slate-800 border-slate-200';
+      case 'qualification':
+        return 'bg-sky-50 text-sky-800 border-sky-200';
+      case 'acquisition':
+        return 'bg-indigo-50 text-indigo-800 border-indigo-200';
+      case 'approval':
+        return 'bg-amber-50 text-amber-800 border-amber-200';
+      case 'enrollment':
+        return 'bg-emerald-50 text-emerald-800 border-emerald-200';
+      default:
+        return 'bg-gray-50 text-gray-700 border-gray-200';
     }
   };
 
   return (
-    <Layout title="Leads">
+    <Layout title="Leads & Contatos">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -219,10 +297,12 @@ export function LeadsListPage() {
               <div className="p-2.5 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
                 <Users className="h-5 w-5" />
               </div>
-              <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">Leads & Contacts</h1>
+              <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">
+                Leads & Contatos
+              </h1>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Centralized CRM database with real-time segmentation and tagging
+              Base de contatos com filtros operacionais por curso, turma e estágio
             </p>
           </div>
 
@@ -232,24 +312,24 @@ export function LeadsListPage() {
               className="btn-secondary text-xs"
             >
               <Upload className="h-3.5 w-3.5 text-slate-500" />
-              Import CSV
+              Importar CSV
             </button>
             <button
               onClick={() => setIsNewLeadOpen(true)}
               className="btn-crimson text-xs"
             >
               <Plus className="h-3.5 w-3.5" />
-              New Lead
+              Novo Lead
             </button>
           </div>
         </div>
 
-        {/* Filters and Search Bar */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-3">
-          <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        {/* Primary Client Filters */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* 1. Busca */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
                 value={searchTerm}
@@ -257,170 +337,217 @@ export function LeadsListPage() {
                   setSearchTerm(e.target.value);
                   setCurrentPage(1);
                 }}
-                placeholder="Search by name, email, or phone..."
-                className="w-full pl-9 pr-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+                placeholder="Buscar por nome, email ou telefone..."
+                className="w-full pl-9 pr-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f] focus:border-transparent transition-all"
               />
             </div>
 
-            {/* Filters */}
-            <div className="flex flex-wrap items-center gap-2">
-              <Filter className="h-4 w-4 text-gray-400 shrink-0 hidden sm:inline" />
+            {/* 2. Estágio (Operational only) */}
+            <div>
               <select
                 value={stageFilter}
                 onChange={(e) => {
                   setStageFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#08254f]"
               >
-                <option value="">All Stages</option>
-                {stages.map((s) => (
+                <option value="">Todos os Estágios</option>
+                {operationalStages.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
                 ))}
               </select>
+            </div>
 
-              {/* Source filter */}
+            {/* 3. Curso de Interesse */}
+            <div>
               <select
-                value={sourceFilter}
+                value={courseFilter}
                 onChange={(e) => {
-                  setSourceFilter(e.target.value);
+                  setCourseFilter(e.target.value);
+                  setSessionFilter(''); // reset session when course changes
                   setCurrentPage(1);
                 }}
-                className="px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#08254f]"
               >
-                <option value="">All Sources</option>
-                <option value="meta">Meta Ads</option>
-                <option value="google">Google Ads</option>
-                <option value="manual">Manual</option>
-                <option value="test">Test</option>
-              </select>
-
-              {/* Contact preference */}
-              <select
-                value={preferenceFilter}
-                onChange={(e) => {
-                  setPreferenceFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-brand-500"
-              >
-                <option value="">All Preferences</option>
-                <option value="email">Email</option>
-                <option value="sms">SMS</option>
-                <option value="call">Call</option>
-              </select>
-
-              {/* Qualification status */}
-              <select
-                value={qualificationFilter}
-                onChange={(e) => {
-                  setQualificationFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-brand-500"
-              >
-                <option value="">All Qualification</option>
-                <option value="no_response">No Response</option>
-                <option value="some_response">Some Response</option>
-                <option value="interested">Interested</option>
-                <option value="hot">Hot</option>
-                <option value="confirmed">Confirmed</option>
-              </select>
-
-              {/* Tag filter */}
-              <select
-                value={tagFilter}
-                onChange={(e) => {
-                  setTagFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-brand-500"
-              >
-                <option value="">All Tags</option>
-                {tags.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    #{t.name}
+                <option value="">Todos os Cursos</option>
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
                   </option>
                 ))}
               </select>
+            </div>
 
-              {/* Score Band filter */}
+            {/* 4. Turma / Data */}
+            <div className="flex items-center gap-2">
               <select
-                value={scoreFilter}
+                value={sessionFilter}
                 onChange={(e) => {
-                  setScoreFilter(e.target.value);
+                  setSessionFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="px-3 py-2 text-xs font-medium bg-amber-50/50 border border-amber-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500 text-amber-900"
+                className="flex-1 px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#08254f]"
               >
-                <option value="">All Scores</option>
-                <option value="very_hot">Very Hot (75+)</option>
-                <option value="hot">Hot (50-74)</option>
-                <option value="warm">Warm (25-49)</option>
-                <option value="cold">Cold (0-24)</option>
+                <option value="">Todas as Turmas / Datas</option>
+                {visibleSessions.map((s) => {
+                  const formattedDate = formatSessionMonthYear(s.start_date);
+                  const label = `${(s as any).course?.name || 'Curso'} — ${formattedDate || s.title}`;
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {label}
+                    </option>
+                  );
+                })}
               </select>
 
               <button
                 onClick={fetchLeads}
-                title="Refresh leads"
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                title="Atualizar lista"
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors shrink-0"
               >
                 <RotateCw className="h-4 w-4" />
               </button>
             </div>
           </div>
 
-          {/* Presets Bar */}
-          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
-            <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mr-1">
-              Views:
-            </span>
+          {/* Collapsible "Mais filtros" Toggle & Controls */}
+          <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
             <button
-              onClick={() => {
-                setSortBy('created_at');
-                setSortOrder('desc');
-                setScoreFilter('');
-                setSearchParams({});
-                setCurrentPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                sortBy === 'created_at' && !scoreFilter
-                  ? 'bg-[#08254f] text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              type="button"
+              onClick={() => setShowMoreFilters(!showMoreFilters)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-[#08254f] transition-colors"
             >
-              All Contacts
+              <Filter className="h-3.5 w-3.5 text-slate-400" />
+              <span>Mais filtros</span>
+              {hasActiveSecondaryFilters && (
+                <span className="w-1.5 h-1.5 rounded-full bg-[#449bd5]" />
+              )}
+              {showMoreFilters ? (
+                <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+              )}
             </button>
-            <button
-              onClick={() => {
-                setSortBy('lead_score');
-                setSortOrder('desc');
-                setSearchParams({ sort: 'score' });
-                setCurrentPage(1);
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                sortBy === 'lead_score'
-                  ? 'bg-[#8a1c1c] text-white shadow-xs'
-                  : 'bg-[#fdf2f2] text-[#8a1c1c] border border-red-200 hover:bg-red-100'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Priority Leads (Ranked by Score)
-            </button>
+
+            {(searchTerm ||
+              stageFilter ||
+              courseFilter ||
+              sessionFilter ||
+              hasActiveSecondaryFilters) && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-800 transition-colors font-medium"
+              >
+                <X className="h-3 w-3" />
+                Limpar filtros
+              </button>
+            )}
           </div>
+
+          {/* Secondary Filters Tray */}
+          {showMoreFilters && (
+            <div className="p-3 bg-slate-50/70 rounded-xl border border-slate-200/60 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-3">
+              {/* Origem */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                  Origem
+                </label>
+                <select
+                  value={sourceFilter}
+                  onChange={(e) => {
+                    setSourceFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg"
+                >
+                  <option value="">Todas as origens</option>
+                  <option value="meta">Meta / Instagram</option>
+                  <option value="google">Google Ads</option>
+                  <option value="manual">Manual CRM</option>
+                  <option value="form">Formulário Site</option>
+                  <option value="test">Teste</option>
+                </select>
+              </div>
+
+              {/* Preferência */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                  Preferência
+                </label>
+                <select
+                  value={preferenceFilter}
+                  onChange={(e) => {
+                    setPreferenceFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg"
+                >
+                  <option value="">Todas as preferências</option>
+                  <option value="email">Email</option>
+                  <option value="sms">SMS</option>
+                  <option value="call">Telefone / Ligação</option>
+                </select>
+              </div>
+
+              {/* Tags */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                  Tags
+                </label>
+                <select
+                  value={tagFilter}
+                  onChange={(e) => {
+                    setTagFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg"
+                >
+                  <option value="">Todas as tags</option>
+                  {tags.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      #{t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Pontuação */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                  Pontuação
+                </label>
+                <select
+                  value={scoreFilter}
+                  onChange={(e) => {
+                    setScoreFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg"
+                >
+                  <option value="">Todas as pontuações</option>
+                  <option value="very_hot">Muito Quente (75+)</option>
+                  <option value="hot">Quente (50-74)</option>
+                  <option value="warm">Morno (25-49)</option>
+                  <option value="cold">Frio (0-24)</option>
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Content Table */}
         {isLoading ? (
-          <LoadingState message="Loading contacts..." />
+          <LoadingState message="Carregando leads..." />
         ) : error ? (
           <ErrorState message={error} onRetry={fetchLeads} />
         ) : leads.length === 0 ? (
           <EmptyState
-            title="No leads found"
-            message="Create your first lead manually or import contacts from a CSV file."
+            title="Nenhum lead encontrado"
+            message="Crie seu primeiro lead manualmente ou ajuste os filtros acima."
           />
         ) : (
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
@@ -428,39 +555,21 @@ export function LeadsListPage() {
               <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
                 <thead className="bg-[#f8fafc] text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/80">
                   <tr>
-                    <th className="px-5 py-3.5">Lead Name</th>
-                    <th
-                      onClick={() => {
-                        setSortBy('lead_score');
-                        setSortOrder((prev) => (sortBy === 'lead_score' && prev === 'desc' ? 'asc' : 'desc'));
-                        setCurrentPage(1);
-                      }}
-                      className="px-5 py-3.5 cursor-pointer hover:bg-gray-100/70 select-none"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Score</span>
-                        {sortBy === 'lead_score' && (
-                          <span className="text-[10px] text-amber-600 font-bold">
-                            {sortOrder === 'asc' ? '▲' : '▼'}
-                          </span>
-                        )}
-                      </div>
-                    </th>
-                    <th className="px-5 py-3.5">Contact Info</th>
-                    <th className="px-5 py-3.5">Preference</th>
-                    <th className="px-5 py-3.5">Pipeline Stage</th>
-                    <th className="px-5 py-3.5">Qualification</th>
-                    <th className="px-5 py-3.5">Tags</th>
-                    <th className="px-5 py-3.5">Source</th>
-                    <th className="px-5 py-3.5">Created</th>
+                    <th className="px-5 py-3.5">Nome</th>
+                    <th className="px-5 py-3.5">Cursos de Interesse</th>
+                    <th className="px-5 py-3.5">Estágio</th>
+                    <th className="px-5 py-3.5">Contato</th>
+                    <th className="px-5 py-3.5">Quem indicou?</th>
+                    <th className="px-5 py-3.5">Data de Criação</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {leads.map((lead) => {
-                    const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed Lead';
+                    const fullName =
+                      [lead.first_name, lead.last_name].filter(Boolean).join(' ') ||
+                      'Lead sem nome';
                     const stage = stageMap[lead.pipeline_stage_id];
-                    const leadTags = leadTagsMap[lead.id] || [];
+                    const interests = (lead as any).lead_course_interests || [];
 
                     return (
                       <tr
@@ -468,107 +577,107 @@ export function LeadsListPage() {
                         onClick={() => navigate(`/leads/${lead.id}`)}
                         className="hover:bg-[#f0f5fb]/60 transition-colors cursor-pointer group"
                       >
+                        {/* 1. Nome */}
                         <td className="px-5 py-3.5 whitespace-nowrap">
-                          <div className="font-semibold text-slate-900 group-hover:text-[#08254f] transition-colors">{fullName}</div>
+                          <div className="font-semibold text-slate-900 group-hover:text-[#08254f] transition-colors">
+                            {fullName}
+                          </div>
                           {lead.external_lead_id && (
-                            <div className="text-[11px] text-slate-400">ID: {lead.external_lead_id}</div>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5 whitespace-nowrap">
-                          {(() => {
-                            const score = lead.lead_score ?? 0;
-                            const label = deriveScoreLabel(score);
-                            const badge = getScoreLabelBadge(label);
-                            return (
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-mono font-extrabold text-xs text-gray-900">
-                                  {score}
-                                </span>
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] border ${badge.bg} ${badge.text} ${badge.border}`}
-                                >
-                                  {badge.label}
-                                </span>
-                              </div>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-5 py-3.5 whitespace-nowrap text-xs text-gray-600">
-                          {lead.email ? (
-                            <div className="flex items-center gap-1.5 font-medium text-gray-800">
-                              <Mail className="h-3.5 w-3.5 text-gray-400" />
-                              {lead.email}
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 italic">No email</span>
-                          )}
-                          {lead.phone_raw && (
-                            <div className="flex items-center gap-1.5 text-gray-500 mt-0.5">
-                              <Phone className="h-3 w-3 text-gray-400" />
-                              {lead.phone_raw}
+                            <div className="text-[11px] text-slate-400">
+                              ID: {lead.external_lead_id}
                             </div>
                           )}
                         </td>
-                        <td className="px-5 py-3.5 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-gray-100 text-gray-700">
-                            {lead.contact_preference === 'email' && <Mail className="h-3 w-3" />}
-                            {lead.contact_preference === 'sms' && <Phone className="h-3 w-3" />}
-                            {lead.contact_preference === 'call' && <PhoneCall className="h-3 w-3" />}
-                            {lead.contact_preference.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5 whitespace-nowrap">
-                          {stage ? (
-                            <span
-                              className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-lg border ${getStageColor(
-                                stage.sort_order,
-                              )}`}
-                            >
-                              {stage.name}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">Unknown</span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5 whitespace-nowrap">
-                          {lead.qualification_status ? (
-                            (() => {
-                              const badge = getQualificationStatusBadge(lead.qualification_status);
-                              return (
-                                <span
-                                  className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-lg border ${badge.bg} ${badge.text} ${badge.border}`}
-                                >
-                                  {badge.label}
-                                </span>
-                              );
-                            })()
-                          ) : (
-                            <span className="text-xs text-gray-300">—</span>
-                          )}
-                        </td>
+
+                        {/* 2. Cursos de Interesse (up to 3 prioritized) */}
                         <td className="px-5 py-3.5">
-                          <div className="flex flex-wrap gap-1 max-w-[200px]">
-                            {leadTags.length > 0 ? (
-                              leadTags.map((t) => (
-                                <span
-                                  key={t.id}
-                                  className="px-2 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 rounded-md"
-                                >
-                                  #{t.name}
-                                </span>
-                              ))
+                          <div className="flex flex-col gap-1 max-w-[280px]">
+                            {interests.length > 0 ? (
+                              interests
+                                .sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99))
+                                .slice(0, 3)
+                                .map((interest: any, idx: number) => {
+                                  const formattedDate = formatSessionMonthYear(
+                                    interest.session?.start_date,
+                                  );
+                                  const courseName = interest.course?.name || 'Curso';
+                                  const label = formattedDate
+                                    ? `${courseName} • ${formattedDate}`
+                                    : courseName;
+
+                                  return (
+                                    <span
+                                      key={idx}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-slate-50 text-slate-700 rounded border border-slate-200/70 truncate"
+                                      title={label}
+                                    >
+                                      <span className="truncate">{label}</span>
+                                      {interest.priority && (
+                                        <span className="text-[9px] font-bold text-slate-400">
+                                          #{interest.priority}
+                                        </span>
+                                      )}
+                                    </span>
+                                  );
+                                })
+                            ) : lead.course_interest ? (
+                              <span className="inline-block px-2 py-0.5 text-[11px] font-medium bg-slate-50 text-slate-700 rounded border border-slate-200/70 truncate">
+                                {lead.course_interest}
+                              </span>
                             ) : (
-                              <span className="text-xs text-gray-300">—</span>
+                              <span className="text-slate-400 italic text-[11px]">
+                                Nenhum curso
+                              </span>
                             )}
                           </div>
                         </td>
+
+                        {/* 3. Estágio */}
                         <td className="px-5 py-3.5 whitespace-nowrap">
-                          <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-md bg-gray-100 text-gray-700 capitalize">
-                            {lead.source}
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 text-[11px] font-semibold rounded-full border ${getStageBadgeStyle(
+                              stage?.code,
+                            )}`}
+                          >
+                            {stage?.name || 'Novo Lead'}
                           </span>
                         </td>
-                        <td className="px-5 py-3.5 whitespace-nowrap text-xs text-gray-400">
-                          {new Date(lead.created_at).toLocaleDateString()}
+
+                        {/* 4. Contato (Email / Phone) */}
+                        <td className="px-5 py-3.5 whitespace-nowrap">
+                          <div className="space-y-0.5">
+                            {lead.email ? (
+                              <div className="flex items-center gap-1.5 text-slate-600">
+                                <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                                <span className="truncate max-w-[200px]">{lead.email}</span>
+                              </div>
+                            ) : null}
+                            {lead.phone_raw ? (
+                              <div className="flex items-center gap-1.5 text-slate-600">
+                                <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+                                <span>{lead.phone_raw}</span>
+                              </div>
+                            ) : null}
+                            {!lead.email && !lead.phone_raw && (
+                              <span className="text-slate-400 italic">Sem contato</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 5. Quem indicou? */}
+                        <td className="px-5 py-3.5 whitespace-nowrap">
+                          {lead.referred_by ? (
+                            <span className="text-slate-700 font-medium text-xs">
+                              {lead.referred_by}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">—</span>
+                          )}
+                        </td>
+
+                        {/* 6. Data de Criação */}
+                        <td className="px-5 py-3.5 whitespace-nowrap text-slate-500 text-xs">
+                          {new Date(lead.created_at).toLocaleDateString('pt-BR')}
                         </td>
                       </tr>
                     );
@@ -578,30 +687,26 @@ export function LeadsListPage() {
             </div>
 
             {/* Pagination Controls */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-t border-gray-100 bg-gray-50/50">
-              <div className="text-xs text-gray-500">
-                Showing <strong className="text-gray-900">{(currentPage - 1) * PAGE_SIZE + 1}</strong> to{' '}
-                <strong className="text-gray-900">
-                  {Math.min(currentPage * PAGE_SIZE, totalCount)}
-                </strong>{' '}
-                of <strong className="text-gray-900">{totalCount}</strong> leads
+            <div className="px-5 py-3.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+              <div>
+                Total de <strong className="text-slate-900">{totalCount}</strong> leads
+                encontrados
               </div>
-
               <div className="flex items-center gap-2">
                 <button
-                  disabled={currentPage <= 1}
-                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                  className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 transition-colors"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
-                <span className="text-xs font-semibold text-gray-700 px-2">
-                  Page {currentPage} of {totalPages}
+                <span className="font-medium">
+                  Página {currentPage} de {totalPages}
                 </span>
                 <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage >= totalPages}
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                  className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 transition-colors"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -616,7 +721,6 @@ export function LeadsListPage() {
           onClose={() => setIsNewLeadOpen(false)}
           onLeadCreated={fetchLeads}
         />
-
         <CsvImportModal
           isOpen={isImportOpen}
           onClose={() => setIsImportOpen(false)}

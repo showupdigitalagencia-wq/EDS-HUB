@@ -4,25 +4,42 @@ import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
-import type { Lead, PipelineStage, Tag } from '../../types';
-import { getQualificationStatusBadge } from '../leads/utils/qualificationMapping';
+import type { Lead, PipelineStage } from '../../types';
 import {
   Kanban,
   RotateCw,
   Plus,
-  Mail,
-  Phone,
-  Clock,
-  GripVertical,
 } from 'lucide-react';
 import { NewLeadModal } from '../leads/components/NewLeadModal';
+import {
+  MinimalLeadCard,
+  resolveAttentionState,
+  type FormattedCourseInterest,
+} from './components/MinimalLeadCard';
+
+const OPERATIONAL_STAGE_CODES = [
+  'capture',
+  'qualification',
+  'acquisition',
+  'approval',
+  'enrollment',
+] as const;
+
+const STAGE_ORDER_MAP: Record<string, number> = {
+  capture: 1,
+  qualification: 2,
+  acquisition: 3,
+  approval: 4,
+  enrollment: 5,
+};
 
 export function PipelineKanbanPage() {
   const navigate = useNavigate();
 
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [leadsByStage, setLeadsByStage] = useState<Record<string, Lead[]>>({});
-  const [leadTagsMap, setLeadTagsMap] = useState<Record<string, Tag[]>>({});
+  const [leadInterestsMap, setLeadInterestsMap] = useState<Record<string, FormattedCourseInterest[]>>({});
+  const [leadActivitiesMap, setLeadActivitiesMap] = useState<Record<string, string[]>>({});
   const [totalLeads, setTotalLeads] = useState(0);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -76,25 +93,49 @@ export function PipelineKanbanPage() {
 
       setLeadsByStage(grouped);
 
-      // 3. Load tags for these leads
+      // 3. Batch fetch course interests and recent activities for all leads
       if (allLeads.length > 0) {
         const leadIds = allLeads.map((l) => l.id);
-        const { data: tagLinks } = await supabase
-          .from('lead_tags')
-          .select('lead_id, tag_id, tags(*)')
-          .in('lead_id', leadIds);
 
-        const map: Record<string, Tag[]> = {};
-        if (tagLinks) {
-          tagLinks.forEach((link: any) => {
-            if (!map[link.lead_id]) map[link.lead_id] = [];
-            if (link.tags) map[link.lead_id].push(link.tags);
+        const [interestsRes, activitiesRes] = await Promise.all([
+          supabase
+            .from('lead_course_interests')
+            .select('lead_id, priority, course:courses(name), session:course_sessions(title, start_date)')
+            .in('lead_id', leadIds)
+            .order('priority', { ascending: true }),
+          supabase
+            .from('lead_activities')
+            .select('lead_id, summary')
+            .in('lead_id', leadIds)
+            .in('activity_type', ['processing_failed', 'website_lead_suppressed', 'channel_skipped'])
+            .order('created_at', { ascending: false }),
+        ]);
+
+        const intMap: Record<string, FormattedCourseInterest[]> = {};
+        if (interestsRes.data) {
+          interestsRes.data.forEach((row: any) => {
+            if (!intMap[row.lead_id]) intMap[row.lead_id] = [];
+            intMap[row.lead_id].push({
+              courseName: row.course?.name || 'Curso',
+              sessionTitle: row.session?.title,
+              startDate: row.session?.start_date,
+              priority: row.priority,
+            });
           });
         }
-        setLeadTagsMap(map);
+        setLeadInterestsMap(intMap);
+
+        const actMap: Record<string, string[]> = {};
+        if (activitiesRes.data) {
+          activitiesRes.data.forEach((row: any) => {
+            if (!actMap[row.lead_id]) actMap[row.lead_id] = [];
+            actMap[row.lead_id].push(row.summary);
+          });
+        }
+        setLeadActivitiesMap(actMap);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading pipeline data');
+      setError(err instanceof Error ? err.message : 'Erro ao carregar dados do pipeline');
     } finally {
       setIsLoading(false);
     }
@@ -129,7 +170,6 @@ export function PipelineKanbanPage() {
   };
 
   const moveLeadToStage = async (leadId: string, targetStageId: string) => {
-    // Find current stage of lead
     let currentStageId: string | null = null;
     for (const [stgId, lds] of Object.entries(leadsByStage)) {
       if (lds.some((l) => l.id === leadId)) {
@@ -162,7 +202,7 @@ export function PipelineKanbanPage() {
     } catch (err) {
       // Rollback on failure
       setLeadsByStage(previousState);
-      alert(err instanceof Error ? err.message : 'Failed to move lead stage');
+      alert(err instanceof Error ? err.message : 'Falha ao mover lead');
     }
   };
 
@@ -176,17 +216,21 @@ export function PipelineKanbanPage() {
     await moveLeadToStage(leadId, targetStageId);
   };
 
-  const getStageHeaderColor = (sortOrder: number) => {
-    switch (sortOrder) {
-      case 1: return 'border-t-[#08254f] bg-slate-50 text-[#08254f]';
-      case 2: return 'border-t-[#449bd5] bg-[#449bd5]/5 text-[#08254f]';
-      case 3: return 'border-t-indigo-600 bg-indigo-50/50 text-indigo-900';
-      case 4: return 'border-t-amber-600 bg-amber-50/50 text-amber-900';
-      case 5: return 'border-t-emerald-600 bg-emerald-50/50 text-emerald-900';
-      case 6: return 'border-t-[#8a1c1c] bg-[#8a1c1c]/5 text-[#8a1c1c]';
+  const getStageHeaderColor = (code: string) => {
+    switch (code) {
+      case 'capture': return 'border-t-[#08254f] bg-slate-50 text-[#08254f]';
+      case 'qualification': return 'border-t-[#449bd5] bg-[#449bd5]/5 text-[#08254f]';
+      case 'acquisition': return 'border-t-indigo-600 bg-indigo-50/50 text-indigo-900';
+      case 'approval': return 'border-t-amber-600 bg-amber-50/50 text-amber-900';
+      case 'enrollment': return 'border-t-emerald-600 bg-emerald-50/50 text-emerald-900';
       default: return 'border-t-slate-400 bg-slate-50 text-slate-800';
     }
   };
+
+  // Filter ONLY the 5 operational stages in strict order
+  const operationalStages = stages
+    .filter((s) => OPERATIONAL_STAGE_CODES.includes(s.code as any))
+    .sort((a, b) => (STAGE_ORDER_MAP[a.code] || 99) - (STAGE_ORDER_MAP[b.code] || 99));
 
   return (
     <Layout title="Commercial Pipeline">
@@ -199,9 +243,11 @@ export function PipelineKanbanPage() {
                 <Kanban className="h-5 w-5" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">Commercial Pipeline</h1>
+                <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">
+                  Commercial Pipeline
+                </h1>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Interactive drag-and-drop Kanban powered by {stages.length} official pipeline stages
+                  Pipeline Comercial • Gestão operacional de leads por estágio do funil
                 </p>
               </div>
             </div>
@@ -209,11 +255,11 @@ export function PipelineKanbanPage() {
 
           <div className="flex items-center gap-3">
             <span className="text-xs font-semibold px-3 py-1.5 bg-white border border-slate-200/80 rounded-xl text-slate-700 shadow-xs">
-              Total Leads: <strong className="text-[#08254f]">{totalLeads}</strong>
+              Total de Leads: <strong className="text-[#08254f]">{totalLeads}</strong>
             </span>
             <button
               onClick={loadPipelineData}
-              title="Refresh board"
+              title="Atualizar pipeline"
               className="p-2 text-slate-500 hover:text-slate-800 hover:bg-white border border-slate-200/80 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <RotateCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -223,20 +269,20 @@ export function PipelineKanbanPage() {
               className="btn-crimson text-xs"
             >
               <Plus className="h-3.5 w-3.5" />
-              New Lead
+              Novo Lead
             </button>
           </div>
         </div>
 
         {isLoading ? (
-          <LoadingState message="Loading pipeline stages and leads..." />
+          <LoadingState message="Carregando estágios e leads..." />
         ) : error ? (
           <ErrorState message={error} onRetry={loadPipelineData} />
         ) : (
           /* Kanban Board Scrollable Container */
-          <div className="overflow-x-auto pb-4 snap-x snap-mandatory scroll-smooth">
-            <div className="flex gap-3 sm:gap-4 min-w-[1400px]">
-              {stages.map((stage) => {
+          <div className="overflow-x-auto pb-4 snap-x snap-mandatory scroll-smooth w-full">
+            <div className="flex gap-3 sm:gap-4 min-w-[1250px]">
+              {operationalStages.map((stage) => {
                 const stageLeads = leadsByStage[stage.id] || [];
                 const isDropTarget = activeDropStageId === stage.id;
 
@@ -246,7 +292,7 @@ export function PipelineKanbanPage() {
                     onDragOver={(e) => handleDragOver(e, stage.id)}
                     onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, stage.id)}
-                    className={`flex-1 min-w-[260px] sm:min-w-[240px] max-w-[280px] snap-start rounded-2xl flex flex-col bg-slate-100/70 border transition-all duration-200 ${
+                    className={`flex-1 min-w-[240px] sm:min-w-[230px] max-w-[280px] snap-start rounded-2xl flex flex-col bg-slate-100/70 border transition-all duration-200 ${
                       isDropTarget
                         ? 'border-[#449bd5] bg-[#449bd5]/10 ring-2 ring-[#449bd5]/30 shadow-md'
                         : 'border-slate-200/80'
@@ -255,7 +301,7 @@ export function PipelineKanbanPage() {
                     {/* Column Header */}
                     <div
                       className={`px-3.5 py-3 rounded-t-2xl border-t-4 flex items-center justify-between font-heading ${getStageHeaderColor(
-                        stage.sort_order,
+                        stage.code,
                       )}`}
                     >
                       <div className="flex items-center gap-2">
@@ -267,129 +313,29 @@ export function PipelineKanbanPage() {
                     </div>
 
                     {/* Cards List */}
-                    <div className="p-2.5 flex-1 space-y-2.5 min-h-[500px] overflow-y-auto max-h-[75vh]">
-                      {stageLeads.map((lead) => {
-                        const fullName =
-                          [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed Lead';
-                        const tags = leadTagsMap[lead.id] || [];
-                        const isDragging = draggedLeadId === lead.id;
+                    <div className="p-2.5 flex-1 space-y-2 min-h-[480px] overflow-y-auto max-h-[75vh]">
+                      {stageLeads.length > 0 ? (
+                        stageLeads.map((lead) => {
+                          const interests = leadInterestsMap[lead.id] || [];
+                          const activities = leadActivitiesMap[lead.id] || [];
+                          const attentionState = resolveAttentionState(lead, activities);
+                          const isDragging = draggedLeadId === lead.id;
 
-                        return (
-                          <div
-                            key={lead.id}
-                            draggable
-                            onDragStart={() => handleDragStart(lead.id)}
-                            onClick={() => navigate(`/leads/${lead.id}`)}
-                            className={`p-3.5 bg-white rounded-xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#449bd5]/40 transition-all duration-150 cursor-grab active:cursor-grabbing space-y-2 group ${
-                              isDragging ? 'opacity-40 scale-95 border-dashed border-[#449bd5]' : ''
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-1">
-                              <h4 className="text-xs font-bold font-heading text-[#08254f] leading-tight line-clamp-1 group-hover:text-[#449bd5] transition-colors">
-                                {fullName}
-                              </h4>
-                              <div className="flex items-center gap-1 shrink-0">
-                                {lead.lead_score !== undefined && lead.lead_score !== null && (
-                                  <span
-                                    title={`Lead Score: ${lead.lead_score}`}
-                                    className="px-1.5 py-0.5 rounded text-[10px] font-extrabold font-mono bg-[#449bd5]/10 text-[#08254f] border border-[#449bd5]/20"
-                                  >
-                                    ⚡ {lead.lead_score}
-                                  </span>
-                                )}
-                                <GripVertical className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500 shrink-0" />
-                              </div>
-                            </div>
-
-                            {lead.course_interest && (
-                              <div className="text-[10px] font-medium text-slate-600 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 truncate">
-                                {lead.course_interest}
-                              </div>
-                            )}
-
-                            {lead.email && (
-                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate">
-                                <Mail className="h-3 w-3 text-slate-400 shrink-0" />
-                                <span className="truncate">{lead.email}</span>
-                              </div>
-                            )}
-
-                            {lead.phone_raw && (
-                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate">
-                                <Phone className="h-3 w-3 text-slate-400 shrink-0" />
-                                <span className="truncate">{lead.phone_raw}</span>
-                              </div>
-                            )}
-
-                            {/* Tags pill */}
-                            {tags.length > 0 && (
-                              <div className="flex flex-wrap gap-1 pt-1">
-                                {tags.slice(0, 2).map((t) => (
-                                  <span
-                                    key={t.id}
-                                    className="px-1.5 py-0.5 text-[9px] font-medium bg-slate-100 text-slate-600 rounded"
-                                  >
-                                    #{t.name}
-                                  </span>
-                                ))}
-                                {tags.length > 2 && (
-                                  <span className="text-[9px] text-slate-400">+{tags.length - 2}</span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Qualification badge */}
-                            {lead.qualification_status && (
-                              (() => {
-                                const badge = getQualificationStatusBadge(lead.qualification_status);
-                                return (
-                                  <div className="pt-0.5">
-                                    <span
-                                      className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-md border ${badge.bg} ${badge.text} ${badge.border}`}
-                                    >
-                                      {badge.label}
-                                    </span>
-                                  </div>
-                                );
-                              })()
-                            )}
-
-                            {/* Footer info & Touch stage changer */}
-                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1 text-[10px] text-slate-400">
-                              <span className="capitalize truncate max-w-[70px]">{lead.source}</span>
-                              <div className="flex items-center gap-1.5">
-                                <select
-                                  aria-label={`Mover estágio de ${fullName}`}
-                                  value={stage.id}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    moveLeadToStage(lead.id, e.target.value);
-                                  }}
-                                  className="text-[10px] py-0.5 px-1 rounded border border-slate-200 bg-slate-50 text-slate-700 font-medium cursor-pointer hover:bg-white transition-colors"
-                                >
-                                  {stages.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                      {s.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <span className="flex items-center gap-0.5 text-[9px] text-slate-400 shrink-0">
-                                  <Clock className="h-2.5 w-2.5" />
-                                  {new Date(lead.updated_at).toLocaleDateString([], {
-                                    month: 'short',
-                                    day: 'numeric',
-                                  })}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      {stageLeads.length === 0 && (
-                        <div className="h-24 flex items-center justify-center border-2 border-dashed border-slate-200/80 rounded-xl text-[11px] text-slate-400 font-medium">
-                          No leads in stage
+                          return (
+                            <MinimalLeadCard
+                              key={lead.id}
+                              lead={lead}
+                              interests={interests}
+                              attentionState={attentionState}
+                              isDragging={isDragging}
+                              onDragStart={() => handleDragStart(lead.id)}
+                              onClick={() => navigate(`/leads/${lead.id}`)}
+                            />
+                          );
+                        })
+                      ) : (
+                        <div className="flex flex-col items-center justify-center p-6 text-center text-slate-400 text-xs italic min-h-[120px]">
+                          Nenhum lead neste estágio
                         </div>
                       )}
                     </div>
@@ -400,6 +346,7 @@ export function PipelineKanbanPage() {
           </div>
         )}
 
+        {/* Modal: New Lead */}
         <NewLeadModal
           isOpen={isNewLeadOpen}
           onClose={() => setIsNewLeadOpen(false)}

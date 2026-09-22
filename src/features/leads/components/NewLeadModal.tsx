@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
-import type { PipelineStage, Tag, ContactPreference } from '../../../types';
-import { X, UserPlus, AlertCircle, Loader2 } from 'lucide-react';
+import type { Course, CourseSession } from '../../../types';
+import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
+import { X, UserPlus, AlertCircle, Loader2, Plus, Trash2 } from 'lucide-react';
 
 interface NewLeadModalProps {
   isOpen: boolean;
@@ -9,19 +10,25 @@ interface NewLeadModalProps {
   onLeadCreated: () => void;
 }
 
-export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalProps) {
-  const [stages, setStages] = useState<PipelineStage[]>([]);
-  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
-  const [newTagName, setNewTagName] = useState('');
+interface CourseInterestEntry {
+  courseId: string;
+  sessionId: string;
+}
 
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalProps) {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [sessions, setSessions] = useState<CourseSession[]>([]);
+
+  // Main Lead Fields
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [emailConfirmation, setEmailConfirmation] = useState('');
   const [phone, setPhone] = useState('');
-  const [contactPreference, setContactPreference] = useState<ContactPreference>('email');
-  const [pipelineStageId, setPipelineStageId] = useState('');
+  const [referredBy, setReferredBy] = useState('');
+
+  // Course Interests (up to 3 prioritized)
+  const [interests, setInterests] = useState<CourseInterestEntry[]>([
+    { courseId: '', sessionId: '' },
+  ]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,22 +36,33 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
   useEffect(() => {
     if (!isOpen) return;
 
-    // Load stages and tags
+    // Reset state on open
+    setError(null);
+    setFullName('');
+    setEmail('');
+    setPhone('');
+    setReferredBy('');
+    setInterests([{ courseId: '', sessionId: '' }]);
+
     async function loadData() {
-      const [stagesRes, tagsRes] = await Promise.all([
-        supabase.from('pipeline_stages').select('*').order('sort_order', { ascending: true }),
-        supabase.from('tags').select('*').order('name', { ascending: true }),
+      const [coursesRes, sessionsRes] = await Promise.all([
+        supabase
+          .from('courses')
+          .select('*')
+          .eq('active', true)
+          .order('name', { ascending: true }),
+        supabase
+          .from('course_sessions')
+          .select('*')
+          .in('status', ['open', 'confirmed', 'draft'])
+          .order('start_date', { ascending: true }),
       ]);
 
-      if (stagesRes.data) {
-        setStages(stagesRes.data);
-        const capture = stagesRes.data.find((s) => s.code === 'capture') || stagesRes.data[0];
-        if (capture) {
-          setPipelineStageId(capture.id);
-        }
+      if (coursesRes.data) {
+        setCourses(coursesRes.data);
       }
-      if (tagsRes.data) {
-        setAvailableTags(tagsRes.data);
+      if (sessionsRes.data) {
+        setSessions(sessionsRes.data as CourseSession[]);
       }
     }
 
@@ -53,115 +71,95 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
 
   if (!isOpen) return null;
 
-  const handleAddTag = async () => {
-    if (!newTagName.trim()) return;
-    const name = newTagName.trim();
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-
-    // Check if tag already exists in list
-    const existing = availableTags.find((t) => t.slug === slug);
-    if (existing) {
-      if (!selectedTagIds.includes(existing.id)) {
-        setSelectedTagIds([...selectedTagIds, existing.id]);
-      }
-      setNewTagName('');
-      return;
-    }
-
-    // Insert new tag
-    const { data: newTag, error: tagErr } = await supabase
-      .from('tags')
-      .insert({ name, slug })
-      .select()
-      .single();
-
-    if (!tagErr && newTag) {
-      setAvailableTags([...availableTags, newTag]);
-      setSelectedTagIds([...selectedTagIds, newTag.id]);
-      setNewTagName('');
+  // Add another course interest (up to 3 max)
+  const handleAddInterest = () => {
+    if (interests.length < 3) {
+      setInterests([...interests, { courseId: '', sessionId: '' }]);
     }
   };
 
-  const toggleTag = (tagId: string) => {
-    if (selectedTagIds.includes(tagId)) {
-      setSelectedTagIds(selectedTagIds.filter((id) => id !== tagId));
+  // Remove an interest
+  const handleRemoveInterest = (index: number) => {
+    if (interests.length > 1) {
+      setInterests(interests.filter((_, i) => i !== index));
     } else {
-      setSelectedTagIds([...selectedTagIds, tagId]);
+      // Clear the single one instead of removing
+      setInterests([{ courseId: '', sessionId: '' }]);
     }
+  };
+
+  // Update interest course
+  const handleCourseChange = (index: number, courseId: string) => {
+    const updated = [...interests];
+    updated[index].courseId = courseId;
+    updated[index].sessionId = ''; // reset session when course changes
+    setInterests(updated);
+  };
+
+  // Update interest session
+  const handleSessionChange = (index: number, sessionId: string) => {
+    const updated = [...interests];
+    updated[index].sessionId = sessionId;
+    setInterests(updated);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!firstName.trim() && !lastName.trim() && !email.trim()) {
-      setError('Please provide at least a name or an email for the lead.');
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedPhone = phone.trim();
+
+    if (!trimmedName && !trimmedEmail && !trimmedPhone) {
+      setError('Por favor, informe ao menos um nome, email ou telefone para o lead.');
       return;
     }
 
-    if (email.trim() && emailConfirmation.trim() && email.trim().toLowerCase() !== emailConfirmation.trim().toLowerCase()) {
-      setError('Email and Email Confirmation do not match.');
-      return;
+    // Split name into first and last
+    let firstName = trimmedName;
+    let lastName: string | null = null;
+    if (trimmedName.includes(' ')) {
+      const parts = trimmedName.split(/\s+/);
+      firstName = parts[0];
+      lastName = parts.slice(1).join(' ');
     }
 
-    if (!pipelineStageId) {
-      setError('Please select a pipeline stage.');
-      return;
-    }
+    // Format prioritized interests (1..3)
+    const validInterests = interests
+      .filter((i) => Boolean(i.courseId))
+      .slice(0, 3)
+      .map((item, idx) => ({
+        course_id: item.courseId,
+        course_session_id: item.sessionId ? item.sessionId : null,
+        priority: (idx + 1) as 1 | 2 | 3,
+      }));
 
     setIsSubmitting(true);
 
     try {
-      // 1. Insert lead (source = 'manual')
-      const { data: lead, error: leadErr } = await supabase
-        .from('leads')
-        .insert({
-          source: 'manual',
-          first_name: firstName.trim() || null,
-          last_name: lastName.trim() || null,
-          email: email.trim().toLowerCase() || null,
-          email_confirmation: emailConfirmation.trim().toLowerCase() || null,
-          phone_raw: phone.trim() || null,
-          phone_e164: phone.trim().startsWith('+') ? phone.trim() : null,
-          contact_preference: contactPreference,
-          pipeline_stage_id: pipelineStageId,
-        })
-        .select()
-        .single();
-
-      if (leadErr) throw leadErr;
-      if (!lead) throw new Error('Failed to create lead record.');
-
-      // 2. Insert initial stage history
-      await supabase.from('lead_stage_history').insert({
-        lead_id: lead.id,
-        from_stage_id: null,
-        to_stage_id: pipelineStageId,
-        change_reason: 'initial_assignment',
+      // Invoke atomic RPC create_manual_lead (Migration 00055)
+      const { data, error: rpcErr } = await supabase.rpc('create_manual_lead', {
+        p_first_name: firstName || null,
+        p_last_name: lastName || null,
+        p_email: trimmedEmail || null,
+        p_phone: trimmedPhone || null,
+        p_contact_preference: 'email', // Safe internal default satisfying DB NOT NULL constraint
+        p_stage_id: null, // Defaults to Novo Lead (code = 'capture')
+        p_referred_by: referredBy.trim() || null,
+        p_interests: validInterests,
+        p_tags: [],
       });
 
-      // 3. Insert activity audit log
-      await supabase.from('lead_activities').insert({
-        lead_id: lead.id,
-        activity_type: 'lead_created',
-        actor_type: 'user',
-        summary: `Lead created manually (${[firstName, lastName].filter(Boolean).join(' ') || email})`,
-        metadata: { source: 'manual' },
-      });
-
-      // 4. Attach tags
-      if (selectedTagIds.length > 0) {
-        const tagRows = selectedTagIds.map((tagId) => ({
-          lead_id: lead.id,
-          tag_id: tagId,
-        }));
-        await supabase.from('lead_tags').insert(tagRows);
+      if (rpcErr) throw rpcErr;
+      if (!data?.success) {
+        throw new Error(data?.error || 'Erro ao registrar lead manualmente');
       }
 
       onLeadCreated();
       onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create lead');
+    } catch (err: any) {
+      setError(err?.message || 'Falha ao criar o lead.');
     } finally {
       setIsSubmitting(false);
     }
@@ -169,15 +167,20 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto border border-slate-200/80">
-        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[92vh] overflow-y-auto border border-slate-200/80">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
               <UserPlus className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold font-heading text-[#08254f]">Add New Lead</h2>
-              <p className="text-xs text-slate-500">Register a lead manually into the CRM</p>
+              <h2 className="text-base font-bold font-heading text-[#08254f]">
+                Adicionar Novo Lead
+              </h2>
+              <p className="text-xs text-slate-500">
+                Cadastro manual no funil de vendas (Novo Lead)
+              </p>
             </div>
           </div>
           <button
@@ -189,153 +192,176 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        {/* Modal Form */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="flex items-center gap-2 p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl">
+            <div className="flex items-center gap-2 p-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">First Name</label>
-              <input
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                placeholder="John"
-                className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Last Name</label>
-              <input
-                type="text"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                placeholder="Smith"
-                className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
-              />
-            </div>
+          {/* Nome Completo */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Nome Completo
+            </label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Dr. João Silva"
+              className="w-full px-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f] focus:border-transparent transition-all"
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Email e Telefone em grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Email Address</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Email
+              </label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="doctor@example.com"
-                className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+                placeholder="doutor@exemplo.com"
+                className="w-full px-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f] focus:border-transparent transition-all"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Confirm Email</label>
-              <input
-                type="email"
-                value={emailConfirmation}
-                onChange={(e) => setEmailConfirmation(e.target.value)}
-                placeholder="Repeat email"
-                className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Phone Number</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Telefone
+              </label>
               <input
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="+15551234567"
-                className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+                placeholder="(11) 98765-4321"
+                className="w-full px-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f] focus:border-transparent transition-all"
               />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Contact Preference</label>
-              <select
-                value={contactPreference}
-                onChange={(e) => setContactPreference(e.target.value as ContactPreference)}
-                className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all bg-white"
-              >
-                <option value="email">Email</option>
-                <option value="sms">SMS</option>
-                <option value="call">Phone Call</option>
-              </select>
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Initial Pipeline Stage</label>
-            <select
-              value={pipelineStageId}
-              onChange={(e) => setPipelineStageId(e.target.value)}
-              className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all bg-white"
-            >
-              {stages.map((stage) => (
-                <option key={stage.id} value={stage.id}>
-                  {stage.name} ({stage.sort_order})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Tags</label>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {availableTags.map((t) => {
-                const isSelected = selectedTagIds.includes(t.id);
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => toggleTag(t.id)}
-                    className={`px-2.5 py-1 text-xs rounded-lg font-medium border transition-colors ${
-                      isSelected
-                        ? 'bg-brand-50 border-brand-300 text-brand-700'
-                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    {isSelected ? '✓ ' : '+ '}
-                    {t.name}
-                  </button>
-                );
-              })}
+          {/* Cursos de Interesse (1 a 3) */}
+          <div className="pt-2 border-t border-slate-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-800">
+                Cursos de Interesse (até 3)
+              </label>
+              <span className="text-[11px] text-slate-400">
+                {interests.length} de 3
+              </span>
             </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddTag();
-                  }
-                }}
-                placeholder="New tag name..."
-                className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500"
-              />
+
+            {interests.map((interest, idx) => {
+              const availableSessions = interest.courseId
+                ? sessions.filter((s) => s.course_id === interest.courseId)
+                : [];
+
+              return (
+                <div
+                  key={idx}
+                  className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2 relative"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] font-bold text-[#08254f]">
+                      Interesse #{idx + 1}
+                    </span>
+                    {interests.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveInterest(idx)}
+                        className="text-slate-400 hover:text-rose-600 transition-colors"
+                        title="Remover este curso"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {/* Curso */}
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-500 mb-1">
+                        Curso
+                      </label>
+                      <select
+                        value={interest.courseId}
+                        onChange={(e) => handleCourseChange(idx, e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#08254f]"
+                      >
+                        <option value="">Selecione um curso...</option>
+                        {courses.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Turma / Data */}
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-500 mb-1">
+                        Turma / Data (Opcional)
+                      </label>
+                      <select
+                        value={interest.sessionId}
+                        onChange={(e) => handleSessionChange(idx, e.target.value)}
+                        disabled={!interest.courseId}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#08254f] disabled:bg-gray-100 disabled:text-gray-400"
+                      >
+                        <option value="">Sem turma definida</option>
+                        {availableSessions.map((s) => {
+                          const dateFmt = formatSessionMonthYear(s.start_date);
+                          return (
+                            <option key={s.id} value={s.id}>
+                              {dateFmt ? `${dateFmt} (${s.title})` : s.title}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Progressive Add Button (Up to 3 max) */}
+            {interests.length < 3 && (
               <button
                 type="button"
-                onClick={handleAddTag}
-                className="px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors"
+                onClick={handleAddInterest}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#449bd5] hover:text-[#08254f] transition-colors py-1"
               >
-                Add Tag
+                <Plus className="h-3.5 w-3.5" />
+                <span>+ Adicionar outro curso</span>
               </button>
-            </div>
+            )}
           </div>
 
+          {/* Quem indicou? */}
+          <div className="pt-2 border-t border-slate-100">
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Quem indicou?
+            </label>
+            <input
+              type="text"
+              value={referredBy}
+              onChange={(e) => setReferredBy(e.target.value)}
+              placeholder="Ex: Dra. Camila ou Dr. Pedro"
+              className="w-full px-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f] focus:border-transparent transition-all"
+            />
+          </div>
+
+          {/* Form Actions */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
               className="btn-secondary text-xs"
             >
-              Cancel
+              Cancelar
             </button>
             <button
               type="submit"
@@ -345,10 +371,10 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Creating...
+                  Salvando...
                 </>
               ) : (
-                'Create Lead'
+                'Criar Lead'
               )}
             </button>
           </div>

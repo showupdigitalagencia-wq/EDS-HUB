@@ -148,6 +148,7 @@ export interface Lead {
   course_interests: string[];
   pipeline_stage_id: string;
   referred_by?: string | null;
+  source_detail?: string | null;
   source_created_at: string | null;
   last_response_at?: string | null;
   lead_score?: number;
@@ -1783,6 +1784,30 @@ export interface LeadCourseInterest {
   created_at: string;
   updated_at: string;
   course?: Course;
+  session?: CourseSession;
+  course_session?: CourseSession;
+}
+
+export interface CreateManualLeadParams {
+  p_first_name?: string | null;
+  p_last_name?: string | null;
+  p_email?: string | null;
+  p_phone?: string | null;
+  p_contact_preference?: ContactPreference;
+  p_stage_id?: string | null;
+  p_referred_by?: string | null;
+  p_interests?: Array<{
+    course_id: string;
+    course_session_id?: string | null;
+    priority: 1 | 2 | 3;
+  }>;
+  p_tags?: string[];
+}
+
+export interface CreateManualLeadResult {
+  success: boolean;
+  lead_id?: string;
+  error?: string;
 }
 
 export interface PostCourseFeedbackToken {
