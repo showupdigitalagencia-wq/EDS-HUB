@@ -135,11 +135,13 @@ Deno.serve(async (req) => {
     const {
       slug,
       idempotency_key,
+      external_attempt_id,
       fields = {},
       _hp_company,
     } = payload as {
       slug?: string;
       idempotency_key?: string;
+      external_attempt_id?: string;
       fields?: Record<string, unknown>;
       _hp_company?: string;
     };
@@ -170,9 +172,55 @@ Deno.serve(async (req) => {
       );
     }
 
+    // 2.3 Strict Privacy Guard: NEVER persist medical, dietary, files, signature, emergency contact
+    delete fields.medical_conditions;
+    delete fields.dietary;
+    delete fields.passport;
+    delete fields.dental_license;
+    delete fields.emergency_phone;
+    delete fields.certificate_name;
+    delete fields.coat_size;
+    delete fields.signature;
+    delete fields.email_confirmation;
+    delete fields.date;
+    delete fields.formData;
+    delete fields.raw_form_data;
+    delete fields.form_data;
+
+    // 2.4 Terms accepted semantics: only store true upon confirmed application submission
+    if ('terms_accepted' in fields) {
+      if (fields.terms_accepted === true || fields.terms_accepted === 'true' || fields.terms_accepted === 1 || fields.terms_accepted === '1') {
+        fields.terms_accepted = true;
+      } else {
+        delete fields.terms_accepted;
+      }
+    }
+
+    // 2.5 Conservative single-name splitting (first token = first_name, remainder = last_name)
+    if (fields.name && typeof fields.name === 'string') {
+      const trimmedName = fields.name.trim();
+      if (trimmedName && !fields.first_name) {
+        const spaceIndex = trimmedName.indexOf(' ');
+        if (spaceIndex > 0) {
+          fields.first_name = trimmedName.substring(0, spaceIndex);
+          fields.last_name = trimmedName.substring(spaceIndex + 1).trim();
+        } else {
+          fields.first_name = trimmedName;
+          fields.last_name = '';
+        }
+      }
+    }
+
+    // Bidirectional course field mapping fallback
+    if (!fields.course && fields.course_interest) {
+      fields.course = fields.course_interest;
+    } else if (!fields.course_interest && fields.course) {
+      fields.course_interest = fields.course;
+    }
+
     const db = createAdminClient();
 
-    // 2.3 Verify active form
+    // 2.5 Verify active form
     const { data: form, error: formError } = await db
       .from('forms')
       .select('id, name, slug, status, current_version, success_message, redirect_url, source_detail')
@@ -186,7 +234,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 2.4 Persistent IP Rate Limiting
+    // 2.6 Persistent IP Rate Limiting
     const rawIp =
       req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
       req.headers.get('cf-connecting-ip')?.trim() ||
@@ -219,7 +267,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 2.5 Field schema validation
+    // 2.7 Field schema validation
     const { data: activeFields, error: activeFieldsErr } = await db
       .from('form_fields')
       .select('internal_name, label, field_type, required, options')
@@ -280,11 +328,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    const courseInterest = fields.course_interest ? String(fields.course_interest).trim() : null;
+    const courseInterest = (fields.course_interest ? String(fields.course_interest).trim() : null) ||
+      (fields.course ? String(fields.course).trim() : null);
     const userAgent = req.headers.get('user-agent') || null;
+    const effectiveAttemptId = external_attempt_id || fields.external_attempt_id
+      ? String(external_attempt_id || fields.external_attempt_id).trim()
+      : null;
 
     // =========================================================================
-    // 2.6 Execute Private Atomic PostgreSQL Transaction
+    // 2.8 Execute Private Atomic PostgreSQL Transaction
     // =========================================================================
     const { data: txResult, error: txError } = await db.rpc(
       'process_form_submission_transaction',
@@ -298,6 +350,7 @@ Deno.serve(async (req) => {
         p_course_interest: courseInterest,
         p_ip_address: rawIp,
         p_user_agent: userAgent,
+        p_external_attempt_id: effectiveAttemptId,
       }
     );
 

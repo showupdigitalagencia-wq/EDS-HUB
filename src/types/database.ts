@@ -73,7 +73,7 @@ export type ActivityType =
   | 'incomplete_enrollment_dismissed';
 
 export type IncompleteEnrollmentProcessingStatus = 'processed' | 'conflict';
-export type IncompleteEnrollmentStatus = 'needs_followup' | 'recovered' | 'dismissed';
+export type IncompleteEnrollmentStatus = 'needs_followup' | 'form_completed' | 'recovered' | 'dismissed';
 
 export interface IncompleteEnrollment {
   id: string;
@@ -91,6 +91,7 @@ export interface IncompleteEnrollment {
   utm_term?: string | null;
   utm_content?: string | null;
   task_id?: string | null;
+  resolved_form_submission_id?: string | null;
   resolved_enrollment_id?: string | null;
   resolved_at?: string | null;
   created_at: string;

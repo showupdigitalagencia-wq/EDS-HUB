@@ -33,6 +33,7 @@ export async function fetchActiveIncompleteEnrollment(
         utm_medium,
         utm_campaign,
         task_id,
+        resolved_form_submission_id,
         resolved_enrollment_id,
         resolved_at,
         created_at,
