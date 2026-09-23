@@ -679,6 +679,7 @@ export function LeadProfileContent({
           <LeadConversationsCard
             lead={lead}
             onLeadUpdated={handleLeadRefresh}
+            onOpenComposer={() => setIsEmailComposerOpen(true)}
           />
         </div>
       )}

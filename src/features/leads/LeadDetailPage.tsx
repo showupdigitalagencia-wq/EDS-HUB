@@ -653,7 +653,11 @@ export function LeadDetailPage() {
             <LeadTimeline activities={activities} />
 
             {/* 3. Conversations Thread */}
-            <LeadConversationsCard lead={lead} onLeadUpdated={loadLeadData} />
+            <LeadConversationsCard
+              lead={lead}
+              onLeadUpdated={loadLeadData}
+              onOpenComposer={() => setIsEmailComposerOpen(true)}
+            />
 
             {/* 3. Notes Section */}
             <div className="card-executive p-5 space-y-4">
