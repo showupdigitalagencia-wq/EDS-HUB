@@ -113,6 +113,7 @@ export const PostCoursePage: React.FC = () => {
       eyebrow="OPERAÇÕES ACADÊMICAS"
       title="Pós-Curso & Alumni"
       subtitle="Acompanhamento de satisfação, coleta de depoimentos, oportunidades de próximo curso e comunidade Alumni"
+      backTo="/courses/operations"
       actions={
         <div className="flex items-center gap-2">
           {/* Export Menu */}

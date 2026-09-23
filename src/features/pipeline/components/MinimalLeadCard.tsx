@@ -172,22 +172,26 @@ export function MinimalLeadCard({
       {(phoneValue || emailValue) ? (
         <div className="space-y-0.5 pt-0.5">
           {phoneValue && (
-            <div
-              className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate"
-              title={phoneValue}
+            <a
+              href={`tel:${phoneValue.replace(/\D/g, '')}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate hover:text-[#08254f] transition-colors cursor-pointer"
+              title={`Ligar para ${phoneValue}`}
             >
               <Phone className="h-3 w-3 text-slate-400 shrink-0" />
               <span className="truncate">{phoneValue}</span>
-            </div>
+            </a>
           )}
           {emailValue && (
-            <div
-              className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate"
-              title={emailValue}
+            <a
+              href={`mailto:${emailValue}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate hover:text-[#08254f] transition-colors cursor-pointer"
+              title={`Enviar e-mail para ${emailValue}`}
             >
               <Mail className="h-3 w-3 text-slate-400 shrink-0" />
               <span className="truncate">{emailValue}</span>
-            </div>
+            </a>
           )}
         </div>
       ) : (

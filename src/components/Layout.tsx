@@ -1,9 +1,11 @@
 import { useState, type ReactNode } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { MobileBottomNav } from './MobileBottomNav';
 import { MobileMenuSheet } from './MobileMenuSheet';
 import { MobileHeader } from './MobileHeader';
 import { useAuth } from '../features/auth/AuthProvider';
+import { useSafeBackNavigation } from '../hooks/useSafeBackNavigation';
 
 interface LayoutProps {
   children: ReactNode;
@@ -28,6 +30,19 @@ export function Layout({
 }: LayoutProps) {
   const { appUser } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const safeBack = useSafeBackNavigation(backTo || '/');
+
+  const handleBackClick = () => {
+    if (onBack) {
+      onBack();
+    } else if (backTo) {
+      safeBack();
+    }
+  };
+
+  const hasBack = Boolean(backTo || onBack);
+  // Never hide mobile bottom navigation unless a top back button is guaranteed to be present
+  const shouldHideBottomNav = hideBottomNav && hasBack;
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#f7f9fc] w-full overflow-x-hidden text-slate-800">
@@ -48,13 +63,32 @@ export function Layout({
           actions={actions}
         />
 
-        {/* B. Desktop Top Bar (>= lg) - Clean Executive Header without fake features */}
+        {/* B. Desktop Top Bar (>= lg) - Clean Executive Header with Global Safe Back */}
         <header className="hidden lg:flex sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-8 py-3.5 shadow-2xs items-center justify-between min-h-[58px]">
-          {/* Breadcrumb / Workspace Context */}
-          <div className="flex items-center gap-2">
+          {/* Breadcrumb / Workspace Context & Back Button */}
+          <div className="flex items-center gap-2.5">
+            {hasBack && (
+              <button
+                type="button"
+                onClick={handleBackClick}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200/80 text-slate-600 hover:text-[#08254f] hover:bg-slate-50 transition-colors text-xs font-semibold cursor-pointer shadow-2xs mr-1"
+                title="Voltar"
+              >
+                <ArrowLeft className="h-3.5 w-3.5 text-[#08254f]" />
+                <span>Voltar</span>
+              </button>
+            )}
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 font-heading">
               EDS HUB
             </span>
+            {hasBack && (
+              <>
+                <span className="text-slate-300 font-medium">/</span>
+                <span className="text-xs font-medium text-slate-600 truncate max-w-xs">
+                  {title}
+                </span>
+              </>
+            )}
           </div>
 
           {/* User Profile Pill */}
@@ -102,7 +136,7 @@ export function Layout({
       </div>
 
       {/* 3. Fixed Mobile Bottom Navigation Bar (< lg) */}
-      {!hideBottomNav && (
+      {!shouldHideBottomNav && (
         <MobileBottomNav
           onOpenMenu={() => setMobileMenuOpen(true)}
           isMenuOpen={mobileMenuOpen}

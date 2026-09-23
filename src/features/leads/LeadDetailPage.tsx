@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
@@ -36,10 +36,12 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { moveLeadToAlumni } from '../courses/services/post-course-service';
+import { useSafeBackNavigation } from '../../hooks/useSafeBackNavigation';
 
 export function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const safeBack = useSafeBackNavigation('/leads');
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [stages, setStages] = useState<PipelineStage[]>([]);
@@ -351,13 +353,14 @@ export function LeadDetailPage() {
           {/* Identity & Top Actions */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3">
-              <Link
-                to="/leads"
-                className="p-2 rounded-xl border border-slate-200/80 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors shadow-xs shrink-0"
-                title="Voltar para a lista de contatos"
+              <button
+                type="button"
+                onClick={safeBack}
+                className="p-2 rounded-xl border border-slate-200/80 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors shadow-xs shrink-0 cursor-pointer"
+                title="Voltar"
               >
                 <ArrowLeft className="h-5 w-5" />
-              </Link>
+              </button>
 
               {/* Profile Avatar Tile */}
               <div className="w-11 h-11 rounded-2xl bg-[#08254f] text-white flex items-center justify-center text-sm font-bold shadow-xs shrink-0 font-heading">

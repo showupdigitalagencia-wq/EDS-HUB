@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
@@ -37,6 +37,7 @@ const OPERATIONAL_STAGE_CODES = [
 ] as const;
 
 export function LeadsListPage() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sortParam = searchParams.get('sort');
 
@@ -567,7 +568,7 @@ export function LeadsListPage() {
                 return (
                   <div
                     key={lead.id}
-                    onClick={() => setSelectedLeadId(lead.id)}
+                    onClick={() => navigate(`/leads/${lead.id}`)}
                     className="p-3.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-[#449bd5]/50 transition-all duration-150 cursor-pointer space-y-2 select-none group"
                   >
                     {/* 1. Nome (Destaque Principal) + Discrete Stage Badge */}
@@ -597,22 +598,26 @@ export function LeadsListPage() {
                     {(phoneValue || emailValue) ? (
                       <div className="space-y-0.5 pt-0.5">
                         {phoneValue && (
-                          <div
-                            className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate"
-                            title={phoneValue}
+                          <a
+                            href={`tel:${phoneValue.replace(/\D/g, '')}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate hover:text-[#08254f] transition-colors cursor-pointer"
+                            title={`Ligar para ${phoneValue}`}
                           >
                             <Phone className="h-3 w-3 text-slate-400 shrink-0" />
                             <span className="truncate">{phoneValue}</span>
-                          </div>
+                          </a>
                         )}
                         {emailValue && (
-                          <div
-                            className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate"
-                            title={emailValue}
+                          <a
+                            href={`mailto:${emailValue}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate hover:text-[#08254f] transition-colors cursor-pointer"
+                            title={`Enviar e-mail para ${emailValue}`}
                           >
                             <Mail className="h-3 w-3 text-slate-400 shrink-0" />
                             <span className="truncate">{emailValue}</span>
-                          </div>
+                          </a>
                         )}
                       </div>
                     ) : (
@@ -718,7 +723,7 @@ export function LeadsListPage() {
                       return (
                         <tr
                           key={lead.id}
-                          onClick={() => setSelectedLeadId(lead.id)}
+                          onClick={() => navigate(`/leads/${lead.id}`)}
                           className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
                         >
                           {/* 1. Nome & External ID */}
@@ -782,16 +787,26 @@ export function LeadsListPage() {
                           <td className="px-5 py-3.5 whitespace-nowrap">
                             <div className="space-y-0.5">
                               {lead.email ? (
-                                <div className="flex items-center gap-1.5 text-slate-600">
+                                <a
+                                  href={`mailto:${lead.email}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex items-center gap-1.5 text-slate-600 hover:text-[#08254f] transition-colors cursor-pointer"
+                                  title={`Enviar e-mail para ${lead.email}`}
+                                >
                                   <Mail className="h-3 w-3 text-slate-400 shrink-0" />
                                   <span className="truncate max-w-[200px]">{lead.email}</span>
-                                </div>
+                                </a>
                               ) : null}
                               {lead.phone_raw ? (
-                                <div className="flex items-center gap-1.5 text-slate-600">
+                                <a
+                                  href={`tel:${lead.phone_raw.replace(/\D/g, '')}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex items-center gap-1.5 text-slate-600 hover:text-[#08254f] transition-colors cursor-pointer"
+                                  title={`Ligar para ${lead.phone_raw}`}
+                                >
                                   <Phone className="h-3 w-3 text-slate-400 shrink-0" />
                                   <span>{lead.phone_raw}</span>
-                                </div>
+                                </a>
                               ) : null}
                               {!lead.email && !lead.phone_raw && (
                                 <span className="text-slate-400 italic">Sem contato</span>

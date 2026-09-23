@@ -402,7 +402,7 @@ export function LeadScoringSettingsPage() {
 
   if (isLoading) {
     return (
-      <Layout title="Lead Scoring & Sales Intelligence">
+      <Layout backTo="/settings" title="Lead Scoring & Sales Intelligence">
         <LoadingState message="Loading lead scoring rules and thresholds..." />
       </Layout>
     );
@@ -410,7 +410,7 @@ export function LeadScoringSettingsPage() {
 
   if (error) {
     return (
-      <Layout title="Lead Scoring & Sales Intelligence">
+      <Layout backTo="/settings" title="Lead Scoring & Sales Intelligence">
         <ErrorState message={error} onRetry={loadData} />
       </Layout>
     );
@@ -423,6 +423,7 @@ export function LeadScoringSettingsPage() {
 
   return (
     <Layout
+      backTo="/settings"
       eyebrow="INTELIGÊNCIA & QUALIFICAÇÃO"
       title="Lead Scoring & Inteligência de Vendas"
       subtitle="Regras determinísticas de priorização (Fit, Intenção e Engajamento), thresholds e motor de score"

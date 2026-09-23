@@ -33,7 +33,7 @@ const mockLead: Lead = {
 
 describe('EDS HUB — Batch 4.3 Premium Experience & Safety Verifications', () => {
   describe('Correction 8: Pipeline Click vs Drag Separation', () => {
-    it('opens LeadQuickViewDrawer on normal click without moving stage', () => {
+    it('triggers card onClick on normal click without moving stage', () => {
       const onClick = vi.fn();
       render(
         <MemoryRouter>
@@ -47,7 +47,7 @@ describe('EDS HUB — Batch 4.3 Premium Experience & Safety Verifications', () =
       expect(onClick).toHaveBeenCalled();
     });
 
-    it('does NOT open drawer when card is actively dragged', () => {
+    it('does NOT trigger onClick when card is actively dragged', () => {
       const onClick = vi.fn();
       render(
         <MemoryRouter>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Layout } from '../../components/Layout';
 import {
   Calendar,
@@ -155,6 +155,13 @@ export const SessionDetailPage: React.FC = () => {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div className="space-y-2">
             <div className="flex items-center gap-2.5 flex-wrap">
+              <Link
+                to="/courses/operations"
+                className="p-1.5 rounded-lg border border-slate-200/80 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors shadow-2xs shrink-0"
+                title="Voltar para Turmas"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
               <span className="px-2.5 py-0.5 rounded-md font-mono text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200">
                 {session.code}
               </span>

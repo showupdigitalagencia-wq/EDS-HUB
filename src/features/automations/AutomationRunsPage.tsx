@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import {
@@ -18,7 +18,13 @@ import type { Automation, AutomationRun, AutomationRunStep } from '../../types/d
 
 export function AutomationRunsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams<{ id: string }>();
+
+  const isSequence = location.pathname.startsWith('/sequences');
+  const backFallback = isSequence
+    ? (id ? `/sequences/${id}` : '/sequences')
+    : (id ? `/automations/${id}` : '/automations');
 
   const [automation, setAutomation] = useState<Automation | null>(null);
   const [runs, setRuns] = useState<AutomationRun[]>([]);
@@ -199,7 +205,7 @@ export function AutomationRunsPage() {
 
   return (
     <Layout
-      backTo={id ? `/automations/${id}` : '/automations'}
+      backTo={backFallback}
       eyebrow="MOTORES & FLUXOS"
       title={`Execuções: ${automation?.name || 'Automação'}`}
       subtitle="Histórico detalhado de execução e inspeção passo a passo de contatos inscritos"

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
@@ -33,6 +34,7 @@ const STAGE_ORDER_MAP: Record<string, number> = {
 };
 
 export function PipelineKanbanPage() {
+  const navigate = useNavigate();
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [leadsByStage, setLeadsByStage] = useState<Record<string, Lead[]>>({});
   const [leadInterestsMap, setLeadInterestsMap] = useState<Record<string, FormattedCourseInterest[]>>({});
@@ -388,7 +390,7 @@ export function PipelineKanbanPage() {
                                 attentionState={attentionState}
                                 isDragging={isDragging}
                                 onDragStart={() => handleDragStart(lead.id)}
-                                onClick={() => setSelectedLeadId(lead.id)}
+                                onClick={() => navigate(`/leads/${lead.id}`)}
                               />
                             );
                           })

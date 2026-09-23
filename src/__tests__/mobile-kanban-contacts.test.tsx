@@ -3,7 +3,22 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PipelineKanbanPage } from '../features/pipeline/PipelineKanbanPage';
 import { LeadsListPage } from '../features/leads/LeadsListPage';
+import { MinimalLeadCard } from '../features/pipeline/components/MinimalLeadCard';
+import { MobileHeader } from '../components/MobileHeader';
+import { MobileBottomNav } from '../components/MobileBottomNav';
+import { Layout } from '../components/Layout';
 import { supabase } from '../lib/supabase';
+import type { Lead } from '../types';
+
+// Mock navigation
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
 
 // Mock AuthProvider context
 vi.mock('../features/auth/AuthProvider', () => ({
@@ -45,11 +60,54 @@ function createChainableMock(data: any = [], count?: number) {
   return mock;
 }
 
+const mockLeadWithCourse: Lead = {
+  id: 'lead-test-1',
+  first_name: 'Dra. Camila',
+  last_name: 'Nogueira',
+  email: 'camila@odontoclinic.com',
+  email_confirmation: null,
+  phone_e164: '+5511977778888',
+  phone_raw: '(11) 97777-8888',
+  contact_preference: 'email',
+  pipeline_stage_id: 'stage-1',
+  qualification_status: 'interested',
+  course_interest: 'Harmonização Avançada',
+  course_interests: ['Harmonização Avançada'],
+  source: 'meta',
+  external_lead_id: null,
+  hubspot_contact_id: null,
+  source_created_at: null,
+  lead_score: 90,
+  created_at: '2026-03-01T10:00:00Z',
+  updated_at: '2026-03-01T10:00:00Z',
+};
+
+const mockLeadWithoutCourse: Lead = {
+  id: 'lead-test-2',
+  first_name: 'Dr. Lucas',
+  last_name: 'Ferreira',
+  email: 'lucas@exemplo.com',
+  email_confirmation: null,
+  phone_e164: '+5531966665555',
+  phone_raw: '(31) 96666-5555',
+  contact_preference: 'call',
+  pipeline_stage_id: 'stage-4',
+  qualification_status: 'hot',
+  course_interest: null,
+  course_interests: [],
+  source: 'manual',
+  external_lead_id: null,
+  hubspot_contact_id: null,
+  source_created_at: null,
+  lead_score: 40,
+  created_at: '2026-03-02T10:00:00Z',
+  updated_at: '2026-03-02T10:00:00Z',
+};
+
 describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    // Mock scrollIntoView for DOM elements
+    mockNavigate.mockReset();
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
@@ -112,12 +170,10 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         </MemoryRouter>
       );
 
-      // Wait for stages and leads to load
       await waitFor(() => {
         expect(screen.getByText('Dra. Vanessa Menezes')).toBeInTheDocument();
       });
 
-      // Verify all 5 stage columns are present with IDs for snapping and scrolling
       const colCapture = document.getElementById('kanban-col-capture');
       const colQual = document.getElementById('kanban-col-qualification');
       const colAcq = document.getElementById('kanban-col-acquisition');
@@ -130,15 +186,12 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       expect(colApp).toBeInTheDocument();
       expect(colEnr).toBeInTheDocument();
 
-      // Verify column styling classes for comfortable mobile width and snap-center
       expect(colCapture?.className).toContain('w-[84vw]');
       expect(colCapture?.className).toContain('snap-center');
 
-      // Verify lead cards inside their respective columns
       expect(colCapture).toHaveTextContent('Dra. Vanessa Menezes');
       expect(colApp).toHaveTextContent('Dr. Roberto Albuquerque');
 
-      // Verify empty stage indicators
       expect(colQual).toHaveTextContent('Nenhum lead neste estágio');
       expect(colAcq).toHaveTextContent('Nenhum lead neste estágio');
       expect(colEnr).toHaveTextContent('Nenhum lead neste estágio');
@@ -161,7 +214,6 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         expect(screen.getByText('Dra. Vanessa Menezes')).toBeInTheDocument();
       });
 
-      // Find quick-jump button for 'Matrícula'
       const matriculaButtons = screen.getAllByRole('button', { name: /Matrícula/i });
       expect(matriculaButtons.length).toBeGreaterThan(0);
 
@@ -175,12 +227,115 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         block: 'nearest',
       });
     });
+
+    it('navigates directly to /leads/:id when a Pipeline card is clicked', async () => {
+      (supabase.from as any).mockImplementation((table: string) => {
+        if (table === 'pipeline_stages') return createChainableMock(mockStages);
+        if (table === 'leads') return createChainableMock(mockLeads);
+        return createChainableMock([]);
+      });
+
+      render(
+        <MemoryRouter>
+          <PipelineKanbanPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Dra. Vanessa Menezes')).toBeInTheDocument();
+      });
+
+      const card = screen.getByText('Dra. Vanessa Menezes').closest('div[role="article"]');
+      expect(card).toBeInTheDocument();
+      fireEvent.click(card!);
+
+      expect(mockNavigate).toHaveBeenCalledWith('/leads/lead-1');
+    });
   });
 
   // ---------------------------------------------------------------------------
-  // 2. Contatos Standardized Mobile Cards
+  // 2. Pipeline Lead Card (MinimalLeadCard) & Click vs Drag Separation
   // ---------------------------------------------------------------------------
-  describe('Contatos Standardized Mobile Cards', () => {
+  describe('Pipeline Lead Card (MinimalLeadCard)', () => {
+    it('shows Nome, Telefone, E-mail, and Curso de Interesse', () => {
+      render(
+        <MemoryRouter>
+          <MinimalLeadCard
+            lead={mockLeadWithCourse}
+            interests={[
+              {
+                courseName: 'Harmonização Avançada',
+                startDate: '2026-05-15',
+                priority: 1,
+              },
+            ]}
+          />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('Dra. Camila Nogueira')).toBeInTheDocument();
+      expect(screen.getByText('(11) 97777-8888')).toBeInTheDocument();
+      expect(screen.getByText('camila@odontoclinic.com')).toBeInTheDocument();
+      expect(screen.getByText(/Harmonização Avançada/i)).toBeInTheDocument();
+    });
+
+    it('shows fallback "Sem curso de interesse" when course is missing', () => {
+      render(
+        <MemoryRouter>
+          <MinimalLeadCard lead={mockLeadWithoutCourse} />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('Dr. Lucas Ferreira')).toBeInTheDocument();
+      expect(screen.getByText('(31) 96666-5555')).toBeInTheDocument();
+      expect(screen.getByText('lucas@exemplo.com')).toBeInTheDocument();
+      expect(screen.getByText('Sem curso de interesse')).toBeInTheDocument();
+    });
+
+    it('clicking phone or email links does NOT trigger card onClick (e.stopPropagation)', () => {
+      const onClick = vi.fn();
+      render(
+        <MemoryRouter>
+          <MinimalLeadCard lead={mockLeadWithCourse} onClick={onClick} />
+        </MemoryRouter>
+      );
+
+      const phoneLink = screen.getByTitle('Ligar para (11) 97777-8888');
+      const emailLink = screen.getByTitle('Enviar e-mail para camila@odontoclinic.com');
+
+      fireEvent.click(phoneLink);
+      expect(onClick).not.toHaveBeenCalled();
+
+      fireEvent.click(emailLink);
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it('dragging card does NOT trigger onClick upon release', () => {
+      const onClick = vi.fn();
+      render(
+        <MemoryRouter>
+          <MinimalLeadCard lead={mockLeadWithCourse} onClick={onClick} />
+        </MemoryRouter>
+      );
+
+      const card = screen.getByRole('article');
+
+      fireEvent.dragStart(card, {
+        dataTransfer: {
+          setData: vi.fn(),
+          effectAllowed: 'move',
+        },
+      });
+
+      fireEvent.click(card);
+      expect(onClick).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 3. Contatos Standardized Mobile Cards & Direct Navigation
+  // ---------------------------------------------------------------------------
+  describe('Contatos Standardized Mobile Cards & Direct Navigation', () => {
     const mockStages = [
       { id: 'stage-1', code: 'capture', name: 'Novo Lead', sort_order: 1 },
       { id: 'stage-4', code: 'approval', name: 'Quente', sort_order: 4 },
@@ -234,25 +389,152 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         expect(screen.getAllByText('Dra. Camila Nogueira').length).toBeGreaterThan(0);
       });
 
-      // Check Mobile Stack Container exists
       const mobileStack = document.querySelector('.sm\\:hidden.space-y-2\\.5');
       expect(mobileStack).toBeInTheDocument();
 
-      // Lead 1: With course interest
+      // Lead 1
       expect(mobileStack).toHaveTextContent('Dra. Camila Nogueira');
       expect(mobileStack).toHaveTextContent('(11) 97777-8888');
       expect(mobileStack).toHaveTextContent('camila@odontoclinic.com');
       expect(mobileStack).toHaveTextContent('Imersão em Facetas');
 
-      // Lead 2: Without course interest -> discrete fallback 'Sem curso de interesse'
+      // Lead 2
       expect(mobileStack).toHaveTextContent('Dr. Lucas Ferreira');
       expect(mobileStack).toHaveTextContent('(31) 96666-5555');
       expect(mobileStack).toHaveTextContent('lucas@exemplo.com');
       expect(mobileStack).toHaveTextContent('Sem curso de interesse');
 
-      // Check discrete stage badges inside the mobile cards
+      // Discrete stage badges
       expect(mobileStack).toHaveTextContent('Novo Lead');
       expect(mobileStack).toHaveTextContent('Quente');
+    });
+
+    it('navigates directly to /leads/:id when mobile contact card is clicked', async () => {
+      (supabase.from as any).mockImplementation((table: string) => {
+        if (table === 'pipeline_stages') return createChainableMock(mockStages);
+        if (table === 'courses' || table === 'course_sessions' || table === 'tags') return createChainableMock([]);
+        if (table === 'leads') return createChainableMock(mockLeads, 2);
+        return createChainableMock([]);
+      });
+
+      render(
+        <MemoryRouter>
+          <LeadsListPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Dra. Camila Nogueira').length).toBeGreaterThan(0);
+      });
+
+      const mobileCards = document.querySelectorAll('.sm\\:hidden.space-y-2\\.5 > div');
+      expect(mobileCards.length).toBe(2);
+
+      fireEvent.click(mobileCards[0]);
+      expect(mockNavigate).toHaveBeenCalledWith('/leads/lead-1');
+    });
+
+    it('clicking phone or email links inside contact card stops propagation and does not navigate', async () => {
+      (supabase.from as any).mockImplementation((table: string) => {
+        if (table === 'pipeline_stages') return createChainableMock(mockStages);
+        if (table === 'courses' || table === 'course_sessions' || table === 'tags') return createChainableMock([]);
+        if (table === 'leads') return createChainableMock(mockLeads, 2);
+        return createChainableMock([]);
+      });
+
+      render(
+        <MemoryRouter>
+          <LeadsListPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Dra. Camila Nogueira').length).toBeGreaterThan(0);
+      });
+
+      const phoneLink = screen.getAllByRole('link', { name: /\(11\) 97777-8888/i })[0];
+      mockNavigate.mockClear();
+
+      fireEvent.click(phoneLink);
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 4. Global Back Navigation & MobileHeader
+  // ---------------------------------------------------------------------------
+  describe('Global Back Navigation & MobileHeader', () => {
+    it('renders MobileHeader with back button and navigates to fallback when clicked', () => {
+      render(
+        <MemoryRouter>
+          <MobileHeader title="Perfil do Lead" backTo="/leads" />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('Perfil do Lead')).toBeInTheDocument();
+      const backBtn = screen.getByLabelText('Voltar');
+      expect(backBtn).toBeInTheDocument();
+
+      fireEvent.click(backBtn);
+      expect(mockNavigate).toHaveBeenCalledWith('/leads', { replace: true });
+    });
+
+    it('Layout renders desktop back button and breadcrumb when backTo is provided', () => {
+      render(
+        <MemoryRouter>
+          <Layout title="Editor de Campanha" backTo="/campaigns">
+            <div>Content</div>
+          </Layout>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByLabelText('Voltar')).toBeInTheDocument();
+      expect(screen.getByText('EDS HUB')).toBeInTheDocument();
+      expect(screen.getAllByText('Editor de Campanha').length).toBeGreaterThan(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 5. Mobile Bottom Navigation & Invariant Protection
+  // ---------------------------------------------------------------------------
+  describe('Mobile Bottom Navigation', () => {
+    it('renders exactly 4 navigation destinations: Contatos, Pipeline, Tarefas, and Menu', () => {
+      render(
+        <MemoryRouter>
+          <MobileBottomNav onOpenMenu={vi.fn()} />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('Contatos')).toBeInTheDocument();
+      expect(screen.getByText('Pipeline')).toBeInTheDocument();
+      expect(screen.getByText('Tarefas')).toBeInTheDocument();
+      expect(screen.getByText('Menu')).toBeInTheDocument();
+    });
+
+    it('never hides bottom nav without a top back button (Layout invariant)', () => {
+      // Invariant: shouldHideBottomNav = hideBottomNav && hasBack
+      // Case 1: hideBottomNav is true but no back button -> bottom nav must remain
+      const { unmount } = render(
+        <MemoryRouter>
+          <Layout title="Primary Screen" hideBottomNav={true}>
+            <div>Primary</div>
+          </Layout>
+        </MemoryRouter>
+      );
+
+      expect(document.getElementById('mobile-bottom-nav')).toBeInTheDocument();
+      unmount();
+
+      // Case 2: hideBottomNav is true AND back button is provided -> bottom nav can be hidden safely
+      render(
+        <MemoryRouter>
+          <Layout title="Secondary Screen" hideBottomNav={true} backTo="/leads">
+            <div>Secondary</div>
+          </Layout>
+        </MemoryRouter>
+      );
+
+      expect(document.getElementById('mobile-bottom-nav')).not.toBeInTheDocument();
     });
   });
 });
