@@ -168,14 +168,14 @@ export function MinimalLeadCard({
         <GripVertical className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500 shrink-0 mt-0.5" />
       </div>
 
-      {/* 2 & 3. Phone & Email (Medium emphasis, secondary to name) */}
+      {/* 2 & 3. Phone & Email (Medium emphasis, content-sized hitboxes) */}
       {(phoneValue || emailValue) ? (
-        <div className="space-y-0.5 pt-0.5">
+        <div className="flex flex-col items-start gap-0.5 pt-0.5">
           {phoneValue && (
             <a
               href={`tel:${phoneValue.replace(/\D/g, '')}`}
               onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate hover:text-[#08254f] transition-colors cursor-pointer"
+              className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 rounded text-[11px] text-slate-600 hover:text-[#08254f] hover:bg-slate-100/70 transition-colors cursor-pointer"
               title={`Ligar para ${phoneValue}`}
             >
               <Phone className="h-3 w-3 text-slate-400 shrink-0" />
@@ -186,7 +186,7 @@ export function MinimalLeadCard({
             <a
               href={`mailto:${emailValue}`}
               onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate hover:text-[#08254f] transition-colors cursor-pointer"
+              className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 rounded text-[11px] text-slate-500 hover:text-[#08254f] hover:bg-slate-100/70 transition-colors cursor-pointer"
               title={`Enviar e-mail para ${emailValue}`}
             >
               <Mail className="h-3 w-3 text-slate-400 shrink-0" />

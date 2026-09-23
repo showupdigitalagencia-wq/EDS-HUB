@@ -593,14 +593,14 @@ export function LeadsListPage() {
                       )}
                     </div>
 
-                    {/* 2. Telefone & E-mail (Secundários) */}
+                    {/* 2. Telefone & E-mail (Secundários, content-sized hitboxes) */}
                     {(phoneValue || emailValue) ? (
-                      <div className="space-y-0.5 pt-0.5">
+                      <div className="flex flex-col items-start gap-0.5 pt-0.5">
                         {phoneValue && (
                           <a
                             href={`tel:${phoneValue.replace(/\D/g, '')}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate hover:text-[#08254f] transition-colors cursor-pointer"
+                            className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 rounded text-[11px] text-slate-600 hover:text-[#08254f] hover:bg-slate-100/70 transition-colors cursor-pointer"
                             title={`Ligar para ${phoneValue}`}
                           >
                             <Phone className="h-3 w-3 text-slate-400 shrink-0" />
@@ -611,7 +611,7 @@ export function LeadsListPage() {
                           <a
                             href={`mailto:${emailValue}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate hover:text-[#08254f] transition-colors cursor-pointer"
+                            className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 rounded text-[11px] text-slate-500 hover:text-[#08254f] hover:bg-slate-100/70 transition-colors cursor-pointer"
                             title={`Enviar e-mail para ${emailValue}`}
                           >
                             <Mail className="h-3 w-3 text-slate-400 shrink-0" />
@@ -784,12 +784,12 @@ export function LeadsListPage() {
 
                           {/* 4. Contato (Email / Phone) */}
                           <td className="px-5 py-3.5 whitespace-nowrap">
-                            <div className="space-y-0.5">
+                            <div className="flex flex-col items-start gap-0.5">
                               {lead.email ? (
                                 <a
                                   href={`mailto:${lead.email}`}
                                   onClick={(e) => e.stopPropagation()}
-                                  className="flex items-center gap-1.5 text-slate-600 hover:text-[#08254f] transition-colors cursor-pointer"
+                                  className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 rounded text-slate-600 hover:text-[#08254f] hover:bg-slate-100/70 transition-colors cursor-pointer"
                                   title={`Enviar e-mail para ${lead.email}`}
                                 >
                                   <Mail className="h-3 w-3 text-slate-400 shrink-0" />
@@ -800,7 +800,7 @@ export function LeadsListPage() {
                                 <a
                                   href={`tel:${lead.phone_raw.replace(/\D/g, '')}`}
                                   onClick={(e) => e.stopPropagation()}
-                                  className="flex items-center gap-1.5 text-slate-600 hover:text-[#08254f] transition-colors cursor-pointer"
+                                  className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 rounded text-slate-600 hover:text-[#08254f] hover:bg-slate-100/70 transition-colors cursor-pointer"
                                   title={`Ligar para ${lead.phone_raw}`}
                                 >
                                   <Phone className="h-3 w-3 text-slate-400 shrink-0" />

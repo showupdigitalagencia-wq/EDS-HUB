@@ -442,16 +442,38 @@ export function LeadDetailPage() {
           {/* Secondary Header Row: Contact Info & Referred By */}
           <div className="flex flex-wrap items-center gap-y-2 gap-x-5 text-xs text-slate-600 pt-2 border-t border-slate-100">
             {/* Phone */}
-            <div className="flex items-center gap-1.5 font-medium">
-              <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span>{phoneDisplay || <span className="text-slate-400 italic">Telefone não informado</span>}</span>
-            </div>
+            {phoneDisplay ? (
+              <a
+                href={`tel:${phoneDisplay.replace(/\D/g, '')}`}
+                className="inline-flex w-fit items-center gap-1.5 font-medium py-1 px-1.5 -ml-1.5 rounded-md hover:text-[#08254f] hover:bg-slate-50 transition-colors cursor-pointer"
+                title={`Ligar para ${phoneDisplay}`}
+              >
+                <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                <span>{phoneDisplay}</span>
+              </a>
+            ) : (
+              <div className="inline-flex w-fit items-center gap-1.5 font-medium text-slate-400 italic">
+                <Phone className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+                <span>Telefone não informado</span>
+              </div>
+            )}
 
             {/* Email */}
-            <div className="flex items-center gap-1.5 font-medium">
-              <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span>{emailDisplay || <span className="text-slate-400 italic">Email não informado</span>}</span>
-            </div>
+            {emailDisplay ? (
+              <a
+                href={`mailto:${emailDisplay}`}
+                className="inline-flex w-fit items-center gap-1.5 font-medium py-1 px-1.5 -ml-1.5 rounded-md hover:text-[#08254f] hover:bg-slate-50 transition-colors cursor-pointer"
+                title={`Enviar e-mail para ${emailDisplay}`}
+              >
+                <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                <span>{emailDisplay}</span>
+              </a>
+            ) : (
+              <div className="inline-flex w-fit items-center gap-1.5 font-medium text-slate-400 italic">
+                <Mail className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+                <span>Email não informado</span>
+              </div>
+            )}
 
             {/* Referred By (rendered only if present) */}
             {lead.referred_by && (

@@ -691,4 +691,138 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       expect(document.getElementById('mobile-bottom-nav')).not.toBeInTheDocument();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // 7. Mobile Click Target & Hitbox Precision
+  // ---------------------------------------------------------------------------
+  describe('Mobile Click Target & Hitbox Precision', () => {
+    it('phone and email anchors in MinimalLeadCard are content-sized inline-flex w-fit and do not stretch', () => {
+      render(
+        <MemoryRouter>
+          <MinimalLeadCard lead={mockLeadWithCourse} />
+        </MemoryRouter>
+      );
+
+      const phoneLink = screen.getByTitle('Ligar para (11) 97777-8888');
+      const emailLink = screen.getByTitle('Enviar e-mail para camila@odontoclinic.com');
+
+      expect(phoneLink.className).toContain('inline-flex');
+      expect(phoneLink.className).toContain('w-fit');
+      expect(phoneLink.className.split(' ')).not.toContain('w-full');
+      expect(phoneLink.className.split(' ')).not.toContain('flex-1');
+
+      expect(emailLink.className).toContain('inline-flex');
+      expect(emailLink.className).toContain('w-fit');
+      expect(emailLink.className.split(' ')).not.toContain('w-full');
+      expect(emailLink.className.split(' ')).not.toContain('flex-1');
+
+      // Parent container must be items-start so anchors don't stretch
+      const container = phoneLink.parentElement;
+      expect(container?.className).toContain('items-start');
+    });
+
+    it('phone and email anchors in Contatos mobile cards are content-sized inline-flex w-fit', async () => {
+      (supabase.from as any).mockImplementation((table: string) => {
+        if (table === 'pipeline_stages') return createChainableMock([{ id: 'stage-1', code: 'capture', name: 'Novo Lead', sort_order: 1 }]);
+        if (table === 'courses' || table === 'course_sessions' || table === 'tags') return createChainableMock([]);
+        if (table === 'leads') return createChainableMock([mockLeadWithCourse], 1);
+        return createChainableMock([]);
+      });
+
+      render(
+        <MemoryRouter>
+          <LeadsListPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Dra. Camila Nogueira').length).toBeGreaterThan(0);
+      });
+
+      const phoneLink = screen.getAllByRole('link', { name: /\(11\) 97777-8888/i })[0];
+      const emailLink = screen.getAllByRole('link', { name: /camila@odontoclinic\.com/i })[0];
+
+      expect(phoneLink.className).toContain('inline-flex');
+      expect(phoneLink.className).toContain('w-fit');
+      expect(emailLink.className).toContain('inline-flex');
+      expect(emailLink.className).toContain('w-fit');
+    });
+
+    it('tapping neutral card space triggers card onClick to open Lead Quick View', () => {
+      const onClick = vi.fn();
+      render(
+        <MemoryRouter>
+          <MinimalLeadCard lead={mockLeadWithCourse} onClick={onClick} />
+        </MemoryRouter>
+      );
+
+      // Tap lead name
+      const nameEl = screen.getByText('Dra. Camila Nogueira');
+      fireEvent.click(nameEl);
+      expect(onClick).toHaveBeenCalledTimes(1);
+
+      // Tap course area
+      const courseEl = screen.getByText(/Harmonização Avançada/i);
+      fireEvent.click(courseEl);
+      expect(onClick).toHaveBeenCalledTimes(2);
+
+      // Tap empty card space
+      const card = screen.getByRole('article');
+      fireEvent.click(card);
+      expect(onClick).toHaveBeenCalledTimes(3);
+    });
+
+    it('tapping phone anchor triggers tel: and does NOT open Lead Quick View', () => {
+      const onClick = vi.fn();
+      render(
+        <MemoryRouter>
+          <MinimalLeadCard lead={mockLeadWithCourse} onClick={onClick} />
+        </MemoryRouter>
+      );
+
+      const phoneLink = screen.getByTitle('Ligar para (11) 97777-8888');
+      expect(phoneLink.getAttribute('href')).toBe('tel:11977778888');
+
+      fireEvent.click(phoneLink);
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it('tapping email anchor triggers mailto: and does NOT open Lead Quick View', () => {
+      const onClick = vi.fn();
+      render(
+        <MemoryRouter>
+          <MinimalLeadCard lead={mockLeadWithCourse} onClick={onClick} />
+        </MemoryRouter>
+      );
+
+      const emailLink = screen.getByTitle('Enviar e-mail para camila@odontoclinic.com');
+      expect(emailLink.getAttribute('href')).toBe('mailto:camila@odontoclinic.com');
+
+      fireEvent.click(emailLink);
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it('Quick Action Bar "Ligar" and "Email" full action buttons remain functional and un-shrunk', () => {
+      render(
+        <LeadQuickActionBar
+          lead={mockLeadWithCourse}
+          onOpenTaskModal={vi.fn()}
+          onOpenPaymentModal={vi.fn()}
+        />
+      );
+
+      const ligarBtn = screen.getByRole('button', { name: /Ligar/i });
+      const emailBtn = screen.getByRole('button', { name: /Email/i });
+      const whatsAppBtn = screen.getByRole('button', { name: /WhatsApp/i });
+
+      expect(ligarBtn.getAttribute('href')).toContain('tel:');
+      expect(emailBtn.getAttribute('href')).toContain('mailto:');
+      expect(whatsAppBtn.getAttribute('href')).toContain('https://wa.me/');
+
+      // Quick action buttons retain their full accessible layout class
+      expect(ligarBtn.className).toContain('min-h-[40px]');
+      expect(emailBtn.className).toContain('min-h-[40px]');
+      expect(whatsAppBtn.className).toContain('min-h-[40px]');
+    });
+  });
 });

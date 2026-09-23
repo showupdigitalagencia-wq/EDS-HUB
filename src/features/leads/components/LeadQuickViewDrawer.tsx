@@ -9,6 +9,8 @@ import {
   MessageSquare,
   Activity,
   FileText,
+  Phone,
+  Mail,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Drawer } from '../../../components/ui/Drawer';
@@ -252,16 +254,36 @@ export function LeadQuickViewDrawer({
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-slate-400 block text-[11px]">Telefone</span>
-                    <span className="font-semibold text-slate-800">
-                      {lead.phone_e164 || lead.phone_raw || 'Não informado'}
-                    </span>
+                    <span className="text-slate-400 block text-[11px] mb-0.5">Telefone</span>
+                    {lead.phone_e164 || lead.phone_raw ? (
+                      <a
+                        href={`tel:${(lead.phone_e164 || lead.phone_raw || '').replace(/\D/g, '')}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex w-fit max-w-full items-center gap-1.5 font-semibold text-slate-800 hover:text-[#08254f] py-1 px-1.5 -ml-1.5 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
+                        title={`Ligar para ${lead.phone_e164 || lead.phone_raw}`}
+                      >
+                        <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate">{lead.phone_e164 || lead.phone_raw}</span>
+                      </a>
+                    ) : (
+                      <span className="font-semibold text-slate-400 italic">Não informado</span>
+                    )}
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[11px]">E-mail</span>
-                    <span className="font-semibold text-slate-800 truncate block">
-                      {lead.email || 'Não informado'}
-                    </span>
+                    <span className="text-slate-400 block text-[11px] mb-0.5">E-mail</span>
+                    {lead.email ? (
+                      <a
+                        href={`mailto:${lead.email.trim()}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex w-fit max-w-full items-center gap-1.5 font-semibold text-slate-800 hover:text-[#08254f] py-1 px-1.5 -ml-1.5 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
+                        title={`Enviar e-mail para ${lead.email}`}
+                      >
+                        <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate">{lead.email}</span>
+                      </a>
+                    ) : (
+                      <span className="font-semibold text-slate-400 italic">Não informado</span>
+                    )}
                   </div>
                   {lead.referred_by && (
                     <div className="sm:col-span-2 flex items-center gap-1.5 text-slate-600 bg-slate-50 p-2 rounded-lg">
