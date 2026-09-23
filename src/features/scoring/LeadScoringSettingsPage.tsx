@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Sparkles,
   Plus,
   Edit2,
   Trash2,
@@ -423,41 +422,36 @@ export function LeadScoringSettingsPage() {
   });
 
   return (
-    <Layout title="Lead Scoring & Sales Intelligence">
-      <div className="space-y-6">
-        {/* Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold font-heading text-[#08254f] tracking-tight flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              Lead Scoring Foundation
-            </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Configure deterministic priority scoring rules (Fit, Intent, Engagement) and thresholds.
-            </p>
-          </div>
+    <Layout
+      eyebrow="INTELIGÊNCIA & QUALIFICAÇÃO"
+      title="Lead Scoring & Inteligência de Vendas"
+      subtitle="Regras determinísticas de priorização (Fit, Intenção e Engajamento), thresholds e motor de score"
+      actions={
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsTestModalOpen(true)}
+            className="btn-secondary text-xs"
+          >
+            <Play className="w-3.5 h-3.5 text-amber-500" />
+            <span>Simulador de Score</span>
+          </button>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsTestModalOpen(true)}
-              className="btn-secondary text-xs"
-            >
-              <Play className="w-3.5 h-3.5 text-amber-500" />
-              Test Score Simulator
-            </button>
-
-            <button
-              onClick={handleTriggerRecalculateAll}
-              disabled={isTriggeringBatch || activeJob?.status === 'processing'}
-              className="btn-crimson text-xs disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isTriggeringBatch ? 'animate-spin' : ''}`} />
-              Recalculate All Leads
-            </button>
-          </div>
+          <button
+            onClick={handleTriggerRecalculateAll}
+            disabled={isTriggeringBatch || activeJob?.status === 'processing'}
+            className="btn-crimson text-xs disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${
+                isTriggeringBatch || activeJob?.status === 'processing' ? 'animate-spin' : ''
+              }`}
+            />
+            <span>Recalcular Todos</span>
+          </button>
         </div>
+      }
+    >
+      <div className="space-y-6">
 
         {/* Active Recalculation Job Banner */}
         {activeJob && activeJob.status === 'processing' && (

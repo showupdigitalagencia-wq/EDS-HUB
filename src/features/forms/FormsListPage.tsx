@@ -165,34 +165,23 @@ export function FormsListPage() {
   const activeForms = forms.filter((f) => f.status === 'active').length;
   const totalSubmissions = forms.reduce((acc, f) => acc + (f.submission_count || 0), 0);
   const totalLeads = forms.reduce((acc, f) => acc + (f.lead_count || 0), 0);
-
   return (
-    <Layout title="Forms">
+    <Layout
+      eyebrow="INTAKE & FORMULÁRIOS"
+      title="Formulários"
+      subtitle="Crie, versione e gerencie formulários de captura de alta conversão conectados ao intake do EDS"
+      actions={
+        <button
+          id="btn-create-form"
+          onClick={() => navigate('/forms/new')}
+          className="btn-crimson text-xs px-3.5 py-2 shadow-sm"
+        >
+          <Plus className="h-4 w-4" />
+          <span>Novo Formulário</span>
+        </button>
+      }
+    >
       <div className="space-y-6">
-        {/* Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="p-2.5 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
-                <ClipboardList className="h-5 w-5" />
-              </div>
-              <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">
-                Lead Capture Forms
-              </h1>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Create, version, and manage high-converting capture forms connected to EDS intake automation.
-            </p>
-          </div>
-          <button
-            id="btn-create-form"
-            onClick={() => navigate('/forms/new')}
-            className="btn-crimson text-xs"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Create Form
-          </button>
-        </div>
 
         {/* Action message alert */}
         {actionMessage && (

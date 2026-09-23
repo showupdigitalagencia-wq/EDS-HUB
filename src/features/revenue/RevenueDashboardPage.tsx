@@ -4,15 +4,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Sidebar } from '../../components/Sidebar';
+import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import {
-  DollarSign,
   RefreshCw,
   Download,
   BarChart3,
-  Menu,
 } from 'lucide-react';
 import type {
   DashboardPeriodFilter,
@@ -77,137 +75,86 @@ export function RevenueDashboardPage() {
     exportApprovedNotEnrolledCsv(metrics.approved_not_enrolled);
   };
 
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col lg:flex-row w-full overflow-x-hidden">
-      <Sidebar mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
+    <Layout
+      eyebrow="FATURAMENTO & CONTRATOS"
+      title="Revenue & Enrollment Intelligence"
+      subtitle={`Métricas auditáveis de faturamento, contratos acadêmicos e conversão comercial (${activeRangeLabel})`}
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Period Selector Tabs */}
+          <div className="bg-slate-100/90 p-0.5 rounded-xl border border-slate-200/80 flex items-center gap-0.5 text-xs font-semibold text-slate-600">
+            {(
+              [
+                { id: 'today', label: 'Hoje' },
+                { id: '7d', label: '7D' },
+                { id: '30d', label: '30D' },
+                { id: '90d', label: '90D' },
+                { id: 'custom', label: 'Custom' },
+              ] as const
+            ).map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setPeriod(p.id)}
+                className={`px-2.5 py-1 rounded-lg transition-all ${
+                  period === p.id
+                    ? 'bg-white text-[#08254f] shadow-xs font-bold'
+                    : 'hover:text-slate-900 text-slate-600'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
 
-      {/* Mobile Top Bar (< lg) */}
-      <header className="lg:hidden sticky top-0 z-20 bg-white/95 backdrop-blur-xs border-b border-slate-200/80 px-4 py-3 flex items-center justify-between min-h-[56px] shadow-2xs">
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            type="button"
-            id="mobile-revenue-menu-btn"
-            onClick={() => setMobileMenuOpen(true)}
-            aria-label="Abrir menu lateral"
-            className="p-2 -ml-1.5 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+          {/* Custom Date Inputs if active */}
+          {period === 'custom' && (
+            <div className="flex items-center gap-1.5 text-xs bg-white p-1 rounded-xl border border-slate-200">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="px-2 py-0.5 text-slate-700 font-medium bg-slate-50 rounded-lg border-0 focus:ring-1 focus:ring-[#125e95]"
+              />
+              <span className="text-slate-400 text-xs">até</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="px-2 py-0.5 text-slate-700 font-medium bg-slate-50 rounded-lg border-0 focus:ring-1 focus:ring-[#125e95]"
+              />
+            </div>
+          )}
+
+          <Link
+            to="/reports?tab=revenue"
+            className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
           >
-            <Menu className="w-5 h-5" />
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>Relatórios</span>
+          </Link>
+
+          <button
+            onClick={handleExportAll}
+            disabled={isLoading || !metrics}
+            className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-500" />
+            <span>Exportar CSV</span>
           </button>
-          <div className="min-w-0">
-            <h1 className="text-sm font-bold text-[#08254f] truncate font-heading">
-              Revenue Intelligence
-            </h1>
-            <p className="text-[10px] text-slate-500 truncate">{activeRangeLabel}</p>
-          </div>
+
+          <button
+            onClick={() => loadMetrics(true)}
+            disabled={isLoading || isRefreshing}
+            className="btn-secondary text-xs p-1.5 disabled:opacity-50"
+            title="Atualizar Métricas"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-[#08254f]' : ''}`} />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => loadMetrics()}
-          disabled={isLoading}
-          aria-label="Atualizar dados"
-          className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-        >
-          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-        </button>
-      </header>
-
-      <main className="flex-1 lg:ml-64 p-4 sm:p-6 lg:p-8 overflow-y-auto min-w-0 w-full">
-        <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8 pb-12">
-          {/* Top Bar: Header & Controls */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
-            <div>
-              <div className="flex items-center gap-2.5">
-                <div className="p-2.5 rounded-xl bg-[#08254f] text-white shadow-xs">
-                  <DollarSign className="w-5 h-5 text-[#449bd5]" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-[#08254f] tracking-tight font-heading">
-                    Revenue & Enrollment Intelligence
-                  </h1>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Métricas auditáveis de faturamento, contratos acadêmicos e conversão comercial ({activeRangeLabel})
-                  </p>
-                </div>
-              </div>
-            </div>
-
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Period Selector Tabs */}
-            <div className="bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 flex items-center gap-0.5 text-xs font-semibold text-slate-600">
-              {(
-                [
-                  { id: 'today', label: 'Hoje' },
-                  { id: '7d', label: '7D' },
-                  { id: '30d', label: '30D' },
-                  { id: '90d', label: '90D' },
-                  { id: 'custom', label: 'Custom' },
-                ] as const
-              ).map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setPeriod(p.id)}
-                  className={`px-3 py-1.5 rounded-lg transition-all ${
-                    period === p.id
-                      ? 'bg-white text-[#08254f] shadow-xs font-bold'
-                      : 'hover:text-slate-900 text-slate-600'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Custom Date Inputs if active */}
-            {period === 'custom' && (
-              <div className="flex items-center gap-1.5 text-xs bg-white p-1 rounded-xl border border-slate-200">
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => setCustomStart(e.target.value)}
-                  className="px-2 py-1 text-slate-700 font-medium bg-slate-50 rounded-lg border-0 focus:ring-1 focus:ring-[#125e95]"
-                />
-                <span className="text-slate-400 text-xs">até</span>
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => setCustomEnd(e.target.value)}
-                  className="px-2 py-1 text-slate-700 font-medium bg-slate-50 rounded-lg border-0 focus:ring-1 focus:ring-[#125e95]"
-                />
-              </div>
-            )}
-
-            {/* View Full Reports Button */}
-            <Link
-              to="/reports?tab=revenue"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-[#08254f] hover:bg-[#061e40] shadow-2xs transition-all"
-            >
-              <BarChart3 className="w-3.5 h-3.5" />
-              View Full Reports
-            </Link>
-
-            {/* Export All CSV Button */}
-            <button
-              onClick={handleExportAll}
-              disabled={isLoading || !metrics}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 shadow-2xs transition-all disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5 text-slate-500" />
-              Exportar CSVs
-            </button>
-
-            {/* Refresh Button */}
-            <button
-              onClick={() => loadMetrics(true)}
-              disabled={isLoading || isRefreshing}
-              className="p-2 rounded-xl text-slate-500 bg-white border border-slate-200 hover:text-slate-900 hover:bg-slate-50 shadow-2xs transition-all disabled:opacity-50"
-              title="Atualizar Métricas"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-[#125e95]' : ''}`} />
-            </button>
-          </div>
-        </div>
+      }
+    >
+      <div className="space-y-6 sm:space-y-8 pb-12">
 
         {/* Body Content */}
         {isLoading && !metrics ? (
@@ -254,7 +201,6 @@ export function RevenueDashboardPage() {
           </div>
         ) : null}
       </div>
-    </main>
-  </div>
-);
+    </Layout>
+  );
 }

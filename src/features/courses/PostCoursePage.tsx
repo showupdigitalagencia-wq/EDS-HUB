@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Layout } from '../../components/Layout';
 import {
   Award,
   RefreshCw,
@@ -108,25 +109,17 @@ export const PostCoursePage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 font-heading flex items-center gap-2.5">
-            <Award className="w-6 h-6 text-[#125e95]" />
-            Pós-Curso & Alumni
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Acompanhamento de satisfação, coleta de depoimentos, oportunidades de próximo curso e comunidade Alumni
-          </p>
-        </div>
-
+    <Layout
+      eyebrow="OPERAÇÕES ACADÊMICAS"
+      title="Pós-Curso & Alumni"
+      subtitle="Acompanhamento de satisfação, coleta de depoimentos, oportunidades de próximo curso e comunidade Alumni"
+      actions={
         <div className="flex items-center gap-2">
           {/* Export Menu */}
           <div className="relative group">
-            <button className="px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-xs">
+            <button className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5">
               <Download className="w-3.5 h-3.5 text-slate-500" />
-              Exportar CSV
+              <span>Exportar CSV</span>
             </button>
             <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-xl shadow-lg p-1 hidden group-hover:block z-20 animate-in fade-in duration-100">
               <button
@@ -160,13 +153,15 @@ export const PostCoursePage: React.FC = () => {
           <button
             onClick={loadData}
             disabled={isLoading}
-            className="p-2 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-xs"
+            className="btn-secondary text-xs p-2"
             title="Atualizar Dados"
           >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-[#125e95]' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-[#08254f]' : ''}`} />
           </button>
         </div>
-      </div>
+      }
+    >
+      <div className="space-y-6">
 
       {/* Error Banner */}
       {error && (
@@ -357,6 +352,7 @@ export const PostCoursePage: React.FC = () => {
         studentName={modalStudentName}
         courseName={modalCourseName}
       />
-    </div>
+      </div>
+    </Layout>
   );
 };

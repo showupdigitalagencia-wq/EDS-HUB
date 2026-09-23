@@ -3,15 +3,13 @@ import {
   RefreshCw,
   Calendar,
   AlertCircle,
-  TrendingUp,
   Clock,
   DollarSign,
   ArrowRight,
   BarChart3,
-  Menu,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Sidebar } from '../../components/Sidebar';
+import { Layout } from '../../components/Layout';
 import { KpiCardsSection } from './components/KpiCardsSection';
 import { SalesFunnelWidget } from './components/SalesFunnelWidget';
 import { PriorityLeadsWidget } from './components/PriorityLeadsWidget';
@@ -93,142 +91,93 @@ export const SalesDashboardPage: React.FC = () => {
 
   const boundaries = getDateRangeBoundaries(periodFilter, customStart, customEnd);
 
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col lg:flex-row w-full overflow-x-hidden">
-      <Sidebar mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
+    <Layout
+      eyebrow="VISÃO GERAL OPERACIONAL"
+      title="Sales Intelligence Dashboard"
+      subtitle="Métricas comerciais executivas, funil de conversão e saúde da operação"
+      actions={
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Period Filter Buttons */}
+          <div className="inline-flex rounded-xl border border-slate-200/90 bg-white p-1 shadow-2xs">
+            {(
+              [
+                { id: 'today', label: 'Hoje' },
+                { id: '7d', label: '7D' },
+                { id: '30d', label: '30D' },
+                { id: '90d', label: '90D' },
+                { id: 'custom', label: 'Personalizado' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                id={`period-btn-${opt.id}`}
+                onClick={() => setPeriodFilter(opt.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-heading transition-all cursor-pointer ${
+                  periodFilter === opt.id
+                    ? 'bg-[#08254f] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
 
-      {/* Mobile Top Bar (< lg) */}
-      <header className="lg:hidden sticky top-0 z-20 bg-white/95 backdrop-blur-xs border-b border-slate-200/80 px-4 py-3 flex items-center justify-between min-h-[56px] shadow-2xs">
-        <div className="flex items-center gap-3 min-w-0">
+          {/* Custom Date Pickers */}
+          {periodFilter === 'custom' && (
+            <div className="flex items-center gap-1.5 bg-white px-2 py-1 rounded-xl border border-slate-200/90 shadow-2xs">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="text-xs bg-transparent border-none text-slate-700 focus:ring-0 p-1"
+              />
+              <span className="text-slate-400 text-xs">até</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="text-xs bg-transparent border-none text-slate-700 focus:ring-0 p-1"
+              />
+            </div>
+          )}
+
+          {/* View Full Reports Button */}
+          <Link
+            to="/reports"
+            id="view-full-reports-btn"
+            className="flex items-center gap-1.5 px-3 py-2 bg-[#08254f] hover:bg-[#061e40] text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>Relatórios</span>
+          </Link>
+
+          {/* Refresh Button */}
           <button
             type="button"
-            id="mobile-sales-menu-btn"
-            onClick={() => setMobileMenuOpen(true)}
-            aria-label="Abrir menu lateral"
-            className="p-2 -ml-1.5 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            id="dashboard-refresh-btn"
+            onClick={loadData}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200/90 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
           >
-            <Menu className="w-5 h-5" />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#449bd5]' : ''}`} />
+            <span>Atualizar</span>
           </button>
-          <div className="min-w-0">
-            <h1 className="text-sm font-bold text-[#08254f] truncate font-heading">
-              Sales Intelligence
-            </h1>
-            <p className="text-[10px] text-slate-500 truncate">EDS Dashboard</p>
-          </div>
+
+          {/* Last Updated Indicator */}
+          {lastUpdated && (
+            <div className="hidden sm:flex items-center gap-1 text-[11px] text-slate-400 pl-1">
+              <Clock className="w-3 h-3" />
+              <span>{lastUpdated}</span>
+            </div>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={loadData}
-          disabled={loading}
-          aria-label="Atualizar dados"
-          className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
-      </header>
-
-      <main className="flex-1 lg:ml-64 p-4 sm:p-6 lg:p-8 overflow-y-auto min-w-0 w-full">
-        <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8">
-          {/* Top Bar: Header & Controls */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
-            <div>
-              <div className="flex items-center gap-2.5">
-                <div className="p-2.5 rounded-xl bg-[#08254f] text-white shadow-xs">
-                  <TrendingUp className="w-5 h-5 text-[#449bd5]" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-[#08254f] tracking-tight font-heading">
-                    Sales Intelligence Dashboard
-                  </h1>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Executive commercial performance, cohort-based funnel & automation health
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Controls */}
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Period Filter Buttons */}
-              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-                {(
-                  [
-                    { id: 'today', label: 'Hoje' },
-                    { id: '7d', label: '7D' },
-                    { id: '30d', label: '30D' },
-                    { id: '90d', label: '90D' },
-                    { id: 'custom', label: 'Personalizado' },
-                  ] as const
-                ).map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    id={`period-btn-${opt.id}`}
-                    onClick={() => setPeriodFilter(opt.id)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                      periodFilter === opt.id
-                        ? 'bg-[#08254f] text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Custom Date Pickers */}
-              {periodFilter === 'custom' && (
-                <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-lg border border-gray-200">
-                  <Calendar className="w-4 h-4 text-gray-400 ml-1" />
-                  <input
-                    type="date"
-                    value={customStart}
-                    onChange={(e) => setCustomStart(e.target.value)}
-                    className="text-xs bg-transparent border-none text-gray-700 focus:ring-0 p-1"
-                  />
-                  <span className="text-gray-400 text-xs">até</span>
-                  <input
-                    type="date"
-                    value={customEnd}
-                    onChange={(e) => setCustomEnd(e.target.value)}
-                    className="text-xs bg-transparent border-none text-gray-700 focus:ring-0 p-1"
-                  />
-                </div>
-              )}
-
-              {/* View Full Reports Button */}
-              <Link
-                to="/reports"
-                id="view-full-reports-btn"
-                className="flex items-center gap-1.5 px-3 py-2 bg-[#08254f] hover:bg-[#061e40] text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-              >
-                <BarChart3 className="w-3.5 h-3.5" />
-                View Full Reports
-              </Link>
-
-              {/* Refresh Button */}
-              <button
-                type="button"
-                id="dashboard-refresh-btn"
-                onClick={loadData}
-                disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-indigo-600' : ''}`} />
-                Atualizar
-              </button>
-
-              {/* Last Updated Indicator */}
-              {lastUpdated && (
-                <div className="flex items-center gap-1 text-[11px] text-gray-400">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{lastUpdated}</span>
-                </div>
-              )}
-            </div>
-          </div>
+      }
+    >
+      <div className="space-y-6 sm:space-y-8">
 
           {/* Error Message */}
           {error && (
@@ -369,8 +318,7 @@ export const SalesDashboardPage: React.FC = () => {
             </div>
           )}
         </div>
-      </main>
-    </div>
-  );
-};
-export default SalesDashboardPage;
+      </Layout>
+    );
+  };
+  export default SalesDashboardPage;

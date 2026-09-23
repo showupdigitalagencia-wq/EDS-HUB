@@ -11,7 +11,6 @@ import {
   Download,
   Calendar,
   RefreshCw,
-  Menu,
 } from 'lucide-react';
 import {
   getDatePresetRange,
@@ -31,7 +30,7 @@ import {
   parseReportsUrlParams,
   buildReportsUrlParams,
 } from './services/reporting-service';
-import { Sidebar } from '../../components/Sidebar';
+import { Layout } from '../../components/Layout';
 import type {
   ReportTab,
   DateRangePreset,
@@ -255,46 +254,15 @@ export function ReportsPage() {
     { id: 'post_course', label: 'Post-Course', icon: Award },
   ];
 
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col lg:flex-row w-full overflow-x-hidden">
-      <Sidebar mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
-
-      {/* Mobile Top Bar (< lg) */}
-      <header className="lg:hidden sticky top-0 z-20 bg-white/95 backdrop-blur-xs border-b border-slate-200/80 px-4 py-3 flex items-center justify-between min-h-[56px] shadow-2xs">
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            type="button"
-            id="mobile-reports-menu-btn"
-            onClick={() => setMobileMenuOpen(true)}
-            aria-label="Abrir menu lateral"
-            className="p-2 -ml-1.5 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="min-w-0">
-            <h1 className="text-sm font-bold text-[#08254f] truncate font-heading">
-              Reports & Analytics
-            </h1>
-            <p className="text-[10px] text-slate-500 truncate capitalize">{activeTab}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => loadActiveTabData()}
-          disabled={loading}
-          aria-label="Atualizar dados"
-          className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
-        </button>
-      </header>
-
-      <div className="flex-1 lg:ml-64 p-4 sm:p-6 lg:p-8 overflow-y-auto min-w-0 w-full">
-        <div className="max-w-7xl mx-auto space-y-6 pb-12">
-          {/* Top Header */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
+    <Layout
+      eyebrow="INTELLIGENCE & RELATÓRIOS"
+      title="Relatórios & Analytics"
+      subtitle="Source-of-truth business intelligence, cohort conversion funnels, and revenue integrity"
+    >
+      <div className="space-y-6 pb-12">
+        {/* Top Header */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
@@ -476,8 +444,7 @@ export function ReportsPage() {
           )}
         </div>
       )}
-        </div>
       </div>
-    </div>
+    </Layout>
   );
 }

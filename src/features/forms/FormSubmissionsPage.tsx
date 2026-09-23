@@ -8,7 +8,6 @@ import { EmptyState } from '../../components/EmptyState';
 import type { Form, FormSubmission, FormField } from '../../types';
 import {
   BarChart2,
-  ArrowLeft,
   Search,
   ExternalLink,
   AlertTriangle,
@@ -150,47 +149,24 @@ export function FormSubmissionsPage() {
   };
 
   return (
-    <Layout title={form ? `${form.name} — Submissions` : 'Form Submissions'}>
+    <Layout
+      backTo="/forms"
+      eyebrow="INTAKE & FORMULÁRIOS"
+      title={form ? `${form.name} — Submissões` : 'Submissões do Formulário'}
+      subtitle={form ? `Histórico de envios e integridade de captura para /f/${form.slug} (v${form.current_version})` : 'Histórico de envios e integridade de captura'}
+      actions={
+        form ? (
+          <button
+            type="button"
+            onClick={() => navigate(`/forms/${form.id}`)}
+            className="btn-secondary text-xs px-3 py-2"
+          >
+            Editar Formulário
+          </button>
+        ) : undefined
+      }
+    >
       <div className="space-y-6">
-        {/* Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => navigate('/forms')}
-              className="p-2 text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-gray-900 tracking-tight">
-                  {form?.name || 'Form'} Submissions
-                </h1>
-                {form && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-700">
-                    Current: v{form.current_version}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-gray-400 mt-0.5 font-mono">
-                {form ? `/f/${form.slug}` : ''}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {form && (
-              <button
-                type="button"
-                onClick={() => navigate(`/forms/${form.id}`)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 shadow-2xs transition-colors"
-              >
-                Edit Form
-              </button>
-            )}
-          </div>
-        </div>
 
         {/* Metrics Row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

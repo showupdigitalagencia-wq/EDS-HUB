@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Sidebar } from '../../components/Sidebar';
+import { Layout } from '../../components/Layout';
 import {
   Calendar,
   Clock,
@@ -13,7 +13,6 @@ import {
   Download,
   AlertTriangle,
   Filter,
-  Menu,
 } from 'lucide-react';
 import {
   fetchDailyOperationsDashboard,
@@ -25,6 +24,7 @@ import {
 import { WorkItemCard } from './components/WorkItemCard';
 import { CreateTaskModal } from './components/CreateTaskModal';
 import { RescheduleTaskModal } from './components/RescheduleTaskModal';
+import { LeadQuickViewDrawer } from '../leads/components/LeadQuickViewDrawer';
 import type {
   DailyOperationsDashboardKpis,
   WorkItem,
@@ -60,6 +60,8 @@ export const WorkDashboardPage: React.FC = () => {
     taskTitle: string;
     dueAt: string | null;
   } | null>(null);
+
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
 
   // Load KPIs
   const loadKpis = useCallback(async () => {
@@ -149,111 +151,50 @@ export const WorkDashboardPage: React.FC = () => {
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
   return (
-    <div className="flex flex-col lg:flex-row min-h-screen lg:h-screen bg-slate-50 overflow-x-hidden font-sans w-full">
-      <Sidebar mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
-
-      {/* Mobile Top Bar (< lg) */}
-      <header className="lg:hidden sticky top-0 z-20 bg-white/95 backdrop-blur-xs border-b border-slate-200/80 px-4 py-3 flex items-center justify-between min-h-[56px] shadow-2xs">
-        <div className="flex items-center gap-3 min-w-0">
+    <Layout
+      eyebrow="CRM COMERCIAL"
+      title="Daily Operations Command Center"
+      subtitle="Fila de trabalho operacional diária, prazos e prioridades da equipe"
+      actions={
+        <div className="flex items-center gap-2.5">
           <button
-            type="button"
-            id="mobile-work-menu-btn"
-            onClick={() => setMobileMenuOpen(true)}
-            aria-label="Abrir menu lateral"
-            className="p-2 -ml-1.5 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="min-w-0">
-            <h1 className="text-sm font-bold text-[#08254f] truncate font-heading">
-              Daily Operations
-            </h1>
-            <p className="text-[10px] text-slate-500 truncate">Command Center</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
             onClick={() => {
               loadKpis();
               loadQueue();
             }}
             disabled={loadingItems}
-            aria-label="Atualizar Workspace"
-            className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+            className="p-2 text-slate-600 hover:text-[#08254f] hover:bg-slate-100 rounded-xl transition-colors border border-slate-200"
+            title="Refresh Workspace"
           >
-            <RefreshCw className={`w-4 h-4 ${loadingItems ? 'animate-spin text-blue-600' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loadingItems ? 'animate-spin' : ''}`} />
           </button>
+
           <button
-            type="button"
-            onClick={() => setIsCreateTaskOpen(true)}
-            aria-label="Nova Tarefa"
-            className="p-2 rounded-lg bg-[#08254f] text-white hover:bg-[#0a336c] transition-colors cursor-pointer"
+            onClick={handleExportCSV}
+            disabled={items.length === 0}
+            className="px-3 py-2 text-xs font-semibold text-slate-700 hover:text-[#08254f] bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5 disabled:opacity-40"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Export CSV</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setCreateTaskLeadContext(null);
+              setIsCreateTaskOpen(true);
+            }}
+            className="btn-crimson text-xs px-4 py-2 flex items-center gap-1.5 shadow-sm"
           >
             <Plus className="w-4 h-4" />
+            <span>New Task</span>
           </button>
         </div>
-      </header>
-
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto lg:pl-64 w-full">
-        {/* Header Bar */}
-        <header className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 bg-white border-b border-slate-200/80 sticky top-0 z-20 shadow-sm hidden lg:block">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold text-[#08254f] font-heading tracking-tight">
-                  Daily Operations Command Center
-                </h1>
-                {kpis?.timezone && (
-                  <span className="px-2 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-600 rounded-md">
-                    TZ: {kpis.timezone}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 mt-1">
-                Unified work queues consolidating tasks, critical readiness issues, and commercial opportunities.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                  loadKpis();
-                  loadQueue();
-                }}
-                className="p-2 text-slate-600 hover:text-[#08254f] hover:bg-slate-100 rounded-xl transition-colors border border-slate-200"
-                title="Refresh Workspace"
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingItems ? 'animate-spin' : ''}`} />
-              </button>
-
-              <button
-                onClick={handleExportCSV}
-                disabled={items.length === 0}
-                className="px-3 py-2 text-xs font-semibold text-slate-700 hover:text-[#08254f] bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5 disabled:opacity-40"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export CSV</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setCreateTaskLeadContext(null);
-                  setIsCreateTaskOpen(true);
-                }}
-                className="btn-crimson text-xs px-4 py-2 flex items-center gap-1.5 shadow-sm"
-              >
-                <Plus className="w-4 h-4" />
-                <span>New Task</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Top KPI Cards Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6">
+      }
+    >
+      <div className="space-y-6">
+        {/* Top KPI Cards Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {/* Due Today */}
             <div
               onClick={() => {
@@ -381,10 +322,6 @@ export const WorkDashboardPage: React.FC = () => {
               </p>
             </div>
           </div>
-        </header>
-
-        {/* Workspace Body */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6">
           {/* Tabs Navigation & Search Bar */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             {/* Primary Tab Buttons */}
@@ -627,6 +564,7 @@ export const WorkDashboardPage: React.FC = () => {
                   onCompleteTask={handleCompleteTask}
                   onRescheduleTask={handleOpenReschedule}
                   onCreateTaskForLead={handleOpenCreateForLead}
+                  onSelectLead={setSelectedLeadId}
                 />
               ))
             )}
@@ -659,10 +597,9 @@ export const WorkDashboardPage: React.FC = () => {
               </div>
             </div>
           )}
-        </main>
-      </div>
+        </div>
 
-      {/* Create Task Modal */}
+        {/* Create Task Modal */}
       <CreateTaskModal
         isOpen={isCreateTaskOpen}
         onClose={() => {
@@ -693,6 +630,17 @@ export const WorkDashboardPage: React.FC = () => {
           currentDueAt={rescheduleTaskContext.dueAt}
         />
       )}
-    </div>
+
+      {/* Lead Quick View Drawer */}
+      <LeadQuickViewDrawer
+        isOpen={Boolean(selectedLeadId)}
+        leadId={selectedLeadId}
+        onClose={() => setSelectedLeadId(null)}
+        onLeadUpdated={() => {
+          loadKpis();
+          loadQueue();
+        }}
+      />
+    </Layout>
   );
 };

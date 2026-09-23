@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Layout } from '../../components/Layout';
 import {
   Calendar,
   Users,
@@ -141,17 +142,13 @@ export const SessionDetailPage: React.FC = () => {
   const { session, course, roster } = data;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Back Navigation */}
-      <div>
-        <button
-          onClick={() => navigate('/courses/operations')}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to Course Operations</span>
-        </button>
-      </div>
+    <Layout
+      backTo="/courses/operations"
+      eyebrow="OPERAÇÕES ACADÊMICAS"
+      title={`${session.code} — ${course.name}`}
+      subtitle="Gestão da turma, lista de alunos confirmados, presença e certificação"
+    >
+      <div className="space-y-6">
 
       {/* Session Hero Banner */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 overflow-hidden">
@@ -525,6 +522,7 @@ export const SessionDetailPage: React.FC = () => {
           unready_students_count: 0,
         }}
       />
-    </div>
+      </div>
+    </Layout>
   );
 };

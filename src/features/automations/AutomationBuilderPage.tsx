@@ -418,14 +418,19 @@ export function AutomationBuilderPage() {
 
   if (isLoading) {
     return (
-      <Layout title="Automation Builder">
-        <div className="p-8 text-center text-sm text-gray-500">Loading automation builder...</div>
+      <Layout backTo="/automations" eyebrow="MOTORES & FLUXOS" title="Construtor de Automações">
+        <div className="p-8 text-center text-sm text-slate-500">Carregando automação...</div>
       </Layout>
     );
   }
 
   return (
-    <Layout title="Automation Builder">
+    <Layout
+      backTo="/automations"
+      eyebrow="MOTORES & FLUXOS"
+      title={automation.name || 'Nova Automação'}
+      subtitle="Fluxos de automação orientados a eventos (QUANDO → SE → ENTÃO)"
+    >
       <div className="max-w-4xl mx-auto space-y-6 pb-20">
         {/* Top Header */}
         <div className="flex items-center justify-between">

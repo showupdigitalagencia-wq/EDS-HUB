@@ -11,6 +11,8 @@ import { LeadQuickActionBar } from './components/LeadQuickActionBar';
 import { LeadTaskModal } from './components/LeadTaskModal';
 import { LeadTaskList } from './components/LeadTaskList';
 import { LeadTimeline } from './components/LeadTimeline';
+import { LeadConversationStatus } from './components/LeadConversationStatus';
+import { LeadConversationsCard } from './LeadConversationsCard';
 import { RescheduleTaskModal } from '../work/components/RescheduleTaskModal';
 import {
   formatSessionMonthYear,
@@ -310,7 +312,7 @@ export function LeadDetailPage() {
 
   if (isLoading) {
     return (
-      <Layout title="Perfil do Lead">
+      <Layout title="Perfil do Lead" backTo="/leads">
         <LoadingState message="Carregando perfil operacional..." />
       </Layout>
     );
@@ -318,7 +320,7 @@ export function LeadDetailPage() {
 
   if (error || !lead) {
     return (
-      <Layout title="Perfil do Lead">
+      <Layout title="Perfil do Lead" backTo="/leads">
         <ErrorState message={error || 'Lead não encontrado'} onRetry={() => navigate('/leads')} />
       </Layout>
     );
@@ -341,6 +343,7 @@ export function LeadDetailPage() {
       eyebrow="CRM COMERCIAL"
       title="Perfil do Contato"
       subtitle="Dados de contato, comunicação, tarefas operacionais e histórico"
+      backTo="/leads"
     >
       <div className="space-y-5">
         {/* Top Header Card — Executive Profile Hierarchy */}
@@ -515,6 +518,9 @@ export function LeadDetailPage() {
           onActivityLogged={loadLeadData}
         />
 
+        {/* Recent Conversation Status Widget */}
+        <LeadConversationStatus leadId={lead.id} />
+
         {/* Edit Lead Details Inline Panel (when editing is active) */}
         {isEditing && (
           <div className="card-executive p-5 space-y-4 border-2 border-[#449bd5]/40 bg-blue-50/20">
@@ -614,6 +620,9 @@ export function LeadDetailPage() {
 
             {/* 2. Operational Activity Timeline */}
             <LeadTimeline activities={activities} />
+
+            {/* 3. Conversations Thread */}
+            <LeadConversationsCard lead={lead} onLeadUpdated={loadLeadData} />
 
             {/* 3. Notes Section */}
             <div className="card-executive p-5 space-y-4">

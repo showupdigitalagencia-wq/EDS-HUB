@@ -10,21 +10,21 @@ import type { Lead, Task, LeadActivity } from '../types';
 
 // Mock Supabase
 vi.mock('../lib/supabase', () => {
-  const insertMock = vi.fn().mockResolvedValue({ data: null, error: null });
-  const selectMock = vi.fn().mockReturnThis();
-  const eqMock = vi.fn().mockReturnThis();
-  const orderMock = vi.fn().mockResolvedValue({ data: [], error: null });
-  const singleMock = vi.fn().mockResolvedValue({ data: null, error: null });
+  const queryBuilder: any = {
+    insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+    select: vi.fn().mockImplementation(() => queryBuilder),
+    eq: vi.fn().mockImplementation(() => queryBuilder),
+    order: vi.fn().mockImplementation(() => queryBuilder),
+    limit: vi.fn().mockImplementation(() => queryBuilder),
+    is: vi.fn().mockImplementation(() => queryBuilder),
+    single: vi.fn().mockResolvedValue({ data: null, error: null }),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    then: (resolve: any) => resolve({ data: [], error: null }),
+  };
 
   return {
     supabase: {
-      from: vi.fn(() => ({
-        insert: insertMock,
-        select: selectMock,
-        eq: eqMock,
-        order: orderMock,
-        single: singleMock,
-      })),
+      from: vi.fn(() => queryBuilder),
       rpc: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
     },
   };
@@ -740,12 +740,17 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
             }),
           } as any;
         }
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        const fallbackBuilder: any = {
+          select: vi.fn().mockImplementation(() => fallbackBuilder),
+          eq: vi.fn().mockImplementation(() => fallbackBuilder),
+          order: vi.fn().mockImplementation(() => fallbackBuilder),
+          limit: vi.fn().mockImplementation(() => fallbackBuilder),
+          is: vi.fn().mockImplementation(() => fallbackBuilder),
           single: vi.fn().mockResolvedValue({ data: null, error: null }),
-        } as any;
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          then: (resolve: any) => resolve({ data: [], error: null }),
+        };
+        return fallbackBuilder;
       });
 
       const { LeadDetailPage } = await import('../features/leads/LeadDetailPage');

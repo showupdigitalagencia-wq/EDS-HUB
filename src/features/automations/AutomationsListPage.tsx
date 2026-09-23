@@ -197,29 +197,21 @@ export function AutomationsListPage() {
   };
 
   return (
-    <Layout title="Automations">
+    <Layout
+      eyebrow="MOTORES & FLUXOS"
+      title="Automações"
+      subtitle="Motor de fluxos orientados a eventos com controle de preferências de contato e execução idempotente"
+      actions={
+        <button
+          onClick={() => navigate('/automations/new')}
+          className="btn-crimson text-xs px-3.5 py-2"
+        >
+          <Plus className="h-4 w-4" />
+          <span>Nova Automação</span>
+        </button>
+      }
+    >
       <div className="space-y-6">
-        {/* Page Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="p-2.5 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
-                <Zap className="h-5 w-5" />
-              </div>
-              <h1 className="text-2xl font-bold text-[#08254f] tracking-tight font-heading">Automations</h1>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Event-driven workflow engine with strict contact preference guards and server-side delays.
-            </p>
-          </div>
-          <button
-            onClick={() => navigate('/automations/new')}
-            className="btn-crimson text-xs"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Create Automation
-          </button>
-        </div>
 
         {/* Metrics Row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

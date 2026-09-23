@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { Layout } from '../../components/Layout';
 import {
   Plus,
   RefreshCw,
@@ -118,49 +119,40 @@ export const CourseOperationsPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Course Operations</h1>
-            <span className="px-2 py-0.5 rounded text-xs font-bold uppercase bg-blue-100 text-blue-800">
-              Live Hub
-            </span>
-          </div>
-          <p className="text-sm text-slate-500 mt-1">
-            Gestão de turmas presenciais, alocação de estudantes, checklist e ciclo acadêmico
-          </p>
-        </div>
-
-        {/* Header Actions */}
+    <Layout
+      eyebrow="OPERAÇÕES ACADÊMICAS"
+      title="Course Operations"
+      subtitle="Gestão de turmas presenciais, alocação de estudantes, checklist e ciclo acadêmico"
+      actions={
         <div className="flex items-center gap-2">
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg shadow-xs transition-all disabled:opacity-50"
-            title="Refresh operations data"
+            className="btn-secondary text-xs p-2"
+            title="Atualizar dados"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-blue-600' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#08254f]' : ''}`} />
           </button>
 
           <Link
             to="/courses/post-course"
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#08254f] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg shadow-xs transition-colors"
+            className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
           >
-            <Award className="w-4 h-4 text-amber-500" />
+            <Award className="w-3.5 h-3.5 text-amber-500" />
             <span>Pós-Curso & Alumni</span>
           </Link>
 
           <button
             onClick={handleCreateSession}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors"
+            className="btn-crimson text-xs px-3 py-1.5 flex items-center gap-1.5 shadow-sm"
           >
-            <Plus className="w-4 h-4" />
-            <span>New Course Session</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>Nova Turma</span>
           </button>
         </div>
-      </div>
+      }
+    >
+      <div className="space-y-6">
 
       {error && (
         <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700 flex items-center justify-between">
@@ -352,6 +344,7 @@ export const CourseOperationsPage: React.FC = () => {
           courseId={assignStudentData.courseId}
         />
       )}
-    </div>
+      </div>
+    </Layout>
   );
 };

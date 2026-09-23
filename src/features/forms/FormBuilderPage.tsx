@@ -520,14 +520,19 @@ export function FormBuilderPage() {
 
   if (isLoading) {
     return (
-      <Layout title={isNew ? 'New Form' : 'Loading Form...'}>
-        <LoadingState message="Loading form configuration..." />
+      <Layout backTo="/forms" eyebrow="INTAKE & FORMULÁRIOS" title={isNew ? 'Novo Formulário' : 'Carregando Formulário...'}>
+        <LoadingState message="Carregando configuração do formulário..." />
       </Layout>
     );
   }
 
   return (
-    <Layout title={isNew ? 'New Form' : `Edit Form: ${name || 'Untitled'}`}>
+    <Layout
+      backTo="/forms"
+      eyebrow="INTAKE & FORMULÁRIOS"
+      title={isNew ? 'Novo Formulário de Captura' : name || 'Editar Formulário'}
+      subtitle="Construtor visual de formulários de captura com visualização ao vivo e vinculação ao CRM"
+    >
       <div className="space-y-6">
         {/* Top Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useId } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
@@ -39,6 +39,7 @@ import {
   PhoneCall,
   MessageSquare,
   Sparkles,
+  Eye,
 } from 'lucide-react';
 
 type TabType = 'editor' | 'audience' | 'ab_test' | 'versions' | 'send';
@@ -90,17 +91,10 @@ export function CampaignDetailPage() {
   const [variantBSubject, setVariantBSubject] = useState('');
   const [variantBPercent, setVariantBPercent] = useState(50);
 
-  // Test Send
-  const [testEmail, setTestEmail] = useState('');
-  const [isSendingTest, setIsSendingTest] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-
   // Prepare & Execution
   const [recipients, setRecipients] = useState<CampaignRecipient[]>([]);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isActivatingCall, setIsActivatingCall] = useState(false);
-
-  const testEmailInputId = useId();
 
   const loadCampaignData = useCallback(async () => {
     if (!id) return;
@@ -368,64 +362,17 @@ export function CampaignDetailPage() {
     }
   };
 
-  // Send Test Email via Edge Function
-  const handleSendTest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!testEmail.trim() || !campaign) return;
-    setIsSendingTest(true);
-    setTestResult(null);
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/campaign-test-send`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session?.access_token || ''}`,
-          },
-          body: JSON.stringify({
-            campaign_id: campaign.id,
-            test_email: testEmail.trim().toLowerCase(),
-            subject,
-            html_content: htmlContent,
-            version_id: selectedVersionId,
-          }),
-        },
-      );
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to send test email');
-
-      setTestResult({
-        success: true,
-        message: `Test email sent to ${testEmail}! Message ID: ${json.messageId || 'OK'}`,
-      });
-    } catch (err) {
-      setTestResult({
-        success: false,
-        message: err instanceof Error ? err.message : 'Error sending test email',
-      });
-    } finally {
-      setIsSendingTest(false);
-    }
-  };
-
   if (isLoading) {
     return (
-      <Layout title="Campaign Details">
-        <LoadingState message="Loading campaign details..." />
+      <Layout backTo="/campaigns" eyebrow="MARKETING & COMUNICAÇÃO" title="Detalhes da Campanha">
+        <LoadingState message="Carregando detalhes da campanha..." />
       </Layout>
     );
   }
 
   if (error && !campaign) {
     return (
-      <Layout title="Campaign Details">
+      <Layout backTo="/campaigns" eyebrow="MARKETING & COMUNICAÇÃO" title="Detalhes da Campanha">
         <ErrorState message={error} onRetry={loadCampaignData} />
       </Layout>
     );
@@ -496,7 +443,12 @@ export function CampaignDetailPage() {
   };
 
   return (
-    <Layout title={`Campaign: ${campaign.name}`}>
+    <Layout
+      backTo="/campaigns"
+      eyebrow="MARKETING & COMUNICAÇÃO"
+      title={campaign.name}
+      subtitle={channel === 'email' ? 'Compositor & Gestão de Campanhas de Email' : 'Compositor & Gestão de Campanhas'}
+    >
       <div className="space-y-6 max-w-7xl mx-auto pb-12">
         {/* Top Breadcrumb & Status Action Bar */}
         <div className="card-executive p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -951,37 +903,30 @@ export function CampaignDetailPage() {
                   </p>
                 </div>
 
-                {/* Test Send Section (Email preview) */}
+                {/* Safe Preview Section (Correction 3: No live provider dispatch in Batch 4.3) */}
                 {channel === 'email' && (
-                  <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 space-y-3">
-                    <div className="flex items-center gap-2 text-brand-700">
-                      <FlaskConical className="h-4 w-4" />
-                      <span className="text-xs font-bold text-gray-900">Preview & Send Test Email</span>
+                  <div className="p-4 rounded-xl border border-slate-200/80 bg-slate-50/50 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2 text-[#08254f]">
+                        <Eye className="h-4 w-4 text-[#449bd5]" />
+                        <span className="text-xs font-bold text-slate-800 font-heading">Pré-visualização da Mensagem</span>
+                      </div>
+                      <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-amber-50 text-amber-700 border border-amber-200">
+                        Disparo em teste desativado (Provedores inativos)
+                      </span>
                     </div>
-                    <form onSubmit={handleSendTest} className="flex flex-col sm:flex-row gap-2 max-w-lg">
-                      <input
-                        id={testEmailInputId}
-                        type="email"
-                        required
-                        value={testEmail}
-                        onChange={(e) => setTestEmail(e.target.value)}
-                        placeholder="your-email@expdentalsolutions.com"
-                        className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white"
+                    <p className="text-xs text-slate-500">
+                      Visualize a renderização real do template de email e verifique as tags de substituição sem envio de mensagens para redes externas.
+                    </p>
+                    <div className="p-4 bg-white rounded-xl border border-slate-200 text-xs max-h-72 overflow-y-auto">
+                      <div className="mb-2 pb-2 border-b border-slate-100 text-slate-500">
+                        <strong>Assunto:</strong> {subject || '(Sem assunto)'}
+                      </div>
+                      <div
+                        className="prose prose-sm max-w-none text-slate-800"
+                        dangerouslySetInnerHTML={{ __html: htmlContent || '<p class="text-slate-400 italic">Nenhum conteúdo adicionado ao editor.</p>' }}
                       />
-                      <button
-                        type="submit"
-                        disabled={isSendingTest}
-                        className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-gray-900 text-white hover:bg-black transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shrink-0"
-                      >
-                        <Send className="h-3 w-3" />
-                        {isSendingTest ? 'Sending...' : 'Send Test'}
-                      </button>
-                    </form>
-                    {testResult && (
-                      <p className={`text-xs ${testResult.success ? 'text-emerald-700' : 'text-rose-700'}`}>
-                        {testResult.message}
-                      </p>
-                    )}
+                    </div>
                   </div>
                 )}
               </div>

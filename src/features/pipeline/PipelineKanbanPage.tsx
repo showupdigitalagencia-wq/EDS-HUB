@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
@@ -10,6 +9,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { NewLeadModal } from '../leads/components/NewLeadModal';
+import { LeadQuickViewDrawer } from '../leads/components/LeadQuickViewDrawer';
 import {
   MinimalLeadCard,
   resolveAttentionState,
@@ -33,8 +33,6 @@ const STAGE_ORDER_MAP: Record<string, number> = {
 };
 
 export function PipelineKanbanPage() {
-  const navigate = useNavigate();
-
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [leadsByStage, setLeadsByStage] = useState<Record<string, Lead[]>>({});
   const [leadInterestsMap, setLeadInterestsMap] = useState<Record<string, FormattedCourseInterest[]>>({});
@@ -50,6 +48,9 @@ export function PipelineKanbanPage() {
 
   // New Lead Modal
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
+
+  // Lead Quick View Drawer
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
 
   const loadPipelineData = useCallback(async () => {
     setIsLoading(true);
@@ -328,7 +329,7 @@ export function PipelineKanbanPage() {
                         lead={lead}
                         interests={interests}
                         attentionState={attentionState}
-                        onClick={() => navigate(`/leads/${lead.id}`)}
+                        onClick={() => setSelectedLeadId(lead.id)}
                       />
                     );
                   })
@@ -390,7 +391,7 @@ export function PipelineKanbanPage() {
                                 attentionState={attentionState}
                                 isDragging={isDragging}
                                 onDragStart={() => handleDragStart(lead.id)}
-                                onClick={() => navigate(`/leads/${lead.id}`)}
+                                onClick={() => setSelectedLeadId(lead.id)}
                               />
                             );
                           })
@@ -415,6 +416,14 @@ export function PipelineKanbanPage() {
           isOpen={isNewLeadOpen}
           onClose={() => setIsNewLeadOpen(false)}
           onLeadCreated={loadPipelineData}
+        />
+
+        {/* Lead Quick View Drawer */}
+        <LeadQuickViewDrawer
+          leadId={selectedLeadId}
+          isOpen={Boolean(selectedLeadId)}
+          onClose={() => setSelectedLeadId(null)}
+          onLeadUpdated={loadPipelineData}
         />
       </div>
     </Layout>

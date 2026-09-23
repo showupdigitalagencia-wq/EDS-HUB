@@ -202,73 +202,65 @@ export function CampaignsListPage() {
   };
 
   return (
-    <Layout title="Campaigns">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
-                <Mail className="h-5 w-5" />
-              </div>
-              <h1 className="text-2xl font-bold font-heading text-[#08254f] tracking-tight">Campaigns</h1>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Multi-channel campaigns (Email, SMS, Call) with canonical audience segmentation, snapshot freezing, and Work Queue activation
-            </p>
-          </div>
+    <Layout
+      eyebrow="MARKETING & COMUNICAÇÃO"
+      title="Campanhas"
+      subtitle="Campanhas multicanal (Email, SMS) com segmentação canônica, congelamento de snapshot e histórico de versões"
+      actions={
+        <div className="flex flex-wrap items-center gap-2.5">
+          <select
+            value={channelFilter}
+            onChange={(e) => setChannelFilter(e.target.value)}
+            className="px-3 py-2 text-xs font-semibold bg-white border border-slate-200/80 rounded-xl shadow-xs text-slate-700 font-heading"
+          >
+            <option value="all">Todos os Canais</option>
+            <option value="email">Email</option>
+            <option value="sms">SMS</option>
+            <option value="call">Ligações</option>
+          </select>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            <select
-              value={channelFilter}
-              onChange={(e) => setChannelFilter(e.target.value)}
-              className="px-3 py-2 text-xs font-semibold bg-white border border-slate-200/80 rounded-xl shadow-xs text-slate-700"
-            >
-              <option value="all">All Channels</option>
-              <option value="email">Email</option>
-              <option value="sms">SMS</option>
-              <option value="call">Call Tasks</option>
-            </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 text-xs font-semibold bg-white border border-slate-200/80 rounded-xl shadow-xs text-slate-700 font-heading"
+          >
+            <option value="">Todos os Status</option>
+            <option value="draft">Rascunhos</option>
+            <option value="pending_approval">Pendente de Aprovação</option>
+            <option value="approved">Aprovadas</option>
+            <option value="scheduled">Agendadas</option>
+            <option value="sending">Enviando</option>
+            <option value="sent">Enviadas</option>
+          </select>
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 text-xs font-semibold bg-white border border-slate-200/80 rounded-xl shadow-xs text-slate-700"
-            >
-              <option value="">All Statuses</option>
-              <option value="draft">Drafts</option>
-              <option value="pending_approval">Pending Approval</option>
-              <option value="approved">Approved</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="sending">Sending</option>
-              <option value="sent">Sent</option>
-            </select>
+          <button
+            onClick={() => setIsSavedSegmentsOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl shadow-xs transition-colors cursor-pointer font-heading"
+          >
+            <Bookmark className="h-3.5 w-3.5 text-[#449bd5]" />
+            <span>Segmentos Salvos</span>
+          </button>
 
-            <button
-              onClick={() => setIsSavedSegmentsOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl shadow-xs transition-colors cursor-pointer"
-            >
-              <Bookmark className="h-3.5 w-3.5 text-brand-600" />
-              Saved Segments
-            </button>
+          <button
+            onClick={fetchCampaigns}
+            title="Atualizar campanhas"
+            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-white border border-slate-200/80 rounded-xl shadow-xs transition-colors cursor-pointer"
+          >
+            <RotateCw className="h-4 w-4" />
+          </button>
 
-            <button
-              onClick={fetchCampaigns}
-              title="Refresh campaigns"
-              className="p-2 text-slate-500 hover:text-slate-800 hover:bg-white border border-slate-200/80 rounded-xl shadow-xs transition-colors cursor-pointer"
-            >
-              <RotateCw className="h-4 w-4" />
-            </button>
-
-            <button
-              onClick={() => setIsCreateOpen(true)}
-              className="btn-crimson text-xs"
-            >
-              <Plus className="h-4 w-4" />
-              New Campaign
-            </button>
-          </div>
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="btn-crimson text-xs"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Nova Campanha</span>
+          </button>
         </div>
+      }
+    >
+      <div className="space-y-6">
+
 
         {/* Content List */}
         {isLoading ? (

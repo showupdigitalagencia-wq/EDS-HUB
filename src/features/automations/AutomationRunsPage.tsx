@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import {
-  ArrowLeft,
   RefreshCw,
   Clock,
   CheckCircle2,
@@ -199,43 +198,30 @@ export function AutomationRunsPage() {
   };
 
   return (
-    <Layout title="Automation Runs">
-      <div className="space-y-6 pb-12">
-        {/* Page Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate(`/automations/${id}`)}
-              className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition-colors"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                Runs: {automation?.name || 'Automation'}
-              </h1>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Execution history and step-level inspection for all enrolled contacts.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => id && loadData(id)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl shadow-2xs transition-colors"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-            <button
-              onClick={() => navigate(`/automations/${id}`)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-xl transition-colors"
-            >
-              Edit Automation
-            </button>
-          </div>
+    <Layout
+      backTo={id ? `/automations/${id}` : '/automations'}
+      eyebrow="MOTORES & FLUXOS"
+      title={`Execuções: ${automation?.name || 'Automação'}`}
+      subtitle="Histórico detalhado de execução e inspeção passo a passo de contatos inscritos"
+      actions={
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => id && loadData(id)}
+            className="btn-secondary text-xs px-3 py-1.5"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Atualizar</span>
+          </button>
+          <button
+            onClick={() => navigate(`/automations/${id}`)}
+            className="btn-primary text-xs px-3 py-1.5"
+          >
+            Editar Automação
+          </button>
         </div>
+      }
+    >
+      <div className="space-y-6 pb-12">
 
         {/* Status Filters */}
         <div className="flex items-center gap-2 bg-white p-2.5 rounded-2xl border border-gray-200 shadow-2xs">

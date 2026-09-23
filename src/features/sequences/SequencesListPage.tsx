@@ -91,39 +91,30 @@ export function SequencesListPage() {
   );
 
   return (
-    <Layout title="Follow-up Sequences">
-      <div className="space-y-6 max-w-7xl mx-auto pb-12">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold font-heading text-[#08254f] tracking-tight flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
-                <GitFork className="h-5 w-5" />
-              </div>
-              Follow-up Sequences
-            </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Automated multi-touch cadences that continue outreach until a lead responds or status changes.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsTemplateModalOpen(true)}
-              className="btn-secondary text-xs"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#449bd5]" />
-              Browse Templates
-            </button>
-            <button
-              onClick={() => navigate('/sequences/new')}
-              className="btn-crimson text-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              New Sequence
-            </button>
-          </div>
+    <Layout
+      eyebrow="MOTORES & CADÊNCIAS"
+      title="Sequências de Cadência"
+      subtitle="Cadências automatizadas de múltiplos contatos que continuam até a resposta ou alteração de status do lead"
+      actions={
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setIsTemplateModalOpen(true)}
+            className="btn-secondary text-xs px-3 py-2"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#449bd5]" />
+            <span>Explorar Templates</span>
+          </button>
+          <button
+            onClick={() => navigate('/sequences/new')}
+            className="btn-crimson text-xs px-3.5 py-2"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Nova Sequência</span>
+          </button>
         </div>
+      }
+    >
+      <div className="space-y-6 max-w-7xl mx-auto pb-12">
 
         {/* Aggregated KPI Metrics Bar */}
         {metrics && (

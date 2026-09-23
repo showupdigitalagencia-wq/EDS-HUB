@@ -23,6 +23,7 @@ interface WorkItemCardProps {
   onCompleteTask: (taskId: string) => void;
   onRescheduleTask: (task: WorkItem) => void;
   onCreateTaskForLead: (item: WorkItem) => void;
+  onSelectLead?: (leadId: string) => void;
 }
 
 export const WorkItemCard: React.FC<WorkItemCardProps> = ({
@@ -30,6 +31,7 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
   onCompleteTask,
   onRescheduleTask,
   onCreateTaskForLead,
+  onSelectLead,
 }) => {
   const getPriorityBadge = (priority: TaskPriority) => {
     switch (priority) {
@@ -146,13 +148,24 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
           {/* Lead Context Bar */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 pt-0.5">
             {item.lead_id && (
-              <Link
-                to={`/leads/${item.lead_id}`}
-                className="font-medium text-[#08254f] hover:text-[#449bd5] flex items-center gap-1 transition-colors"
-              >
-                <User className="w-3.5 h-3.5 text-slate-400" />
-                <span>{item.lead_name}</span>
-              </Link>
+              onSelectLead ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectLead(item.lead_id!)}
+                  className="font-medium text-[#08254f] hover:text-[#449bd5] flex items-center gap-1 transition-colors cursor-pointer text-left"
+                >
+                  <User className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{item.lead_name}</span>
+                </button>
+              ) : (
+                <Link
+                  to={`/leads/${item.lead_id}`}
+                  className="font-medium text-[#08254f] hover:text-[#449bd5] flex items-center gap-1 transition-colors"
+                >
+                  <User className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{item.lead_name}</span>
+                </Link>
+              )
             )}
 
             {item.lead_score != null && (

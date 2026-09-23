@@ -341,8 +341,8 @@ export function SequenceBuilderPage() {
 
   if (isLoading) {
     return (
-      <Layout title="Sequence Builder">
-        <LoadingState message="Loading sequence definition..." />
+      <Layout backTo="/sequences" eyebrow="MOTORES & CADÊNCIAS" title="Sequência de Cadência">
+        <LoadingState message="Carregando definição da sequência..." />
       </Layout>
     );
   }
@@ -350,7 +350,12 @@ export function SequenceBuilderPage() {
   const selectedStep = selectedStepIndex !== null ? steps[selectedStepIndex] : null;
 
   return (
-    <Layout title={isNew ? 'New Sequence' : name || 'Sequence Builder'}>
+    <Layout
+      backTo="/sequences"
+      eyebrow="MOTORES & CADÊNCIAS"
+      title={isNew ? 'Nova Sequência de Cadência' : name || 'Sequência de Cadência'}
+      subtitle="WHEN (Gatilho) → STOP IF (Condições de parada) → THEN (Ações programadas de contato)"
+    >
       <div className="space-y-6 max-w-6xl mx-auto pb-16">
         {/* Top Header */}
         <div className="flex items-center justify-between gap-4">

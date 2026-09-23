@@ -178,20 +178,23 @@ export function FoundationStatusPage() {
   }
 
   return (
-    <Layout title="Foundation Status">
+    <Layout
+      eyebrow="INFRAESTRUTURA & DIAGNÓSTICO"
+      title="Status do Sistema"
+      subtitle="Diagnóstico de conectividade, autenticação, banco de dados e provedores de serviço"
+      actions={
+        <button
+          id="refresh-status"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin text-[#08254f]' : ''}`} />
+          <span>Atualizar</span>
+        </button>
+      }
+    >
       <div className="space-y-6">
-        {/* Refresh button */}
-        <div className="flex justify-end">
-          <button
-            id="refresh-status"
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="flex items-center gap-2 rounded-[var(--radius-button)] bg-white border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 shadow-sm cursor-pointer"
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        </div>
 
         {/* Core Infrastructure */}
         <section>

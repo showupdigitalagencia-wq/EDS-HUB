@@ -130,13 +130,32 @@ export function MinimalLeadCard({
   const phoneValue = lead.phone_raw || lead.phone_e164 || null;
   const emailValue = lead.email ? lead.email.trim() : null;
 
+  const isDraggingInternal = React.useRef(false);
+
+  const handleDragStart = (e: React.DragEvent) => {
+    isDraggingInternal.current = true;
+    if (onDragStart) onDragStart(e);
+  };
+
+  const handleDragEnd = () => {
+    setTimeout(() => {
+      isDraggingInternal.current = false;
+    }, 100);
+  };
+
+  const handleClick = () => {
+    if (isDraggingInternal.current) return;
+    if (onClick) onClick();
+  };
+
   return (
     <div
       role="article"
       aria-label={`Lead ${fullName}`}
       draggable
-      onDragStart={onDragStart}
-      onClick={onClick}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onClick={handleClick}
       className={`p-3 bg-white rounded-xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#449bd5]/50 transition-all duration-150 cursor-grab active:cursor-grabbing space-y-1.5 select-none group ${
         isDragging ? 'opacity-40 scale-95 border-dashed border-[#449bd5]' : ''
       }`}

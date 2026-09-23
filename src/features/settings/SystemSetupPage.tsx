@@ -205,7 +205,11 @@ export function SystemSetupPage() {
   }
 
   return (
-    <Layout title="Settings">
+    <Layout
+      eyebrow="CONFIGURAÇÕES DO SISTEMA"
+      title="Configurações Gerais"
+      subtitle="Parâmetros globais, catálogo de cursos, gestão de dados e integrações da plataforma"
+    >
       <div className="max-w-4xl space-y-6">
         {/* Settings Navigation Tabs */}
         <div className="flex border-b border-slate-200 gap-6">

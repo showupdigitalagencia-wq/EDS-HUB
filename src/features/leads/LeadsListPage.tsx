@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { EmptyState } from '../../components/EmptyState';
 import { NewLeadModal } from './components/NewLeadModal';
+import { LeadQuickViewDrawer } from './components/LeadQuickViewDrawer';
 import { CsvImportModal } from './import/CsvImportModal';
 import type { Lead, PipelineStage, Tag, Course, CourseSession } from '../../types';
 import { formatSessionMonthYear } from '../pipeline/components/MinimalLeadCard';
@@ -35,8 +36,6 @@ const OPERATIONAL_STAGE_CODES = [
 ] as const;
 
 export function LeadsListPage() {
-  const navigate = useNavigate();
-
   const [searchParams] = useSearchParams();
   const sortParam = searchParams.get('sort');
 
@@ -68,9 +67,10 @@ export function LeadsListPage() {
   const [tagFilter, setTagFilter] = useState('');
   const [scoreFilter, setScoreFilter] = useState('');
 
-  // Modals
+  // Modals & Drawer
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
 
   // 1. Fetch reference data (operational stages, active courses, sessions, tags)
   useEffect(() => {
@@ -559,7 +559,7 @@ export function LeadsListPage() {
                 return (
                   <div
                     key={lead.id}
-                    onClick={() => navigate(`/leads/${lead.id}`)}
+                    onClick={() => setSelectedLeadId(lead.id)}
                     className="p-4 hover:bg-slate-50 transition-colors cursor-pointer space-y-2.5"
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -653,7 +653,7 @@ export function LeadsListPage() {
                     return (
                       <tr
                         key={lead.id}
-                        onClick={() => navigate(`/leads/${lead.id}`)}
+                        onClick={() => setSelectedLeadId(lead.id)}
                         className="hover:bg-[#f0f5fb]/60 transition-colors cursor-pointer group"
                       >
                         {/* 1. Nome */}
@@ -804,6 +804,14 @@ export function LeadsListPage() {
           isOpen={isImportOpen}
           onClose={() => setIsImportOpen(false)}
           onImportComplete={fetchLeads}
+        />
+
+        {/* Lead Quick View Drawer */}
+        <LeadQuickViewDrawer
+          leadId={selectedLeadId}
+          isOpen={Boolean(selectedLeadId)}
+          onClose={() => setSelectedLeadId(null)}
+          onLeadUpdated={fetchLeads}
         />
       </div>
     </Layout>

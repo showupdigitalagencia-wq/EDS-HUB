@@ -1,11 +1,9 @@
 import { useState, type ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { MobileBottomNav } from './MobileBottomNav';
 import { MobileMenuSheet } from './MobileMenuSheet';
+import { MobileHeader } from './MobileHeader';
 import { useAuth } from '../features/auth/AuthProvider';
-import { Search } from 'lucide-react';
-import edsLogo from '../assets/eds-logo.png';
 
 interface LayoutProps {
   children: ReactNode;
@@ -13,9 +11,21 @@ interface LayoutProps {
   subtitle?: string;
   eyebrow?: string;
   actions?: ReactNode;
+  backTo?: string;
+  onBack?: () => void;
+  hideBottomNav?: boolean;
 }
 
-export function Layout({ children, title, subtitle, eyebrow, actions }: LayoutProps) {
+export function Layout({
+  children,
+  title,
+  subtitle,
+  eyebrow,
+  actions,
+  backTo,
+  onBack,
+  hideBottomNav = false,
+}: LayoutProps) {
   const { appUser } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -29,38 +39,26 @@ export function Layout({ children, title, subtitle, eyebrow, actions }: LayoutPr
 
       {/* 2. Main Workspace */}
       <div className="flex-1 lg:ml-60 flex flex-col min-w-0 w-full min-h-screen">
-        {/* A. Mobile Top Bar (< lg) */}
-        <header className="lg:hidden sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-4 py-2.5 flex items-center justify-between min-h-[56px] shadow-2xs">
-          <NavLink to="/" className="flex items-center gap-2">
-            <img
-              src={edsLogo}
-              alt="Expert Dental Solutions"
-              className="h-7 w-auto max-w-[130px] object-contain"
-            />
-          </NavLink>
+        {/* A. Standardized Mobile Top Bar (< lg) with Guaranteed Back Navigation */}
+        <MobileHeader
+          title={title}
+          subtitle={subtitle}
+          backTo={backTo}
+          onBack={onBack}
+          actions={actions}
+        />
 
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-[#08254f] text-white flex items-center justify-center text-xs font-bold shadow-xs">
-              {appUser?.display_name?.charAt(0)?.toUpperCase() || 'U'}
-            </div>
-          </div>
-        </header>
-
-        {/* B. Desktop Top Bar (>= lg) */}
+        {/* B. Desktop Top Bar (>= lg) - Clean Executive Header without fake features */}
         <header className="hidden lg:flex sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-8 py-3.5 shadow-2xs items-center justify-between min-h-[58px]">
-          {/* Global Search Placeholder */}
-          <div className="relative w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              readOnly
-              placeholder="Buscar no EDS HUB..."
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-600 placeholder:text-slate-400 focus:outline-none focus:bg-white cursor-pointer transition-colors"
-            />
+          {/* Breadcrumb / Workspace Context */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 font-heading">
+              EDS HUB
+            </span>
           </div>
 
           {/* User Profile Pill */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">
               <div className="w-7 h-7 rounded-full bg-[#08254f] text-white flex items-center justify-center text-xs font-bold shadow-xs">
                 {appUser?.display_name?.charAt(0)?.toUpperCase() || 'U'}
@@ -104,10 +102,12 @@ export function Layout({ children, title, subtitle, eyebrow, actions }: LayoutPr
       </div>
 
       {/* 3. Fixed Mobile Bottom Navigation Bar (< lg) */}
-      <MobileBottomNav
-        onOpenMenu={() => setMobileMenuOpen(true)}
-        isMenuOpen={mobileMenuOpen}
-      />
+      {!hideBottomNav && (
+        <MobileBottomNav
+          onOpenMenu={() => setMobileMenuOpen(true)}
+          isMenuOpen={mobileMenuOpen}
+        />
+      )}
 
       {/* 4. Mobile Menu Drawer / Sheet */}
       <MobileMenuSheet

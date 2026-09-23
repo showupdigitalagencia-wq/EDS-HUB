@@ -8,7 +8,6 @@ import { BlockEditor } from '../editor/BlockEditor';
 import type { EmailTemplate } from '../../types';
 import type { EmailBlock } from '../editor/types';
 import {
-  FileText,
   Plus,
   Edit2,
   Trash2,
@@ -139,43 +138,34 @@ export function TemplatesListPage() {
   };
 
   return (
-    <Layout title="Email Templates">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-[#08254f] text-[#449bd5] shadow-xs">
-                <FileText className="h-5 w-5" />
-              </div>
-              <h1 className="text-2xl font-bold font-heading text-[#08254f] tracking-tight">Email Templates</h1>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Reusable visual email designs for outbound marketing campaigns
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="px-3 py-2 text-xs font-semibold bg-white border border-slate-200/80 rounded-xl shadow-xs text-slate-700"
-            >
-              <option value="">All Categories</option>
-              <option value="general">General</option>
-              <option value="welcome">Welcome Series</option>
-              <option value="promotional">Promotional</option>
-              <option value="followup">Follow-up</option>
-            </select>
-            <button
-              onClick={handleOpenCreate}
-              className="btn-crimson text-xs"
-            >
-              <Plus className="h-4 w-4" />
-              New Template
-            </button>
-          </div>
+    <Layout
+      eyebrow="MARKETING & COMUNICAÇÃO"
+      title="Templates de Mensagem"
+      subtitle="Biblioteca de templates e peças visuais reutilizáveis para campanhas e automações"
+      actions={
+        <div className="flex items-center gap-2.5">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="input-executive text-xs py-1.5 px-3 bg-white w-auto"
+          >
+            <option value="">Todas as Categorias</option>
+            <option value="general">Geral</option>
+            <option value="welcome">Boas-vindas</option>
+            <option value="promotional">Promocional</option>
+            <option value="followup">Follow-up</option>
+          </select>
+          <button
+            onClick={handleOpenCreate}
+            className="btn-crimson text-xs px-3.5 py-2 shadow-sm"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Novo Template</span>
+          </button>
         </div>
+      }
+    >
+      <div className="space-y-6">
 
         {isLoading ? (
           <LoadingState message="Loading templates..." />
