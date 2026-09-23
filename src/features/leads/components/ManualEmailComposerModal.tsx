@@ -29,6 +29,10 @@ export interface ManualEmailComposerModalProps {
   onClose: () => void;
   lead: Lead;
   onEmailSent?: () => void;
+  initialSubject?: string | null;
+  inReplyToProviderMessageId?: string | null;
+  conversationId?: string | null;
+  initialBody?: string | null;
 }
 
 export function ManualEmailComposerModal({
@@ -36,6 +40,10 @@ export function ManualEmailComposerModal({
   onClose,
   lead,
   onEmailSent,
+  initialSubject,
+  inReplyToProviderMessageId,
+  conversationId,
+  initialBody,
 }: ManualEmailComposerModalProps) {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -110,8 +118,8 @@ export function ManualEmailComposerModal({
     const isOpening = isOpen && (!prevIsOpenRef.current || prevLeadIdRef.current !== lead.id);
     if (isOpening) {
       // Reset state & generate fresh idempotency key
-      setSubject('');
-      setBody('');
+      setSubject(initialSubject || '');
+      setBody(initialBody || '');
       setError(null);
       setSendSuccess(false);
       setIsSending(false);
@@ -129,7 +137,7 @@ export function ManualEmailComposerModal({
     }
     prevIsOpenRef.current = isOpen;
     prevLeadIdRef.current = isOpen ? lead.id : null;
-  }, [isOpen, lead.id, isValidEmail, loadSuppressionAndTemplates]);
+  }, [isOpen, lead.id, isValidEmail, loadSuppressionAndTemplates, initialSubject, initialBody]);
 
   // Handle Template Selection: copies snapshot into composer with safe variable substitution
   const handleSelectTemplate = (templateId: string) => {
@@ -202,9 +210,11 @@ export function ManualEmailComposerModal({
       const { data, error: invokeErr } = await supabase.functions.invoke('send-conversation-message', {
         body: {
           lead_id: lead.id,
+          conversation_id: conversationId || undefined,
           channel: 'email',
           subject: subject.trim(),
           body: body.trim(),
+          in_reply_to_provider_message_id: inReplyToProviderMessageId || undefined,
           idempotency_key: idempotencyKeyRef.current,
         },
       });

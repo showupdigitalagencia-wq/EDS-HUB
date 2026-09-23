@@ -12,9 +12,13 @@ import {
   Clock,
   ArrowDownLeft,
   Calendar,
+  Reply,
+  Paperclip,
+  X,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { sanitizeHtml } from '../../utils/sanitize-html';
+import { splitEmailQuotes } from '../../utils/email-quote-cleaner';
 import { ManualEmailComposerModal } from './components/ManualEmailComposerModal';
 import type { Lead } from '../../types';
 
@@ -38,6 +42,7 @@ export interface LeadTimelineMessage {
   id: string;
   leadId: string;
   conversationId: string | null;
+  providerMessageId?: string | null;
   direction: 'inbound' | 'outbound';
   channel: 'email' | 'sms' | 'whatsapp';
   senderLabel: string;
@@ -47,6 +52,8 @@ export interface LeadTimelineMessage {
   status: TimelineDeliveryStatus;
   statusLabel: string;
   timestamp: string;
+  readAt?: string | null;
+  attachments?: Array<{ filename: string; mime_type?: string; size?: number }>;
   isManualReply?: boolean;
 }
 
@@ -96,7 +103,18 @@ function resolveDeliveryStatus(
 
 function MessageBodyText({ msg }: { msg: LeadTimelineMessage }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const isLong = (msg.body || '').length > 280;
+  const [showQuoted, setShowQuoted] = useState(false);
+
+  // Quote separation for inbound messages
+  const { freshText, quotedText } = useMemo(() => {
+    if (msg.direction === 'inbound' && !msg.bodyHtml) {
+      return splitEmailQuotes(msg.body);
+    }
+    return { freshText: msg.body, quotedText: null };
+  }, [msg.direction, msg.body, msg.bodyHtml]);
+
+  const displayBody = freshText || msg.body;
+  const isLong = (displayBody || '').length > 280;
 
   if (msg.direction === 'inbound' && msg.bodyHtml) {
     return (
@@ -121,22 +139,47 @@ function MessageBodyText({ msg }: { msg: LeadTimelineMessage }) {
   }
 
   return (
-    <div className="space-y-1.5 text-xs text-slate-700 break-words">
+    <div className="space-y-2 text-xs text-slate-700 break-words">
+      {/* Fresh Reply Text */}
       <p
         className={`whitespace-pre-wrap leading-relaxed ${
           !isExpanded && isLong ? 'line-clamp-4' : ''
         }`}
       >
-        {msg.body}
+        {displayBody}
       </p>
+
       {isLong && (
         <button
           type="button"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="text-[11px] font-semibold text-[#08254f] hover:underline cursor-pointer pt-0.5 inline-block"
+          className="text-[11px] font-semibold text-[#08254f] hover:underline cursor-pointer pt-0.5 inline-block mr-3"
         >
           {isExpanded ? 'Ver menos' : 'Ver mais'}
         </button>
+      )}
+
+      {/* Quoted Historical Thread Content Toggle */}
+      {quotedText && (
+        <div className="pt-1">
+          <button
+            type="button"
+            data-testid={`toggle-quote-${msg.id}`}
+            onClick={() => setShowQuoted(!showQuoted)}
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors cursor-pointer"
+          >
+            <span>{showQuoted ? 'Ocultar histórico citado' : 'Ver histórico citado'}</span>
+          </button>
+
+          {showQuoted && (
+            <div
+              data-testid={`quoted-text-${msg.id}`}
+              className="mt-2 p-2.5 rounded-lg bg-slate-100/70 border-l-2 border-slate-300 text-[11px] text-slate-600 whitespace-pre-wrap font-mono leading-relaxed"
+            >
+              {quotedText}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -151,6 +194,15 @@ export function LeadConversationsCard({
   const [isLoading, setIsLoading] = useState(true);
   const [activeChannelFilter, setActiveChannelFilter] = useState<'all' | 'email' | 'sms'>('all');
   const [isInternalComposerOpen, setIsInternalComposerOpen] = useState(false);
+  const [toastNotification, setToastNotification] = useState<string | null>(null);
+
+  // Thread reply context state
+  const [replyContext, setReplyContext] = useState<{
+    isOpen: boolean;
+    subject?: string;
+    inReplyToProviderMessageId?: string;
+    conversationId?: string;
+  }>({ isOpen: false });
 
   const leadName = useMemo(() => {
     return (
@@ -167,7 +219,7 @@ export function LeadConversationsCard({
       const { data: outbounds, error: outErr } = await supabase
         .from('outbound_messages')
         .select(
-          'id, lead_id, conversation_id, channel, provider, recipient, template_key, subject_snapshot, body_snapshot, status, provider_status, sent_at, delivered_at, bounced_at, complained_at, failed_at, is_manual_reply, created_at'
+          'id, lead_id, conversation_id, channel, provider, recipient, template_key, subject_snapshot, body_snapshot, status, provider_status, provider_message_id, sent_at, delivered_at, bounced_at, complained_at, failed_at, is_manual_reply, created_at'
         )
         .eq('lead_id', lead.id)
         .order('created_at', { ascending: true });
@@ -180,13 +232,24 @@ export function LeadConversationsCard({
       const { data: inbounds, error: inErr } = await supabase
         .from('inbound_messages')
         .select(
-          'id, lead_id, conversation_id, channel, provider, from_address, to_address, subject, body_text, body_html, received_at, created_at'
+          'id, lead_id, conversation_id, channel, provider, provider_message_id, from_address, to_address, subject, body_text, body_html, attachments, read_at, received_at, created_at'
         )
         .eq('lead_id', lead.id)
         .order('received_at', { ascending: true });
 
       if (inErr) {
         console.error('Failed to load inbound messages for lead:', inErr);
+      }
+
+      // Automatically mark conversations as read if unread inbound messages exist
+      const unreadConvs = new Set<string>();
+      (inbounds || []).forEach((m: any) => {
+        if (!m.read_at && m.conversation_id) {
+          unreadConvs.add(m.conversation_id);
+        }
+      });
+      for (const convId of unreadConvs) {
+        void supabase.rpc('mark_conversation_read' as any, { p_conversation_id: convId }).then(null, () => {});
       }
 
       // 3. Unify messages
@@ -199,6 +262,7 @@ export function LeadConversationsCard({
           id: out.id,
           leadId: lead.id,
           conversationId: out.conversation_id || null,
+          providerMessageId: out.provider_message_id || out.id,
           direction: 'outbound',
           channel,
           senderLabel: `Você · ${channel === 'sms' ? 'SMS' : 'E-mail'}`,
@@ -219,6 +283,7 @@ export function LeadConversationsCard({
           id: inMsg.id,
           leadId: lead.id,
           conversationId: inMsg.conversation_id || null,
+          providerMessageId: inMsg.provider_message_id || inMsg.id,
           direction: 'inbound',
           channel,
           senderLabel: `${leadName} · ${channel === 'sms' ? 'SMS' : 'E-mail'}`,
@@ -228,6 +293,8 @@ export function LeadConversationsCard({
           status,
           statusLabel: label,
           timestamp: inMsg.received_at || inMsg.created_at,
+          readAt: inMsg.read_at || null,
+          attachments: inMsg.attachments || [],
           isManualReply: false,
         });
       });
@@ -249,7 +316,7 @@ export function LeadConversationsCard({
     loadMessages();
   }, [loadMessages]);
 
-  // Realtime subscription for immediate status updates (e.g. sent -> delivered)
+  // Realtime subscription for immediate status updates and inbound receipt
   useEffect(() => {
     if (typeof supabase?.channel !== 'function') return;
 
@@ -275,8 +342,12 @@ export function LeadConversationsCard({
           table: 'inbound_messages',
           filter: `lead_id=eq.${lead.id}`,
         },
-        () => {
+        (payload: any) => {
           loadMessages();
+          if (payload.eventType === 'INSERT') {
+            setToastNotification(`Nova resposta de ${leadName}`);
+            setTimeout(() => setToastNotification(null), 6000);
+          }
         }
       )
       .subscribe();
@@ -286,14 +357,26 @@ export function LeadConversationsCard({
         supabase.removeChannel(channel);
       }
     };
-  }, [lead.id, loadMessages]);
+  }, [lead.id, leadName, loadMessages]);
 
   const handleOpenComposer = () => {
     if (onOpenComposer) {
       onOpenComposer();
     } else {
+      setReplyContext({ isOpen: false });
       setIsInternalComposerOpen(true);
     }
+  };
+
+  const handleReplyTo = (msg: LeadTimelineMessage) => {
+    const rawSub = msg.subject || 'Conversa';
+    const cleanSub = rawSub.replace(/^Re:\s*/i, '').trim();
+    setReplyContext({
+      isOpen: true,
+      subject: `Re: ${cleanSub}`,
+      inReplyToProviderMessageId: msg.providerMessageId || msg.id,
+      conversationId: msg.conversationId || undefined,
+    });
   };
 
   const filteredMessages = useMemo(() => {
@@ -340,15 +423,28 @@ export function LeadConversationsCard({
 
   const renderStatusBadge = (msg: LeadTimelineMessage) => {
     if (msg.direction === 'inbound') {
+      const isUnread = !msg.readAt;
       return (
-        <span
-          data-testid={`delivery-status-${msg.id}`}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200/80"
-          title="Mensagem recebida do lead"
-        >
-          <ArrowDownLeft className="w-3 h-3 text-sky-600" />
-          <span>Recebido</span>
-        </span>
+        <div className="flex items-center gap-1.5">
+          {isUnread && (
+            <span
+              data-testid={`nova-resposta-badge-${msg.id}`}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 animate-in fade-in"
+              title="Nova resposta não lida"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Nova resposta</span>
+            </span>
+          )}
+          <span
+            data-testid={`delivery-status-${msg.id}`}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200/80"
+            title="Mensagem recebida do lead"
+          >
+            <ArrowDownLeft className="w-3 h-3 text-sky-600" />
+            <span>Recebido</span>
+          </span>
+        </div>
       );
     }
 
@@ -428,6 +524,27 @@ export function LeadConversationsCard({
       data-testid="lead-conversations-card"
       className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden w-full max-w-full"
     >
+      {/* In-App Operational Notification Banner */}
+      {toastNotification && (
+        <div
+          data-testid="inbound-operational-alert"
+          className="m-4 p-3 bg-sky-50 border border-sky-200 text-sky-900 rounded-xl text-xs flex items-center justify-between shadow-xs animate-in fade-in"
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
+            <span className="font-bold">{toastNotification}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToastNotification(null)}
+            className="text-sky-600 hover:text-sky-800 p-1 rounded transition-colors"
+            title="Fechar aviso"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-white">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -629,7 +746,7 @@ export function LeadConversationsCard({
                                 <span>{timeStr}</span>
                               </div>
 
-                              {/* Delivery status badge */}
+                              {/* Delivery status badge + Unread state */}
                               {renderStatusBadge(msg)}
                             </div>
                           </div>
@@ -650,6 +767,43 @@ export function LeadConversationsCard({
                           <div data-testid={`message-body-${msg.id}`} className="pt-0.5">
                             <MessageBodyText msg={msg} />
                           </div>
+
+                          {/* Attachment Notice (if present) */}
+                          {msg.attachments && msg.attachments.length > 0 && (
+                            <div
+                              data-testid={`attachment-notice-${msg.id}`}
+                              className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-slate-500"
+                            >
+                              <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="font-semibold text-slate-600">Este e-mail possui anexo:</span>
+                              {msg.attachments.map((att, idx) => (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] border border-slate-200 font-mono"
+                                >
+                                  {att.filename} {att.size ? `(${Math.round(att.size / 1024)} KB)` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Action Footer: Responder button */}
+                          <div className="flex items-center justify-between pt-2 border-t border-slate-100/80">
+                            <div className="flex items-center gap-2">
+                              {isInbound && (
+                                <button
+                                  type="button"
+                                  data-testid={`responder-btn-${msg.id}`}
+                                  onClick={() => handleReplyTo(msg)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-[#08254f] hover:text-white bg-slate-100 hover:bg-[#08254f] transition-colors cursor-pointer"
+                                  title="Responder a este e-mail"
+                                >
+                                  <Reply className="w-3.5 h-3.5" />
+                                  <span>Responder</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );
@@ -661,18 +815,22 @@ export function LeadConversationsCard({
         </div>
       )}
 
-      {/* Fallback internal composer if parent did not provide onOpenComposer */}
-      {!onOpenComposer && (
-        <ManualEmailComposerModal
-          isOpen={isInternalComposerOpen}
-          lead={lead}
-          onClose={() => setIsInternalComposerOpen(false)}
-          onEmailSent={() => {
-            loadMessages();
-            onLeadUpdated?.();
-          }}
-        />
-      )}
+      {/* Internal composer modal (handles both general compose and threaded reply) */}
+      <ManualEmailComposerModal
+        isOpen={replyContext.isOpen || (!onOpenComposer && isInternalComposerOpen)}
+        lead={lead}
+        initialSubject={replyContext.subject}
+        inReplyToProviderMessageId={replyContext.inReplyToProviderMessageId}
+        conversationId={replyContext.conversationId}
+        onClose={() => {
+          setReplyContext({ isOpen: false });
+          setIsInternalComposerOpen(false);
+        }}
+        onEmailSent={() => {
+          loadMessages();
+          onLeadUpdated?.();
+        }}
+      />
     </div>
   );
 }
