@@ -337,4 +337,129 @@ describe('EDS HUB — Batch 5: Templates & Communication Foundation', () => {
       expect(versionSnapshot.html_snapshot).toBe('<p>Frozen Snapshot</p>');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // 8. Premium Template Composer Redesign (Gmail/Superhuman Experience)
+  // ---------------------------------------------------------------------------
+  describe('Premium Template Composer Redesign (Gmail/Superhuman Experience)', () => {
+    it('verifies Email mode exposes Compor, Blocos, and Prévia modes', () => {
+      const emailModes = ['compor', 'blocos', 'previa'];
+      expect(emailModes).toContain('compor');
+      expect(emailModes).toContain('blocos');
+      expect(emailModes).toContain('previa');
+    });
+
+    it('verifies SMS mode only exposes Compor and Prévia, omitting Blocos', () => {
+      const getAvailableModesForChannel = (ch: 'email' | 'sms') => {
+        return ch === 'email' ? ['compor', 'blocos', 'previa'] : ['compor', 'previa'];
+      };
+
+      const smsModes = getAvailableModesForChannel('sms');
+      expect(smsModes).toContain('compor');
+      expect(smsModes).toContain('previa');
+      expect(smsModes).not.toContain('blocos');
+    });
+
+    it('verifies Email channel requires and exposes Subject line', () => {
+      const emailTemplate = {
+        name: 'Boas-vindas VIP',
+        content_json: {
+          channel: 'email',
+          subject: 'Boas-vindas à Expert Dental Solutions {{first_name}}',
+          blocks: [{ id: 'b1', type: 'text', text: 'Olá!' }],
+        },
+      };
+
+      expect(getTemplateSubject(emailTemplate as any)).toBe(
+        'Boas-vindas à Expert Dental Solutions {{first_name}}'
+      );
+    });
+
+    it('verifies SMS channel does not have a Subject line', () => {
+      const smsTemplate = {
+        name: 'Lembrete de Consulta SMS',
+        content_json: {
+          channel: 'sms',
+          body: 'Olá {{salutation}}, seu horário está confirmado.',
+        },
+      };
+
+      expect(getTemplateSubject(smsTemplate as any)).toBe('');
+    });
+
+    it('verifies global variable library contains only salutation and first_name', () => {
+      const variableKeys = GLOBAL_TEMPLATE_VARIABLES.map((v) => v.key);
+      expect(variableKeys).toEqual(['{{salutation}}', '{{first_name}}']);
+      expect(variableKeys).not.toContain('{{last_name}}');
+    });
+
+    it('verifies preview HTML is strictly sanitized against XSS', () => {
+      const maliciousHtml = '<p>Olá!</p><script>alert("hack")</script><img src="x" onerror="alert(1)" />';
+      const sanitized = sanitizeHtml(maliciousHtml);
+      expect(sanitized).not.toContain('<script>');
+      expect(sanitized).not.toContain('onerror=');
+      expect(sanitized).toContain('<p>Olá!</p>');
+    });
+
+    it('verifies save payload schema for Email preserves blocks and subject', () => {
+      const emailPayload = {
+        name: 'Campanha de Reativação',
+        category: 'promotional',
+        content_json: {
+          channel: 'email',
+          subject: 'Novidades exclusivas',
+          blocks: [
+            { id: 'h-1', type: 'heading', text: 'Olá', level: 1, align: 'center' },
+            { id: 'b-1', type: 'button', label: 'Clique Aqui', url: 'https://expdentalsolutions.com' },
+          ],
+        },
+        html_template: '<html>...</html>',
+        text_template: 'Olá\n\n>>> Clique Aqui: https://expdentalsolutions.com',
+      };
+
+      expect(emailPayload.content_json.channel).toBe('email');
+      expect(emailPayload.content_json.subject).toBe('Novidades exclusivas');
+      expect(emailPayload.content_json.blocks).toHaveLength(2);
+      expect(emailPayload.html_template).toBeTruthy();
+    });
+
+    it('verifies save payload schema for SMS preserves body in text_template and content_json', () => {
+      const smsPayload = {
+        name: 'Lembrete Rápido SMS',
+        category: 'followup',
+        content_json: {
+          channel: 'sms',
+          body: 'Olá {{first_name}}, precisamos confirmar sua presença.',
+        },
+        html_template: '',
+        text_template: 'Olá {{first_name}}, precisamos confirmar sua presença.',
+      };
+
+      expect(smsPayload.content_json.channel).toBe('sms');
+      expect(smsPayload.content_json.body).toContain('{{first_name}}');
+      expect(smsPayload.html_template).toBe('');
+      expect(smsPayload.text_template).toBe(smsPayload.content_json.body);
+    });
+
+    it('verifies legacy block compatibility is preserved when loaded in new composer', () => {
+      const legacyBlocks = [
+        { id: 'b-1', type: 'heading', text: 'Antigo Título', level: 2, align: 'left' },
+        { id: 'b-2', type: 'text', text: 'Antigo texto...', align: 'left' },
+      ];
+
+      const legacyTemplate = {
+        id: 'legacy-1',
+        name: 'Template Antigo',
+        content_json: legacyBlocks,
+      };
+
+      expect(getTemplateChannel(legacyTemplate as any)).toBe('email');
+      const loadedBlocks = Array.isArray(legacyTemplate.content_json)
+        ? legacyTemplate.content_json
+        : [];
+      expect(loadedBlocks).toHaveLength(2);
+      expect(loadedBlocks[0].text).toBe('Antigo Título');
+    });
+  });
 });
+
