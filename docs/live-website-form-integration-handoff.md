@@ -13,27 +13,32 @@
 
 Integrate the live course registration form on the public EDS website with the **EDS HUB CRM** to synchronize student registrations seamlessly across two distinct lifecycle events:
 
-1. **EVENT A (Incomplete Intent):** Capture prospective students who begin filling out their contact details and select a course, but abandon the page before final submission. Creates/matches the lead in `Novo Lead` (`capture`) and generates an operational follow-up task.
+1. **EVENT A (Incomplete Intent):** Capture prospective students who begin filling out their contact details and select an explicitly mapped course, but abandon the page before final submission. Creates/matches the lead in `Novo Lead` (`capture`) and generates an operational follow-up task.
 2. **EVENT B (Completed Application):** Capture confirmed applications submitted through the website. Atomically reconciles the earlier incomplete attempt (`form_completed`), cancels the pending follow-up task, logs application completion, populates `resolved_form_submission_id`, leaves `resolved_enrollment_id` `NULL`, and preserves the existing commercial pipeline stage.
 
 ---
 
 ## 2. Architecture Tradeoff & Recommendation
 
-Two implementation options are available for the website developer:
+Two implementation pathways are available for the website developer:
 
 | Criteria | OPTION A: Pure Browser Integration (JS only) | OPTION B: Hybrid Integration (Recommended) |
 | :--- | :--- | :--- |
 | **Event A (Incomplete Intent)** | Browser → EDS HUB Edge Function | Browser → EDS HUB Edge Function |
 | **Event B (Completed Application)** | Browser → EDS HUB Edge Function (after Laravel 200) | Laravel Backend → EDS HUB Edge Function (server-to-server) |
-| **Developer Effort** | Add 1 JavaScript snippet to `/register` blade | Add JS snippet + 1 PHP helper call in RegistrationController |
-| **Reliability on Slow Mobile Networks** | Good (with 5s timeout & non-blocking finally) | **Maximum** (guaranteed execution, zero risk of tab close before sync) |
-| **Ad Blocker / Privacy Shield Resilience** | Moderate (some aggressive extensions block analytics) | **Maximum** (completed application cannot be blocked by client extensions) |
-| **Form Attempt ID Continuity** | Automatically tracked in `sessionStorage` | Stored in `sessionStorage` + submitted as hidden input `<input name="eds_form_attempt_id">` |
+| **Developer Effort** | Add 1 JavaScript snippet to `/register` blade | Add JS snippet + 1 PHP service call in RegistrationController |
+| **Network Reliability** | Good (with 5s timeout & non-blocking finally) | **Superior** (more reliable server-to-server completion sync) |
+| **Client Extension Resilience** | Moderate (some aggressive extensions block analytics) | **Superior** (completed sync runs from server, unaffected by ad blockers) |
+| **Form Attempt ID Continuity** | Tracked in `sessionStorage` | Stored in `sessionStorage` + submitted as hidden input `<input name="eds_form_attempt_id">` |
 
 ### Recommended Choice: **OPTION B (Hybrid)**
-- **Why:** The student's incomplete intent can only be detected in the browser while they type. However, for a high-value completed application ($9k–$11k course tuition), server-to-server dispatch from Laravel guarantees 100% CRM delivery regardless of mobile signal drops, client browser crashes, or browser extensions.
+- **Why:** The student's incomplete intent can only be captured in the browser while they type. For completed applications, dispatching server-to-server from Laravel provides a **more reliable server-to-server completion sync**, immune to client tab closure, mobile signal drops, or browser extension blockage.
 - **Fast-Track Alternative (OPTION A):** If the developer cannot immediately modify Laravel controller code, **OPTION A works entirely from the frontend** using only the JavaScript snippet.
+
+> [!IMPORTANT]
+> **ACTIVATE ONLY ONE COMPLETED SYNC PATHWAY**  
+> If you implement **OPTION B** (Laravel backend sync), **DO NOT** call `window.sendEdsHubCompletedForm()` on the frontend.  
+> Using both pathways simultaneously would result in duplicate submission dispatches.
 
 ---
 
@@ -73,7 +78,7 @@ fetch(form.action, {
 .then(result => {
   if (result.success) {
     // -------------------------------------------------------------------------
-    // EDS HUB INTEGRATION HOOK (OPTION A):
+    // EDS HUB INTEGRATION HOOK (OPTION A ONLY — DO NOT USE IF OPTION B IS ACTIVE):
     // -------------------------------------------------------------------------
     if (typeof window.sendEdsHubCompletedForm === 'function') {
       window.sendEdsHubCompletedForm(form).finally(() => {
@@ -95,10 +100,11 @@ In `app/Http/Controllers/RegistrationController.php`:
 ```php
 public function store(RegisterRequest $request)
 {
-    // 1. Existing local registration & file uploads
+    // 1. Existing local registration & file uploads in database transaction
     $registration = $this->registrationService->create($request->validated());
 
-    // 2. EDS HUB Completed Sync (Non-blocking: failures do not affect student)
+    // 2. EDS HUB Completed Sync (Server-to-server, after local commit)
+    // Non-blocking: failures log a warning and DO NOT interrupt student redirect
     \App\Services\EdsHubSyncService::syncCompletedApplication($request);
 
     // 3. Return existing response
@@ -149,7 +155,7 @@ public function store(RegisterRequest $request)
 | Parameter | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `external_attempt_id` | string | Recommended | Stable session attempt ID (`reg_...`) linking incomplete to completed intent |
-| `idempotency_key` | string | **Yes** | UUID preventing duplicate submissions on retry/double-click |
+| `idempotency_key` | string | **Yes** | Stable key preventing duplicate processing on retries/double-clicks |
 | `source_page` | string | Optional | Current URL origin + pathname (no query or hash) |
 | `utm_source`, `utm_medium`, etc. | string | Optional | Whitelisted marketing parameters |
 
@@ -167,13 +173,13 @@ public function store(RegisterRequest $request)
 > - `coat_size`: Apparel size. **EXCLUDED**.
 > - `signature`: Legal signature image/canvas. **PROHIBITED**.
 > - `raw FormData`: Raw multipart request body. **PROHIBITED**.
-> - Laravel CSRF tokens, session IDs, cookies, or passwords. **EXCLUDED**.
+> - Laravel CSRF tokens, session IDs, cookies, passwords, or customer email in logs. **EXCLUDED**.
 
 ---
 
 ## 7. Deterministic Course Mapping Table
 
-The live form has a single `<select name="course">`. The options embed course title, session dates, and tuition. The integration uses deterministic keyword matching:
+The live form has a single `<select name="course">`. The options embed course title, session dates, and tuition. The integration uses deterministic keyword matching with **ZERO default course fallback**:
 
 | Live Website Option (Exact Prefix / Keywords) | EDS HUB `courses.code` | Canonical Course Name |
 | :--- | :--- | :--- |
@@ -181,6 +187,11 @@ The live form has a single `<select name="course">`. The options embed course ti
 | `Advanced Bone Grafting & Sinus Lift` | `ADIE-01` | Advanced Dental Implant Experience |
 | `Zygomatic & Pterygoid Implants` | `ZIT-01` | Zygomatic Implant Training |
 | `Full Arch Immediate Loading` | `AIRE-01` | Advanced Implant Rehabilitation Experience |
+
+> [!WARNING]
+> **NO DEFAULT FALLBACK**  
+> If an option does not match one of these 4 mapped courses, `resolveCourseCode()` returns `null`.  
+> Incomplete intent capture safely skips until the mapping table is updated. It will **never** misattribute an unknown course to `IDIT-01`.
 
 ### Session Reality
 The live registration form **does NOT** contain a separate session selector dropdown. Dates are embedded directly in the course option text. Therefore, `course_session_id` remains `NULL` in EDS HUB until a registrar or coordinator assigns the student to a specific turma.
@@ -200,8 +211,8 @@ The live form has a single `<input name="name">`. To prevent damaging multi-toke
 ## 9. Failure Handling & Non-Blocking Guarantee
 
 The student's registration experience on the website is the absolute highest priority:
-1. **Incomplete Intent Failure:** If the incomplete request fails or times out, it silently logs to `console.debug`. No alert or modal is ever shown to the visitor.
-2. **Completed Application Failure:** If EDS HUB is unreachable when the student submits the form, the student's registration in Laravel has already succeeded. The `.finally()` block guarantees the visitor is still redirected to `/thank-you` without error banners.
+1. **Incomplete Intent Failure:** If the incomplete request fails or times out, it silently logs to `console.debug`. No alert or modal is ever shown to the visitor. The idempotency key is preserved so that any subsequent retry reuses the same key.
+2. **Completed Application Failure:** If EDS HUB is unreachable when the student submits the form, the student's registration in Laravel has already succeeded. The `.finally()` block (Option A) or `try/catch` block (Option B) guarantees the visitor is still redirected to `/thank-you` without error banners.
 3. **Timeout:** Both endpoints are bounded with a strict **5-second timeout** using `AbortController` (JS) and `Http::timeout(5)` (PHP) so pages never hang.
 
 ---
@@ -212,9 +223,9 @@ The student's registration experience on the website is the absolute highest pri
 - [ ] **Step 2: Add JS Snippet:** Copy `docs/snippets/eds-register-integration.js` into your public assets folder (`public/js/eds-register-integration.js`).
 - [ ] **Step 3: Include in Blade:** Add `<script src="/js/eds-register-integration.js" defer></script>` to `/register` template.
 - [ ] **Step 4: Verify Selectors:** Confirm input names match `#registerForm`, `input[name="name"]`, `input[name="email"]`, `input[name="phone"]`, `select[name="course"]`.
-- [ ] **Step 5: Choose Completed Sync Path:**
+- [ ] **Step 5: Choose Completed Sync Path (ONE ONLY):**
   - **Option A (Frontend):** Call `window.sendEdsHubCompletedForm(form)` inside the existing AJAX success callback before redirecting to `/thank-you`.
-  - **Option B (Backend - Recommended):** Copy `docs/snippets/eds-register-completed-sync.php` to `app/Services/EdsHubSyncService.php` and call `EdsHubSyncService::syncCompletedApplication($request)` in your controller.
+  - **Option B (Backend - Recommended):** Copy `docs/snippets/eds-register-completed-sync.php` to `app/Services/EdsHubSyncService.php` and call `EdsHubSyncService::syncCompletedApplication($request)` in your controller. *(Do NOT call window.sendEdsHubCompletedForm if Option B is active).*
 - [ ] **Step 6: Privacy Audit:** Verify that `medical_conditions`, `dietary`, `passport`, `dental_license`, and `signature` are NOT sent to EDS HUB.
 - [ ] **Step 7: Execute Testing Plan:** Follow the test scenarios below in a staging or preview environment.
 

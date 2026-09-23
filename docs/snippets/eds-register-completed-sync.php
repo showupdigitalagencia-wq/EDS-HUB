@@ -13,11 +13,15 @@ use Illuminate\Support\Str;
  * Dispatches completed website registration applications to EDS HUB CRM
  * server-to-server immediately following a successful local registration.
  *
- * CRITICAL PRIVACY RULES:
+ * Provides a more reliable server-to-server completion sync, immune to
+ * client-side network interruptions, browser tab closure, or ad blockers.
+ *
+ * CRITICAL PRIVACY & SECURITY RULES:
  * - NEVER forward medical conditions, dietary restrictions, or health data.
  * - NEVER forward passport, dental license files, or emergency contact.
  * - NEVER forward digital signatures or raw request payloads.
- * - Non-blocking: failures must log a warning and NEVER interrupt student registration.
+ * - NEVER log customer email, phone, name, or raw response bodies.
+ * - Non-blocking: failures must log a technical warning and NEVER interrupt student registration.
  */
 class EdsHubSyncService
 {
@@ -42,11 +46,16 @@ class EdsHubSyncService
                 $attemptId = 'reg_' . (string) Str::uuid();
             }
 
-            // 2. Prepare STRICTLY SANITIZED CRM whitelist payload
+            // 2. Derive stable, deterministic idempotency key for this attempt
+            // Guarantees retries of the SAME application reuse the exact same idempotency key
+            // (Uses safe technical attempt ID hash, zero personal data involved)
+            $idempotencyKey = 'comp_' . substr(hash('sha256', 'eds_app_sync_' . $attemptId), 0, 32);
+
+            // 3. Prepare STRICTLY SANITIZED CRM whitelist payload
             // Do NOT include medical, dietary, documents, signature, or emergency contacts.
             $payload = [
                 'slug' => self::FORM_SLUG,
-                'idempotency_key' => 'comp_' . (string) Str::uuid(),
+                'idempotency_key' => $idempotencyKey,
                 'external_attempt_id' => $attemptId,
                 'fields' => [
                     'name' => trim((string) $request->input('name')),
@@ -64,10 +73,10 @@ class EdsHubSyncService
                 ],
             ];
 
-            // 3. Remove null fields to keep payload compact
+            // 4. Remove null fields to keep payload compact
             $payload['fields'] = array_filter($payload['fields'], fn ($value) => $value !== null && $value !== '');
 
-            // 4. Send non-blocking HTTP request with short timeout
+            // 5. Send non-blocking HTTP request with short timeout
             $response = Http::timeout(self::TIMEOUT_SECONDS)
                 ->withHeaders([
                     'Content-Type' => 'application/json',
@@ -76,16 +85,17 @@ class EdsHubSyncService
                 ->post(self::EDS_SUBMIT_URL, $payload);
 
             if ($response->successful()) {
+                // Log safe technical telemetry ONLY (no email, phone, name, or payload)
                 Log::info('[EDS HUB] Completed application synced successfully.', [
                     'attempt_id' => $attemptId,
-                    'email' => $request->input('email'),
+                    'status' => $response->status(),
                 ]);
                 return true;
             }
 
+            // Log technical error status ONLY (do not dump remote response body)
             Log::warning('[EDS HUB] Completed application sync returned non-200.', [
                 'status' => $response->status(),
-                'response' => $response->body(),
                 'attempt_id' => $attemptId,
             ]);
             return false;
