@@ -27,7 +27,8 @@ import { LeadTaskList } from './LeadTaskList';
 import { LeadTaskModal } from './LeadTaskModal';
 import { LeadEnrollmentCard } from './LeadEnrollmentCard';
 import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
-import type { Lead, LeadActivity, Task, LeadNote } from '../../../types';
+import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
+import type { Lead, LeadActivity, Task, LeadNote, IncompleteEnrollment } from '../../../types';
 
 export interface LeadProfileContentProps {
   leadId: string;
@@ -49,6 +50,8 @@ export function LeadProfileContent({
   const [activities, setActivities] = useState<LeadActivity[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [notes, setNotes] = useState<LeadNote[]>([]);
+  const [incompleteEnrollment, setIncompleteEnrollment] = useState<IncompleteEnrollment | null>(null);
+  const [isDismissingAlert, setIsDismissingAlert] = useState(false);
   const [newNoteContent, setNewNoteContent] = useState('');
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -126,6 +129,10 @@ export function LeadProfileContent({
         .order('created_at', { ascending: false });
 
       setNotes(notesData || []);
+
+      // 6. Fetch Incomplete Enrollment
+      const incData = await fetchActiveIncompleteEnrollment(leadId);
+      setIncompleteEnrollment(incData);
     } catch (err) {
       console.error('Failed to load lead in LeadProfileContent:', err);
     } finally {
@@ -178,6 +185,21 @@ export function LeadProfileContent({
       }
     } catch (err) {
       console.error('Failed to delete note:', err);
+    }
+  };
+
+  const handleDismissIncompleteAlert = async () => {
+    if (!incompleteEnrollment) return;
+    setIsDismissingAlert(true);
+    try {
+      const res = await dismissIncompleteEnrollment(incompleteEnrollment.id, 'Dispensado no perfil do lead');
+      if (res.success) {
+        setIncompleteEnrollment(null);
+        fetchLeadData();
+        if (onLeadUpdated) onLeadUpdated();
+      }
+    } finally {
+      setIsDismissingAlert(false);
     }
   };
 
@@ -318,6 +340,60 @@ export function LeadProfileContent({
       {/* TAB 1: RESUMO (Complete Operational Overview) */}
       {activeTab === 'resumo' && (
         <div className="space-y-4">
+          {/* Incomplete Enrollment Operational Alert Banner */}
+          {incompleteEnrollment && incompleteEnrollment.status === 'needs_followup' && (
+            <div className="p-3.5 rounded-2xl border border-amber-300 bg-amber-50/90 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-xs font-heading text-amber-900">
+                      Inscrição não concluída
+                    </span>
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-amber-200/70 text-amber-800">
+                      Follow-up pendente
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-800/90 mt-0.5">
+                    <span className="font-semibold">{incompleteEnrollment.course?.name || 'Curso'}</span>
+                    {incompleteEnrollment.course_session?.title && (
+                      <span> • Turma: {incompleteEnrollment.course_session.title}</span>
+                    )}
+                    <span>
+                      {' '}•{' '}
+                      {new Date(incompleteEnrollment.created_at).toLocaleString('pt-BR', {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                {incompleteEnrollment.task_id && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="text-xs h-7 px-2.5 border-amber-300 hover:bg-amber-100 text-amber-900"
+                    onClick={() => setActiveTab('tarefas')}
+                  >
+                    <CheckSquare className="h-3 w-3 mr-1" />
+                    Ver Tarefa
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs h-7 px-2 text-amber-700 hover:bg-amber-100/80 hover:text-amber-900"
+                  disabled={isDismissingAlert}
+                  onClick={handleDismissIncompleteAlert}
+                >
+                  Dispensar Alerta
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* 1. Operational Attention State Banner */}
           <div className={`p-3.5 rounded-2xl border flex items-start gap-3 ${attentionStatus.badge}`}>
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />

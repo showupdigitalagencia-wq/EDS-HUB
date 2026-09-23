@@ -1,4 +1,4 @@
-import { Activity, Phone, MessageSquare, Mail, CalendarCheck, CheckCircle2, RefreshCw, Clock } from 'lucide-react';
+import { Activity, Phone, MessageSquare, Mail, CalendarCheck, CheckCircle2, RefreshCw, Clock, AlertCircle } from 'lucide-react';
 import type { LeadActivity } from '../../../types';
 import { WhatsAppIcon } from '../../../components/icons/WhatsAppIcon';
 
@@ -115,6 +115,12 @@ export function getActivityLabel(activityType: string): string {
       return 'Depoimento recebido';
     case 'qualification_status_changed':
       return 'Qualificação atualizada';
+    case 'incomplete_enrollment_captured':
+      return 'Inscrição iniciada e não concluída';
+    case 'incomplete_enrollment_recovered':
+      return 'Inscrição recuperada — matrícula confirmada';
+    case 'incomplete_enrollment_dismissed':
+      return 'Alerta de inscrição dispensado';
     default:
       return activityType.replace(/_/g, ' ');
   }
@@ -122,6 +128,12 @@ export function getActivityLabel(activityType: string): string {
 
 function getActivityIcon(type: string) {
   switch (type) {
+    case 'incomplete_enrollment_captured':
+      return <AlertCircle className="h-3 w-3 text-amber-500" />;
+    case 'incomplete_enrollment_recovered':
+      return <CheckCircle2 className="h-3 w-3 text-emerald-600" />;
+    case 'incomplete_enrollment_dismissed':
+      return <Clock className="h-3 w-3 text-slate-400" />;
     case 'call_manual_attempt':
       return <Phone className="h-3 w-3 text-[#449bd5]" />;
     case 'whatsapp_contact_attempt':

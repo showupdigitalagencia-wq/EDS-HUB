@@ -67,7 +67,39 @@ export type ActivityType =
   | 'call_manual_attempt'
   | 'whatsapp_contact_attempt'
   | 'email_manual_attempt'
-  | 'sms_manual_attempt';
+  | 'sms_manual_attempt'
+  | 'incomplete_enrollment_captured'
+  | 'incomplete_enrollment_recovered'
+  | 'incomplete_enrollment_dismissed';
+
+export type IncompleteEnrollmentProcessingStatus = 'processed' | 'conflict';
+export type IncompleteEnrollmentStatus = 'needs_followup' | 'recovered' | 'dismissed';
+
+export interface IncompleteEnrollment {
+  id: string;
+  processing_status: IncompleteEnrollmentProcessingStatus;
+  status: IncompleteEnrollmentStatus | null;
+  lead_id: string | null;
+  course_id: string;
+  course_session_id?: string | null;
+  idempotency_key: string;
+  external_attempt_id?: string | null;
+  source_page?: string | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_term?: string | null;
+  utm_content?: string | null;
+  task_id?: string | null;
+  resolved_enrollment_id?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined relation fields for UI rendering
+  course?: { id: string; name: string; code?: string };
+  course_session?: { id: string; title: string; start_date?: string };
+  task?: { id: string; title: string; status: TaskStatus };
+}
 export type ActorType = 'system' | 'user';
 export type StageChangeReason =
   | 'initial_assignment'

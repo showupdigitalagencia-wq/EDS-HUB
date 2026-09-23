@@ -137,6 +137,9 @@ export type {
   IntegrationPropertyCache,
   HubSpotSyncMetrics,
   HubSpotDryRunResult,
+  IncompleteEnrollment,
+  IncompleteEnrollmentStatus,
+  IncompleteEnrollmentProcessingStatus,
 } from './database';
 export type { LeadIntakePayload, LeadIntakeResponse } from './lead-intake';
 
