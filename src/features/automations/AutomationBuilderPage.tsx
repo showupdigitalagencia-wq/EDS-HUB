@@ -28,7 +28,14 @@ import type {
   PipelineStage,
   Tag as TagType,
   Form,
+  EmailTemplate,
 } from '../../types/database';
+import {
+  getTemplateChannel,
+  getTemplateSubject,
+  calculateSmsSegments,
+  GLOBAL_TEMPLATE_VARIABLES,
+} from '../../utils/template-variables';
 import { TestAutomationModal } from './TestAutomationModal';
 
 export function AutomationBuilderPage() {
@@ -58,6 +65,7 @@ export function AutomationBuilderPage() {
   const [forms, setForms] = useState<Form[]>([]);
   const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
   const [tags, setTags] = useState<TagType[]>([]);
+  const [availableTemplates, setAvailableTemplates] = useState<EmailTemplate[]>([]);
 
   useEffect(() => {
     loadReferences();
@@ -99,15 +107,17 @@ export function AutomationBuilderPage() {
 
   const loadReferences = async () => {
     try {
-      const [formsRes, stagesRes, tagsRes] = await Promise.all([
+      const [formsRes, stagesRes, tagsRes, tplsRes] = await Promise.all([
         supabase.from('forms').select('*').order('name'),
         supabase.from('pipeline_stages').select('*').order('sort_order'),
         supabase.from('tags').select('*').order('name'),
+        supabase.from('email_templates').select('*').eq('is_active', true).order('name'),
       ]);
 
       if (formsRes.data) setForms(formsRes.data);
       if (stagesRes.data) setPipelineStages(stagesRes.data);
       if (tagsRes.data) setTags(tagsRes.data);
+      if (tplsRes.data) setAvailableTemplates(tplsRes.data);
     } catch (err) {
       console.error('Error loading builder references:', err);
     }
@@ -884,7 +894,51 @@ export function AutomationBuilderPage() {
 
                       {/* Action contextual forms */}
                       {step.action_type === 'send_email' && (
-                        <div className="space-y-2 pt-1">
+                        <div className="space-y-3 pt-1">
+                          {/* Template Loader */}
+                          <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl space-y-1.5">
+                            <label className="block text-[11px] font-bold text-[#08254f] uppercase tracking-wider font-heading">
+                              Carregar de Template de Email
+                            </label>
+                            <select
+                              value={step.config?.template_id || ''}
+                              onChange={(e) => {
+                                const tplId = e.target.value;
+                                if (!tplId) {
+                                  handleUpdateStep(idx, {
+                                    config: { ...step.config, template_id: undefined },
+                                  });
+                                  return;
+                                }
+                                const tpl = availableTemplates.find((t) => t.id === tplId);
+                                if (tpl) {
+                                  const tplSub = getTemplateSubject(tpl);
+                                  handleUpdateStep(idx, {
+                                    config: {
+                                      ...step.config,
+                                      template_id: tpl.id,
+                                      subject: tplSub || step.config?.subject || '',
+                                      body: tpl.html_template || tpl.text_template || step.config?.body || '',
+                                    },
+                                  });
+                                }
+                              }}
+                              className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-lg bg-white focus:outline-none"
+                            >
+                              <option value="">Selecione um template (opcional)...</option>
+                              {availableTemplates
+                                .filter((t) => getTemplateChannel(t) === 'email')
+                                .map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.name} ({t.category})
+                                  </option>
+                                ))}
+                            </select>
+                            <p className="text-[10px] text-blue-700/80">
+                              O conteúdo do template é copiado para esta etapa. Versões publicadas congelam este conteúdo.
+                            </p>
+                          </div>
+
                           <div>
                             <label className="block text-[11px] font-medium text-gray-600 mb-1">
                               Subject
@@ -893,12 +947,15 @@ export function AutomationBuilderPage() {
                               type="text"
                               value={step.config?.subject || ''}
                               onChange={(e) =>
-                                handleUpdateStep(idx, { config: { subject: e.target.value } })
+                                handleUpdateStep(idx, {
+                                  config: { ...step.config, subject: e.target.value },
+                                })
                               }
                               placeholder="e.g. Welcome {{first_name}}"
                               className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white"
                             />
                           </div>
+
                           <div>
                             <label className="block text-[11px] font-medium text-gray-600 mb-1">
                               Email Body (HTML / Text)
@@ -907,32 +964,129 @@ export function AutomationBuilderPage() {
                               rows={3}
                               value={step.config?.body || ''}
                               onChange={(e) =>
-                                handleUpdateStep(idx, { config: { body: e.target.value } })
+                                handleUpdateStep(idx, {
+                                  config: { ...step.config, body: e.target.value },
+                                })
                               }
                               placeholder="Hello {{salutation}}, thank you for connecting..."
                               className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white font-mono"
                             />
-                            <span className="text-[10px] text-gray-400">
-                              Supported variables: <code>{'{{salutation}}'}</code>, <code>{'{{first_name}}'}</code>
-                            </span>
+                          </div>
+
+                          {/* Variable Chips */}
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                            <span className="font-heading font-semibold text-slate-700">Variáveis:</span>
+                            {GLOBAL_TEMPLATE_VARIABLES.map((v) => (
+                              <button
+                                key={v.key}
+                                type="button"
+                                onClick={() => {
+                                  const curBody = step.config?.body || '';
+                                  handleUpdateStep(idx, {
+                                    config: { ...step.config, body: `${curBody ? curBody + ' ' : ''}${v.key}` },
+                                  });
+                                }}
+                                className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-xs font-mono text-[#08254f] cursor-pointer"
+                                title={v.description}
+                              >
+                                {v.key}
+                              </button>
+                            ))}
                           </div>
                         </div>
                       )}
 
                       {step.action_type === 'send_sms' && (
-                        <div className="pt-1">
-                          <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                            SMS Message Text
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={step.config?.message || ''}
-                            onChange={(e) =>
-                              handleUpdateStep(idx, { config: { message: e.target.value } })
-                            }
-                            placeholder="Hello {{salutation}}, this is Expert Dental Solutions..."
-                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white"
-                          />
+                        <div className="space-y-3 pt-1">
+                          {/* Template Loader */}
+                          <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-1.5">
+                            <label className="block text-[11px] font-bold text-[#08254f] uppercase tracking-wider font-heading">
+                              Carregar de Template de SMS
+                            </label>
+                            <select
+                              value={step.config?.template_id || ''}
+                              onChange={(e) => {
+                                const tplId = e.target.value;
+                                if (!tplId) {
+                                  handleUpdateStep(idx, {
+                                    config: { ...step.config, template_id: undefined },
+                                  });
+                                  return;
+                                }
+                                const tpl = availableTemplates.find((t) => t.id === tplId);
+                                if (tpl) {
+                                  handleUpdateStep(idx, {
+                                    config: {
+                                      ...step.config,
+                                      template_id: tpl.id,
+                                      message: tpl.text_template || step.config?.message || '',
+                                    },
+                                  });
+                                }
+                              }}
+                              className="w-full px-2.5 py-1.5 text-xs border border-emerald-200 rounded-lg bg-white focus:outline-none"
+                            >
+                              <option value="">Selecione um template SMS (opcional)...</option>
+                              {availableTemplates
+                                .filter((t) => getTemplateChannel(t) === 'sms')
+                                .map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.name} ({t.category})
+                                  </option>
+                                ))}
+                            </select>
+                            <p className="text-[10px] text-emerald-800/80">
+                              O texto do template é copiado para esta etapa. A execução utiliza este snapshot.
+                            </p>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="block text-[11px] font-medium text-gray-600">
+                                SMS Message Text
+                              </label>
+                              {(() => {
+                                const m = calculateSmsSegments(step.config?.message || '');
+                                return (
+                                  <span className="text-[10px] font-mono text-slate-500">
+                                    {m.characterCount} chars • {m.segmentCount} seg ({m.encoding})
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                            <textarea
+                              rows={2}
+                              value={step.config?.message || ''}
+                              onChange={(e) =>
+                                handleUpdateStep(idx, {
+                                  config: { ...step.config, message: e.target.value },
+                                })
+                              }
+                              placeholder="Hello {{salutation}}, this is Expert Dental Solutions..."
+                              className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white"
+                            />
+                          </div>
+
+                          {/* Variable Chips */}
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                            <span className="font-heading font-semibold text-slate-700">Variáveis:</span>
+                            {GLOBAL_TEMPLATE_VARIABLES.map((v) => (
+                              <button
+                                key={v.key}
+                                type="button"
+                                onClick={() => {
+                                  const curMsg = step.config?.message || '';
+                                  handleUpdateStep(idx, {
+                                    config: { ...step.config, message: `${curMsg ? curMsg + ' ' : ''}${v.key}` },
+                                  });
+                                }}
+                                className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-xs font-mono text-[#08254f] cursor-pointer"
+                                title={v.description}
+                              >
+                                {v.key}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
 

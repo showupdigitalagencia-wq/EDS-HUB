@@ -9,6 +9,7 @@ import { AudienceFilterBuilder } from './components/AudienceFilterBuilder';
 import { AudiencePreviewModal } from './components/AudiencePreviewModal';
 import { SavedSegmentsModal } from './components/SavedSegmentsModal';
 import { campaignAudienceService } from './services/campaign-audience-service';
+import { getTemplateChannel, getTemplateSubject, CAMPAIGN_SPECIFIC_VARIABLES } from '../../utils/template-variables';
 import type { EmailBlock } from '../editor/types';
 import type {
   Campaign,
@@ -18,6 +19,7 @@ import type {
   CampaignAudience,
   AudienceFilterDefinition,
   AudiencePreviewResult,
+  EmailTemplate,
 } from '../../types';
 import {
   ArrowLeft,
@@ -40,6 +42,7 @@ import {
   MessageSquare,
   Sparkles,
   Eye,
+  FileText,
 } from 'lucide-react';
 
 type TabType = 'editor' | 'audience' | 'ab_test' | 'versions' | 'send';
@@ -95,6 +98,11 @@ export function CampaignDetailPage() {
   const [recipients, setRecipients] = useState<CampaignRecipient[]>([]);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isActivatingCall, setIsActivatingCall] = useState(false);
+
+  // Template Library Loading & Lineage
+  const [availableTemplates, setAvailableTemplates] = useState<EmailTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [loadedTemplateNotice, setLoadedTemplateNotice] = useState<string | null>(null);
 
   const loadCampaignData = useCallback(async () => {
     if (!id) return;
@@ -174,6 +182,20 @@ export function CampaignDetailPage() {
       // 5. Fetch Materialized Recipients (Snapshot members)
       const recs = await campaignAudienceService.fetchCampaignRecipients(id, 100, 0);
       setRecipients(recs);
+
+      // 6. Fetch available Email Templates for the composer
+      const { data: tpls } = await supabase
+        .from('email_templates')
+        .select('*')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      if (tpls) {
+        setAvailableTemplates(tpls.filter((t) => getTemplateChannel(t) === 'email'));
+      }
+      if (camp.template_id) {
+        setSelectedTemplateId(camp.template_id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load campaign');
     } finally {
@@ -203,6 +225,7 @@ export function CampaignDetailPage() {
           preview_text: previewText.trim() || null,
           from_name: fromName.trim() || 'Expert Dental Solutions',
           reply_to: replyTo.trim() || null,
+          template_id: selectedTemplateId || campaign.template_id || null,
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
           updated_at: new Date().toISOString(),
         })
@@ -442,6 +465,33 @@ export function CampaignDetailPage() {
     }
   };
 
+  const handleSelectTemplate = (tplId: string) => {
+    if (!tplId) return;
+    const tpl = availableTemplates.find((t) => t.id === tplId);
+    if (!tpl) return;
+
+    const tplSub = getTemplateSubject(tpl);
+    if (tplSub && !subject) {
+      setSubject(tplSub);
+    }
+
+    let tplBlocks: EmailBlock[] = [];
+    const cj = tpl.content_json;
+    if (Array.isArray(cj)) {
+      tplBlocks = cj as EmailBlock[];
+    } else if (typeof cj === 'object' && cj !== null && Array.isArray((cj as { blocks?: unknown[] }).blocks)) {
+      tplBlocks = (cj as { blocks: EmailBlock[] }).blocks;
+    }
+
+    setBlocks(tplBlocks);
+    setHtmlContent(tpl.html_template || '');
+    setTextContent(tpl.text_template || '');
+    setSelectedTemplateId(tpl.id);
+    setLoadedTemplateNotice(
+      `Conteúdo copiado a partir do template "${tpl.name}". As alterações pertencem exclusivamente ao snapshot desta campanha.`,
+    );
+  };
+
   return (
     <Layout
       backTo="/campaigns"
@@ -615,7 +665,65 @@ export function CampaignDetailPage() {
 
         {/* TAB 1: Visual Block Editor (Email only) */}
         {activeTab === 'editor' && channel === 'email' && (
-          <div className="bg-white rounded-b-2xl border border-gray-200 shadow-xs p-6">
+          <div className="bg-white rounded-b-2xl border border-gray-200 shadow-xs p-6 space-y-5">
+            {/* Template Loader & Campaign Variable Chips */}
+            <div className="p-4 bg-slate-50/80 border border-slate-200 rounded-xl space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#08254f]" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#08254f] font-heading">
+                    Carregar a partir de Template da Biblioteca
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedTemplateId}
+                    onChange={(e) => handleSelectTemplate(e.target.value)}
+                    className="input-executive text-xs py-1.5 px-3 bg-white w-64"
+                  >
+                    <option value="">Selecione um template de email...</option>
+                    {availableTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.category})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {loadedTemplateNotice && (
+                <div className="text-xs text-blue-800 bg-blue-50/80 p-2.5 rounded-lg border border-blue-200 flex items-center justify-between">
+                  <span>{loadedTemplateNotice}</span>
+                  <button
+                    type="button"
+                    onClick={() => setLoadedTemplateNotice(null)}
+                    className="text-[10px] text-blue-600 hover:text-blue-900 font-bold ml-2 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Campaign Variables Bar */}
+              <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 font-heading">
+                  <Sparkles className="w-3.5 h-3.5 text-[#449bd5]" /> Variáveis Disponíveis para Esta Campanha:
+                </span>
+                {CAMPAIGN_SPECIFIC_VARIABLES.map((v) => (
+                  <button
+                    key={v.key}
+                    type="button"
+                    onClick={() => setSubject((prev) => `${prev ? prev + ' ' : ''}${v.key}`)}
+                    className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 rounded text-xs font-mono text-[#08254f] transition-colors shadow-2xs cursor-pointer"
+                    title={`${v.description} — Clique para adicionar ao assunto`}
+                  >
+                    {v.key}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <BlockEditor
               initialBlocks={blocks}
               onChange={(newBlocks, html, text) => {
