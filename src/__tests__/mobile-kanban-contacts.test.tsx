@@ -846,7 +846,8 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       const whatsAppBtn = screen.getByRole('button', { name: /WhatsApp/i });
 
       expect(ligarBtn.getAttribute('href')).toBe('tel:+5511977778888');
-      expect(emailBtn.getAttribute('href')).toBe('mailto:camila@odontoclinic.com');
+      // Batch 7.3: canonical Email action opens internal composer, mailto is removed
+      expect(emailBtn.getAttribute('href')).toBeNull();
       expect(smsBtn.getAttribute('href')).toBe('sms:+5511977778888');
       expect(whatsAppBtn.getAttribute('href')).toBe('https://wa.me/5511977778888');
 

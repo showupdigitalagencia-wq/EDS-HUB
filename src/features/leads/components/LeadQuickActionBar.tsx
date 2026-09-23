@@ -14,6 +14,7 @@ interface LeadQuickActionBarProps {
   onOpenTaskModal: () => void;
   onOpenPaymentModal: () => void;
   onActivityLogged?: () => void;
+  onOpenEmailComposer?: () => void;
 }
 
 export function LeadQuickActionBar({
@@ -21,6 +22,7 @@ export function LeadQuickActionBar({
   onOpenTaskModal,
   onOpenPaymentModal,
   onActivityLogged,
+  onOpenEmailComposer,
 }: LeadQuickActionBarProps) {
   const rawPhone = lead.phone_e164 || lead.phone_raw || '';
   const digitsOnly = rawPhone.replace(/\D/g, '');
@@ -131,23 +133,25 @@ export function LeadQuickActionBar({
               </button>
             )}
 
-            {/* 3. Email — Fixed mailto & non-blocking logging */}
+            {/* 3. Email — Canonical internal composer without mailto */}
             {isValidEmail ? (
-              <a
-                href={`mailto:${cleanEmail}`}
-                role="button"
-                onClick={() => logIntentNonBlocking('email_manual_attempt', 'Email aberto para contato', 'email')}
+              <button
+                type="button"
+                onClick={() => {
+                  logIntentNonBlocking('email_manual_attempt', 'Email manual aberto para contato', 'email');
+                  onOpenEmailComposer?.();
+                }}
                 title={`Enviar email para ${cleanEmail}`}
                 className={`${actionBaseClass} ${commButtonActive}`}
               >
                 <Mail className="h-4 w-4 text-[#449bd5] shrink-0" />
                 <span>Email</span>
-              </a>
+              </button>
             ) : (
               <button
                 type="button"
                 disabled
-                title="Email não informado"
+                title="Este lead não possui um e-mail válido."
                 className={`${actionBaseClass} ${commButtonDisabled}`}
               >
                 <Mail className="h-4 w-4 text-slate-300 shrink-0" />

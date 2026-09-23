@@ -28,6 +28,8 @@ import { LeadTaskModal } from './LeadTaskModal';
 import { LeadEnrollmentCard } from './LeadEnrollmentCard';
 import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
 import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
+import { ManualEmailComposerModal } from './ManualEmailComposerModal';
+import { fetchLeadEmailHealth, type LeadEmailHealthResult } from '../../dashboard/services/deliverability-health-service';
 import type { Lead, LeadActivity, Task, LeadNote, IncompleteEnrollment } from '../../../types';
 
 export interface LeadProfileContentProps {
@@ -61,6 +63,10 @@ export function LeadProfileContent({
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskModalMode, setTaskModalMode] = useState<'generic' | 'payment'>('generic');
 
+  // Manual Email Composer & Lead Email Health
+  const [isEmailComposerOpen, setIsEmailComposerOpen] = useState(false);
+  const [emailHealth, setEmailHealth] = useState<LeadEmailHealthResult | null>(null);
+
   const fetchLeadData = useCallback(async () => {
     if (!leadId) {
       setLead(null);
@@ -85,6 +91,12 @@ export function LeadProfileContent({
 
       if (leadErr) throw leadErr;
       setLead(leadData as Lead);
+
+      if (leadData?.email) {
+        void fetchLeadEmailHealth(leadData.email).then(setEmailHealth);
+      } else {
+        setEmailHealth(null);
+      }
 
       // 2. Fetch Lead Course Interests
       const { data: interestsData } = await supabase
@@ -292,10 +304,15 @@ export function LeadProfileContent({
                   </span>
                 ) : null}
                 {lead.email ? (
-                  <span className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsEmailComposerOpen(true)}
+                    className="flex items-center gap-1 hover:text-[#08254f] transition-colors cursor-pointer text-left"
+                    title={`Enviar e-mail para ${lead.email}`}
+                  >
                     <Mail className="h-3 w-3 text-slate-400" />
-                    {lead.email}
-                  </span>
+                    <span>{lead.email}</span>
+                  </button>
                 ) : null}
               </div>
             </div>
@@ -320,6 +337,7 @@ export function LeadProfileContent({
           setTaskModalMode('payment');
           setIsTaskModalOpen(true);
         }}
+        onOpenEmailComposer={() => setIsEmailComposerOpen(true)}
         onActivityLogged={handleLeadRefresh}
       />
 
@@ -433,17 +451,30 @@ export function LeadProfileContent({
                 )}
               </div>
               <div>
-                <span className="text-slate-400 block text-[11px] mb-0.5">E-mail</span>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-slate-400 block text-[11px]">E-mail</span>
+                  {emailHealth && emailHealth.status !== 'sem_historico' && (
+                    <span
+                      className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded-md border ${emailHealth.badgeClass}`}
+                      title={emailHealth.details}
+                    >
+                      {emailHealth.label}
+                    </span>
+                  )}
+                </div>
                 {lead.email ? (
-                  <a
-                    href={`mailto:${lead.email.trim()}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="inline-flex w-fit max-w-full items-center gap-1.5 font-semibold text-slate-800 hover:text-[#08254f] py-1 px-1.5 -ml-1.5 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsEmailComposerOpen(true);
+                    }}
+                    className="inline-flex w-fit max-w-full items-center gap-1.5 font-semibold text-slate-800 hover:text-[#08254f] py-1 px-1.5 -ml-1.5 rounded-md hover:bg-slate-50 transition-colors cursor-pointer text-left"
                     title={`Enviar e-mail para ${lead.email}`}
                   >
                     <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                     <span className="truncate">{lead.email}</span>
-                  </a>
+                  </button>
                 ) : (
                   <span className="font-semibold text-slate-400 italic">Não informado</span>
                 )}
@@ -681,6 +712,20 @@ export function LeadProfileContent({
           mode={taskModalMode === 'payment' ? 'payment' : 'generic'}
           onClose={() => setIsTaskModalOpen(false)}
           onTaskCreated={handleLeadRefresh}
+        />
+      )}
+
+      {/* Manual Email Composer Modal (Lead Profile Direct Outreach) */}
+      {lead && (
+        <ManualEmailComposerModal
+          isOpen={isEmailComposerOpen}
+          lead={lead}
+          onClose={() => setIsEmailComposerOpen(false)}
+          onEmailSent={() => {
+            fetchLeadData();
+            setActiveTab('conversas');
+            if (onLeadUpdated) onLeadUpdated();
+          }}
         />
       )}
     </div>

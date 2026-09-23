@@ -3,7 +3,13 @@ import { Layout } from '../../components/Layout';
 import { StatusCard, type StatusVariant } from '../../components/StatusCard';
 import { LoadingState } from '../../components/LoadingState';
 import { supabase } from '../../lib/supabase';
-import { Database, Shield, Mail, MessageSquare, Globe, RefreshCw, Key, AlertCircle } from 'lucide-react';
+import { Database, Shield, Mail, MessageSquare, Globe, RefreshCw, Key, AlertCircle, AlertTriangle, Info, Search } from 'lucide-react';
+import {
+  fetchDeliverabilityHealth,
+  fetchEmailSuppressions,
+  type DeliverabilityHealthSummary,
+  type EmailSuppressionRecord,
+} from './services/deliverability-health-service';
 import type { AppSettings, EmailDomainStatus } from '../../types';
 
 interface ProviderStatus {
@@ -53,6 +59,9 @@ function mapDomainStatusVariant(status: string | null | undefined): StatusVarian
 
 export function FoundationStatusPage() {
   const [data, setData] = useState<FoundationData | null>(null);
+  const [deliverabilityHealth, setDeliverabilityHealth] = useState<DeliverabilityHealthSummary | null>(null);
+  const [suppressions, setSuppressions] = useState<EmailSuppressionRecord[]>([]);
+  const [suppressionSearch, setSuppressionSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -121,6 +130,14 @@ export function FoundationStatusPage() {
         domainStatus: domainStatus as EmailDomainStatus | null,
         providers,
       });
+
+      // Fetch deliverability health & suppressions
+      const [health, suppList] = await Promise.all([
+        fetchDeliverabilityHealth(supabase),
+        fetchEmailSuppressions(supabase, suppressionSearch),
+      ]);
+      setDeliverabilityHealth(health);
+      setSuppressions(suppList);
     } catch {
       setData({
         supabaseConnected: false,
@@ -164,6 +181,11 @@ export function FoundationStatusPage() {
     };
   }, [fetchData]);
 
+  // Refetch suppressions when search term changes
+  useEffect(() => {
+    void fetchEmailSuppressions(supabase, suppressionSearch).then(setSuppressions);
+  }, [suppressionSearch]);
+
   const handleRefresh = () => {
     setIsRefreshing(true);
     fetchData();
@@ -195,6 +217,47 @@ export function FoundationStatusPage() {
       }
     >
       <div className="space-y-6">
+        {/* Operational Deliverability Alert Banner (surfaced only on Atenção, Risco, Crítico, or active event alerts) */}
+        {deliverabilityHealth &&
+          (deliverabilityHealth.level === 'Atenção' ||
+            deliverabilityHealth.level === 'Risco' ||
+            deliverabilityHealth.level === 'Crítico' ||
+            deliverabilityHealth.alerts.length > 0) && (
+            <div
+              className={`p-4 rounded-2xl border flex items-start gap-3 shadow-2xs ${
+                deliverabilityHealth.level === 'Crítico'
+                  ? 'bg-rose-50 border-rose-200 text-rose-950'
+                  : deliverabilityHealth.level === 'Risco'
+                  ? 'bg-amber-50 border-amber-200 text-amber-950'
+                  : 'bg-amber-50/80 border-amber-200 text-amber-900'
+              }`}
+            >
+              <AlertTriangle
+                className={`h-5 w-5 shrink-0 mt-0.5 ${
+                  deliverabilityHealth.level === 'Crítico' ? 'text-rose-600' : 'text-amber-600'
+                }`}
+              />
+              <div className="space-y-1 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold font-heading">
+                    {deliverabilityHealth.level === 'Crítico'
+                      ? 'Alerta Crítico de Entregabilidade'
+                      : deliverabilityHealth.level === 'Risco'
+                      ? 'Risco de Entregabilidade'
+                      : 'Atenção com Entregabilidade'}
+                  </span>
+                </div>
+                {deliverabilityHealth.alerts.map((alertText, idx) => (
+                  <p key={idx} className="leading-relaxed">
+                    {alertText}
+                  </p>
+                ))}
+                {deliverabilityHealth.alerts.length === 0 && (
+                  <p className="leading-relaxed">{deliverabilityHealth.levelExplanation}</p>
+                )}
+              </div>
+            </div>
+          )}
 
         {/* Core Infrastructure */}
         <section>
@@ -282,6 +345,211 @@ export function FoundationStatusPage() {
               variant="unknown"
               detail="Pending verification method"
             />
+          </div>
+        </section>
+
+        {/* Saúde do E-mail (Compact Factual Delivery Health Card) */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+              Saúde do E-mail
+            </h2>
+            {deliverabilityHealth && (
+              <span
+                id="deliverability-health-badge"
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                  deliverabilityHealth.level === 'Excelente'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : deliverabilityHealth.level === 'Saudável'
+                    ? 'bg-sky-50 text-sky-700 border-sky-200'
+                    : deliverabilityHealth.level === 'Atenção'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : deliverabilityHealth.level === 'Risco'
+                    ? 'bg-orange-50 text-orange-700 border-orange-200'
+                    : deliverabilityHealth.level === 'Crítico'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}
+              >
+                {deliverabilityHealth.level}
+              </span>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-bold text-[#08254f] font-heading">
+                  Status de Entrega & Reputação
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {deliverabilityHealth?.levelExplanation || 'Calculando métricas factuais de entrega...'}
+                </p>
+              </div>
+              <div className="text-[11px] text-slate-400 font-mono shrink-0">
+                Última atualização:{' '}
+                {deliverabilityHealth
+                  ? new Date(deliverabilityHealth.lastUpdated).toLocaleTimeString('pt-BR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : '—'}
+              </div>
+            </div>
+
+            {/* Metrics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[11px] text-slate-400 block font-medium">Enviados</span>
+                <span className="text-lg font-bold text-[#08254f] font-mono">
+                  {deliverabilityHealth?.metrics.sent ?? 0}
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-0.5">Janela 30 dias</span>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[11px] text-slate-400 block font-medium">Entregues</span>
+                <span className="text-lg font-bold text-emerald-700 font-mono">
+                  {deliverabilityHealth?.metrics.delivered ?? 0}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">
+                  {deliverabilityHealth?.rates.deliveryRate !== null
+                    ? `${deliverabilityHealth?.rates.deliveryRate}% taxa`
+                    : '—'}
+                </span>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[11px] text-slate-400 block font-medium">Bounces</span>
+                <span className="text-lg font-bold text-amber-700 font-mono">
+                  {deliverabilityHealth?.metrics.bounced ?? 0}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">
+                  {deliverabilityHealth?.rates.bounceRate !== null
+                    ? `${deliverabilityHealth?.rates.bounceRate}% taxa`
+                    : '—'}
+                </span>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[11px] text-slate-400 block font-medium">Reclamações</span>
+                <span className="text-lg font-bold text-rose-700 font-mono">
+                  {deliverabilityHealth?.metrics.complaints ?? 0}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">
+                  {deliverabilityHealth?.rates.complaintRate !== null
+                    ? `${deliverabilityHealth?.rates.complaintRate}% taxa`
+                    : '—'}
+                </span>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[11px] text-slate-400 block font-medium">Falhas Técnicas</span>
+                <span className="text-lg font-bold text-rose-700 font-mono">
+                  {deliverabilityHealth?.metrics.failed ?? 0}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">
+                  {deliverabilityHealth?.rates.failureRate !== null
+                    ? `${deliverabilityHealth?.rates.failureRate}% taxa`
+                    : '—'}
+                </span>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[11px] text-slate-400 block font-medium">Suprimidos</span>
+                <span className="text-lg font-bold text-slate-700 font-mono">
+                  {deliverabilityHealth?.metrics.suppressed ?? 0}
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-0.5">Total de bloqueios</span>
+              </div>
+            </div>
+
+            {/* Factual Disclaimer & Help Text (Section 24) */}
+            <div className="flex items-start gap-2 p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-xs text-slate-600">
+              <Info className="h-4 w-4 text-[#449bd5] shrink-0 mt-0.5" />
+              <p className="text-[11px] leading-relaxed">
+                <strong>Critério Factual:</strong> O EDS HUB monitora exclusivamente eventos comprovados via webhook do Resend (Enviado, Entregue, Bounce, Reclamação, Falha). Não é possível atestar tecnicamente se cada mensagem entregue caiu na Caixa de Entrada Principal, Aba Promoções ou Lixo Eletrônico.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Endereços Suprimidos (Read-Only per Section 22) */}
+        <section>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+              Endereços Suprimidos ({suppressions.length})
+            </h2>
+            <div className="relative w-full sm:w-64">
+              <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+              <input
+                type="text"
+                value={suppressionSearch}
+                onChange={(e) => setSuppressionSearch(e.target.value)}
+                placeholder="Buscar e-mail suprimido..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-[#449bd5]"
+              />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+            {suppressions.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-400">
+                {suppressionSearch
+                  ? 'Nenhum endereço suprimido encontrado para esta busca.'
+                  : 'Nenhum endereço suprimido no momento.'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 font-semibold uppercase text-[10px] tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3">E-mail</th>
+                      <th className="px-4 py-3">Motivo da Supressão</th>
+                      <th className="px-4 py-3">Data do Registro</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {suppressions.map((supp) => {
+                      let reasonLabel = 'Suprimido';
+                      let badgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
+                      if (supp.reason === 'hard_bounce') {
+                        reasonLabel = 'Falha permanente (Hard Bounce)';
+                        badgeStyle = 'bg-rose-50 text-rose-700 border-rose-200';
+                      } else if (supp.reason === 'complaint') {
+                        reasonLabel = 'Reclamação de Spam';
+                        badgeStyle = 'bg-rose-50 text-rose-700 border-rose-200';
+                      } else if (supp.reason === 'unsubscribe') {
+                        reasonLabel = 'Descadastro (Unsubscribe)';
+                        badgeStyle = 'bg-amber-50 text-amber-700 border-amber-200';
+                      }
+
+                      return (
+                        <tr key={supp.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-4 py-3 font-medium text-slate-900 font-mono">
+                            {supp.normalized_email}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${badgeStyle}`}>
+                              {reasonLabel}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-500">
+                            {new Date(supp.created_at).toLocaleDateString('pt-BR', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </section>
 

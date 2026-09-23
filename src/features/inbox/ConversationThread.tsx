@@ -4,8 +4,10 @@ import {
   MessageSquare,
   Clock,
   AlertCircle,
+  AlertTriangle,
   Paperclip,
   Check,
+  CheckCheck,
   User,
   Bot,
   Lock,
@@ -303,13 +305,31 @@ export function ConversationThread({
                     </div>
                   )}
 
-                  {/* Delivery Status Indicator (Outbound) - Factual Single Check per Correction 2 */}
+                  {/* Delivery Status Indicator (Outbound) - Factual Provider Webhook Statuses */}
                   {!isInbound && (
                     <div className="flex items-center justify-end gap-1 text-[10px] opacity-80 pt-1 font-sans">
+                      {msg.status === 'delivered' && (
+                        <>
+                          <CheckCheck className="w-3.5 h-3.5 text-emerald-300" />
+                          <span>Entregue</span>
+                        </>
+                      )}
                       {msg.status === 'sent' && (
                         <>
                           <Check className="w-3 h-3 text-emerald-300" />
                           <span>Enviado</span>
+                        </>
+                      )}
+                      {msg.status === 'bounced' && (
+                        <>
+                          <AlertTriangle className="w-3 h-3 text-amber-300" />
+                          <span>Falha de entrega</span>
+                        </>
+                      )}
+                      {msg.status === 'complained' && (
+                        <>
+                          <AlertCircle className="w-3 h-3 text-rose-300" />
+                          <span>Reclamação / Spam</span>
                         </>
                       )}
                       {(msg.status === 'pending' || msg.status === 'queued') && (

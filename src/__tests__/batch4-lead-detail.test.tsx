@@ -123,35 +123,41 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
       expect(screen.getByRole('button', { name: /whatsapp/i })).not.toBeDisabled();
     });
 
-    it('generates exact mailto link and renders valid href for Email action', () => {
+    it('removes mailto link and renders internal composer trigger for Email action', () => {
+      const onOpenEmailComposer = vi.fn();
       render(
         <LeadQuickActionBar
           lead={mockLead}
           onOpenTaskModal={vi.fn()}
           onOpenPaymentModal={vi.fn()}
+          onOpenEmailComposer={onOpenEmailComposer}
         />
       );
 
       const emailAction = screen.getByRole('button', { name: /email/i });
-      expect(emailAction.getAttribute('href')).toBe('mailto:arthur@dentist.com');
+      expect(emailAction.getAttribute('href')).toBeNull();
+      fireEvent.click(emailAction);
+      expect(onOpenEmailComposer).toHaveBeenCalledTimes(1);
     });
 
-    it('clicking email triggers non-blocking logging without preventing mail client navigation even on logging error', async () => {
+    it('clicking email triggers non-blocking logging and opens composer even on logging error', async () => {
       const mockInsert = vi.fn().mockRejectedValue(new Error('Network offline or Supabase error'));
       vi.mocked(supabase.from).mockReturnValue({
         insert: mockInsert,
       } as any);
 
+      const onOpenEmailComposer = vi.fn();
       render(
         <LeadQuickActionBar
           lead={mockLead}
           onOpenTaskModal={vi.fn()}
           onOpenPaymentModal={vi.fn()}
+          onOpenEmailComposer={onOpenEmailComposer}
         />
       );
 
       const emailAction = screen.getByRole('button', { name: /email/i });
-      expect(emailAction.getAttribute('href')).toBe('mailto:arthur@dentist.com');
+      expect(emailAction.getAttribute('href')).toBeNull();
 
       // Click email
       fireEvent.click(emailAction);
@@ -162,14 +168,13 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
         expect.objectContaining({
           lead_id: mockLead.id,
           activity_type: 'email_manual_attempt',
-          summary: 'Email aberto para contato',
+          summary: 'Email manual aberto para contato',
         })
       );
-      // Link still maintains exact mailto:
-      expect(emailAction.getAttribute('href')).toBe('mailto:arthur@dentist.com');
+      expect(onOpenEmailComposer).toHaveBeenCalledTimes(1);
     });
 
-    it('disables email action with "Email não informado" tooltip when email is missing or empty', () => {
+    it('disables email action with "Este lead não possui um e-mail válido." tooltip when email is missing or empty', () => {
       const leadNoEmail: Lead = {
         ...mockLead,
         email: '   ',
@@ -185,10 +190,10 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
 
       const emailButton = screen.getByRole('button', { name: /email/i });
       expect(emailButton).toBeDisabled();
-      expect(emailButton.getAttribute('title')).toBe('Email não informado');
+      expect(emailButton.getAttribute('title')).toBe('Este lead não possui um e-mail válido.');
     });
 
-    it('disables email action with "Email não informado" tooltip when email is invalid', () => {
+    it('disables email action with "Este lead não possui um e-mail válido." tooltip when email is invalid', () => {
       const leadInvalidEmail: Lead = {
         ...mockLead,
         email: 'invalid-not-an-email',
@@ -204,7 +209,7 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
 
       const emailButton = screen.getByRole('button', { name: /email/i });
       expect(emailButton).toBeDisabled();
-      expect(emailButton.getAttribute('title')).toBe('Email não informado');
+      expect(emailButton.getAttribute('title')).toBe('Este lead não possui um e-mail válido.');
     });
 
     it('renders recognizable WhatsApp icon and correct wa.me link with digits only', () => {

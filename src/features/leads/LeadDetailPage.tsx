@@ -13,6 +13,7 @@ import { LeadTaskList } from './components/LeadTaskList';
 import { LeadTimeline } from './components/LeadTimeline';
 import { LeadConversationStatus } from './components/LeadConversationStatus';
 import { LeadConversationsCard } from './LeadConversationsCard';
+import { ManualEmailComposerModal } from './components/ManualEmailComposerModal';
 import { RescheduleTaskModal } from '../work/components/RescheduleTaskModal';
 import {
   formatSessionMonthYear,
@@ -79,6 +80,9 @@ export function LeadDetailPage() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskModalMode, setTaskModalMode] = useState<'generic' | 'payment'>('generic');
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
+
+  // Manual Email Composer Modal
+  const [isEmailComposerOpen, setIsEmailComposerOpen] = useState(false);
 
   const loadLeadData = useCallback(async () => {
     if (!id) return;
@@ -460,14 +464,15 @@ export function LeadDetailPage() {
 
             {/* Email */}
             {emailDisplay ? (
-              <a
-                href={`mailto:${emailDisplay}`}
-                className="inline-flex w-fit items-center gap-1.5 font-medium py-1 px-1.5 -ml-1.5 rounded-md hover:text-[#08254f] hover:bg-slate-50 transition-colors cursor-pointer"
+              <button
+                type="button"
+                onClick={() => setIsEmailComposerOpen(true)}
+                className="inline-flex w-fit items-center gap-1.5 font-medium py-1 px-1.5 -ml-1.5 rounded-md hover:text-[#08254f] hover:bg-slate-50 transition-colors cursor-pointer text-left"
                 title={`Enviar e-mail para ${emailDisplay}`}
               >
                 <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                 <span>{emailDisplay}</span>
-              </a>
+              </button>
             ) : (
               <div className="inline-flex w-fit items-center gap-1.5 font-medium text-slate-400 italic">
                 <Mail className="h-3.5 w-3.5 text-slate-300 shrink-0" />
@@ -540,6 +545,7 @@ export function LeadDetailPage() {
             setTaskModalMode('payment');
             setIsTaskModalOpen(true);
           }}
+          onOpenEmailComposer={() => setIsEmailComposerOpen(true)}
           onActivityLogged={loadLeadData}
         />
 
@@ -804,6 +810,16 @@ export function LeadDetailPage() {
           taskId={reschedulingTask.id}
           taskTitle={reschedulingTask.title}
           currentDueAt={reschedulingTask.due_at}
+        />
+      )}
+
+      {/* Manual Email Composer Modal (Standalone Lead View) */}
+      {lead && (
+        <ManualEmailComposerModal
+          isOpen={isEmailComposerOpen}
+          lead={lead}
+          onClose={() => setIsEmailComposerOpen(false)}
+          onEmailSent={loadLeadData}
         />
       )}
     </Layout>

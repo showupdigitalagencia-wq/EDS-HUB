@@ -21,6 +21,7 @@ interface SendMessagePayload {
   body: string;
   override_preference_confirmed?: boolean;
   in_reply_to_provider_message_id?: string | null;
+  idempotency_key?: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -56,6 +57,7 @@ Deno.serve(async (req) => {
       body,
       override_preference_confirmed,
       in_reply_to_provider_message_id,
+      idempotency_key,
     } = payload;
 
     if (!lead_id || !channel || !body) {
@@ -130,25 +132,59 @@ Deno.serve(async (req) => {
         // Email
         const { data: newConv } = await db
           .from('conversations')
-          .insert({
-            lead_id: lead.id,
-            channel: 'email',
-            status: 'open',
-            subject: subject || 'Message from Expert Dental Solutions',
-            last_message_at: new Date().toISOString(),
-            last_message_preview: body.slice(0, 120),
-            last_message_direction: 'outbound',
-          })
           .select('id')
-          .single();
-        targetConvId = newConv?.id;
+          .eq('lead_id', lead.id)
+          .eq('channel', 'email')
+          .maybeSingle();
+
+        if (newConv) {
+          targetConvId = newConv.id;
+        } else {
+          const { data: createdConv } = await db
+            .from('conversations')
+            .insert({
+              lead_id: lead.id,
+              channel: 'email',
+              status: 'open',
+              subject: subject || 'Message from Expert Dental Solutions',
+              last_message_at: new Date().toISOString(),
+              last_message_preview: body.slice(0, 120),
+              last_message_direction: 'outbound',
+            })
+            .select('id')
+            .single();
+          targetConvId = createdConv?.id;
+        }
       }
     }
 
     // 5. Dispatch Message
     let providerMessageId: string | null = null;
     let recipient = '';
-    const idempotencyKey = `manual_msg:${lead.id}:${Date.now()}:${crypto.randomUUID().slice(0, 8)}`;
+    const effectiveIdempotencyKey = idempotency_key?.trim() ||
+      `manual_msg:${lead.id}:${Date.now()}:${crypto.randomUUID().slice(0, 8)}`;
+
+    // Double-send protection: check if an outbound message with this idempotency key already exists
+    if (idempotency_key?.trim()) {
+      const { data: existingMsg } = await db
+        .from('outbound_messages')
+        .select('id, provider_message_id, conversation_id, status')
+        .eq('idempotency_key', effectiveIdempotencyKey)
+        .maybeSingle();
+
+      if (existingMsg) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            outbound_message_id: existingMsg.id,
+            conversation_id: existingMsg.conversation_id,
+            provider_message_id: existingMsg.provider_message_id,
+            already_processed: true,
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
 
     if (channel === 'email') {
       recipient = lead.email ? lead.email.trim().toLowerCase() : '';
@@ -156,6 +192,33 @@ Deno.serve(async (req) => {
         return new Response(
           JSON.stringify({ error: 'Lead has no valid email address' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Check suppression table before sending
+      const { data: suppression } = await db
+        .from('email_suppressions')
+        .select('reason')
+        .eq('normalized_email', recipient)
+        .maybeSingle();
+
+      if (suppression) {
+        let warning = 'Este endereço de e-mail está suprimido para envios.';
+        if (suppression.reason === 'hard_bounce') {
+          warning = 'Este endereço está bloqueado após uma falha permanente de entrega.';
+        } else if (suppression.reason === 'complaint') {
+          warning = 'Este endereço foi bloqueado após uma reclamação de spam.';
+        } else if (suppression.reason === 'unsubscribe') {
+          warning = 'Este contato cancelou o recebimento de e-mails.';
+        }
+
+        return new Response(
+          JSON.stringify({
+            error: 'EMAIL_SUPPRESSED',
+            reason: suppression.reason,
+            message: warning,
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -177,7 +240,7 @@ Deno.serve(async (req) => {
         subject: finalSubject,
         html: htmlBody,
         replyTo,
-        idempotencyKey,
+        idempotencyKey: effectiveIdempotencyKey,
         headers,
       });
 
@@ -225,7 +288,7 @@ Deno.serve(async (req) => {
         body_snapshot: body,
         status: 'sent',
         provider_message_id: providerMessageId,
-        idempotency_key: idempotencyKey,
+        idempotency_key: effectiveIdempotencyKey,
         attempt_count: 1,
         sent_at: new Date().toISOString(),
         is_manual_reply: true,
