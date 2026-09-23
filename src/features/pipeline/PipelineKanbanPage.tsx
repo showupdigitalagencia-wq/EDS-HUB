@@ -227,36 +227,57 @@ export function PipelineKanbanPage() {
     }
   };
 
-  // Mobile stage filter state ('all' or specific stage code)
-  const [mobileStageFilter, setMobileStageFilter] = useState<string>('all');
+  // Mobile active stage code for quick-jump highlight
+  const [activeMobileStageCode, setActiveMobileStageCode] = useState<string>('capture');
 
   // Filter ONLY the 5 operational stages in strict order
   const operationalStages = stages
     .filter((s) => OPERATIONAL_STAGE_CODES.includes(s.code as any))
     .sort((a, b) => (STAGE_ORDER_MAP[a.code] || 99) - (STAGE_ORDER_MAP[b.code] || 99));
 
-  // Mobile filtered leads
-  const activeStage = operationalStages.find((s) => s.code === mobileStageFilter);
-  const mobileFilteredLeads = mobileStageFilter === 'all'
-    ? Object.values(leadsByStage).flat()
-    : activeStage
-    ? leadsByStage[activeStage.id] || []
-    : [];
+  // Sync active mobile stage code as user swipes columns horizontally
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return;
 
-  const stageChips = [
-    { code: 'all', label: 'Todos', count: totalLeads },
-    { code: 'capture', label: 'Novo Lead', count: leadsByStage[operationalStages.find((s) => s.code === 'capture')?.id || '']?.length || 0 },
-    { code: 'qualification', label: 'Respondido', count: leadsByStage[operationalStages.find((s) => s.code === 'qualification')?.id || '']?.length || 0 },
-    { code: 'acquisition', label: 'Interessado', count: leadsByStage[operationalStages.find((s) => s.code === 'acquisition')?.id || '']?.length || 0 },
-    { code: 'approval', label: 'Quente', count: leadsByStage[operationalStages.find((s) => s.code === 'approval')?.id || '']?.length || 0 },
-    { code: 'enrollment', label: 'Matrícula', count: leadsByStage[operationalStages.find((s) => s.code === 'enrollment')?.id || '']?.length || 0 },
-  ];
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            const stageCode = entry.target.getAttribute('data-stage-code');
+            if (stageCode) {
+              setActiveMobileStageCode(stageCode);
+            }
+          }
+        });
+      },
+      { threshold: 0.5 },
+    );
+
+    operationalStages.forEach((stage) => {
+      const col = document.getElementById(`kanban-col-${stage.code}`);
+      if (col) observer.observe(col);
+    });
+
+    return () => observer.disconnect();
+  }, [operationalStages]);
+
+  const scrollToStage = (stageCode: string) => {
+    setActiveMobileStageCode(stageCode);
+    const col = document.getElementById(`kanban-col-${stageCode}`);
+    if (col) {
+      col.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  };
 
   return (
     <Layout
       eyebrow="CRM COMERCIAL"
       title="Pipeline"
-      subtitle="Organize e acompanhe seus contatos por estágio de conversão."
+      subtitle={
+        totalLeads > 0
+          ? `Organize e acompanhe seus contatos por estágio de conversão • ${totalLeads} ${totalLeads === 1 ? 'lead' : 'leads'}`
+          : 'Organize e acompanhe seus contatos por estágio de conversão.'
+      }
       actions={
         <div className="flex items-center gap-2">
           <button
@@ -283,67 +304,41 @@ export function PipelineKanbanPage() {
           <ErrorState message={error} onRetry={loadPipelineData} />
         ) : (
           <>
-            {/* 1. Mobile Stage Filter Chips & Vertical Lead Cards (< lg) */}
-            <div className="lg:hidden space-y-3.5">
-              {/* Stage Filter Chips Bar */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-none">
-                {stageChips.map((chip) => {
-                  const isSelected = mobileStageFilter === chip.code;
-                  return (
-                    <button
-                      key={chip.code}
-                      type="button"
-                      onClick={() => setMobileStageFilter(chip.code)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${
-                        isSelected
-                          ? 'bg-[#08254f] text-white shadow-xs'
-                          : 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
+            {/* 1. Mobile Quick-Jump Stage Navigation Bar (< lg) */}
+            <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none -mx-4 px-4 sm:-mx-6 sm:px-6">
+              {operationalStages.map((stage) => {
+                const count = leadsByStage[stage.id]?.length || 0;
+                const isActive = activeMobileStageCode === stage.code;
+
+                return (
+                  <button
+                    key={stage.id}
+                    type="button"
+                    onClick={() => scrollToStage(stage.code)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer shrink-0 ${
+                      isActive
+                        ? 'bg-[#08254f] text-white shadow-xs'
+                        : 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{stage.name}</span>
+                    <span
+                      className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                        isActive
+                          ? 'bg-white/20 text-white'
+                          : 'bg-slate-100 text-slate-500'
                       }`}
                     >
-                      <span>{chip.label}</span>
-                      <span
-                        className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                          isSelected
-                            ? 'bg-white/20 text-white'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {chip.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Mobile Vertical Lead Stack */}
-              <div className="space-y-2.5">
-                {mobileFilteredLeads.length > 0 ? (
-                  mobileFilteredLeads.map((lead) => {
-                    const interests = leadInterestsMap[lead.id] || [];
-                    const activities = leadActivitiesMap[lead.id] || [];
-                    const attentionState = resolveAttentionState(lead, activities);
-
-                    return (
-                      <MinimalLeadCard
-                        key={lead.id}
-                        lead={lead}
-                        interests={interests}
-                        attentionState={attentionState}
-                        onClick={() => setSelectedLeadId(lead.id)}
-                      />
-                    );
-                  })
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-8 text-center bg-white rounded-2xl border border-slate-200/80 text-slate-400 text-xs italic">
-                    Nenhum lead encontrado neste estágio
-                  </div>
-                )}
-              </div>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* 2. Desktop Kanban Board (>= lg) */}
-            <div className="hidden lg:block overflow-x-auto pb-4 snap-x snap-mandatory scroll-smooth w-full">
-              <div className="flex gap-3 sm:gap-4 min-w-[1200px]">
+            {/* 2. Responsive Premium Kanban Board (Mobile Horizontal Snap Scroll + Desktop Full Grid) */}
+            <div className="overflow-x-auto pb-4 pt-0.5 snap-x snap-mandatory scroll-smooth w-full -mx-4 px-4 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
+              <div className="flex gap-3 sm:gap-4 min-w-max lg:min-w-0 lg:w-full">
                 {operationalStages.map((stage) => {
                   const stageLeads = leadsByStage[stage.id] || [];
                   const isDropTarget = activeDropStageId === stage.id;
@@ -351,10 +346,12 @@ export function PipelineKanbanPage() {
                   return (
                     <div
                       key={stage.id}
+                      id={`kanban-col-${stage.code}`}
+                      data-stage-code={stage.code}
                       onDragOver={(e) => handleDragOver(e, stage.id)}
                       onDragLeave={handleDragLeave}
                       onDrop={(e) => handleDrop(e, stage.id)}
-                      className={`flex-1 min-w-[230px] max-w-[280px] snap-start rounded-2xl flex flex-col bg-slate-100/70 border transition-all duration-200 ${
+                      className={`w-[84vw] max-w-[320px] sm:w-[300px] lg:w-auto lg:flex-1 lg:max-w-none snap-center sm:snap-start shrink-0 lg:shrink rounded-2xl flex flex-col bg-slate-100/70 border transition-all duration-200 ${
                         isDropTarget
                           ? 'border-[#449bd5] bg-[#449bd5]/10 ring-2 ring-[#449bd5]/30 shadow-md'
                           : 'border-slate-200/80'
@@ -375,7 +372,7 @@ export function PipelineKanbanPage() {
                       </div>
 
                       {/* Cards List */}
-                      <div className="p-2.5 flex-1 space-y-2 min-h-[220px] overflow-y-auto max-h-[calc(100vh-220px)]">
+                      <div className="p-2.5 flex-1 space-y-2 min-h-[220px] max-h-[calc(100vh-270px)] sm:max-h-[calc(100vh-220px)] overflow-y-auto">
                         {stageLeads.length > 0 ? (
                           stageLeads.map((lead) => {
                             const interests = leadInterestsMap[lead.id] || [];

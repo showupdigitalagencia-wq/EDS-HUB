@@ -23,6 +23,7 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  GraduationCap,
 } from 'lucide-react';
 
 const PAGE_SIZE = 15;
@@ -546,81 +547,118 @@ export function LeadsListPage() {
             message="Crie seu primeiro contato manualmente ou ajuste os filtros acima."
           />
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-            {/* 1. Mobile Card-Based Contact List (< sm) */}
-            <div className="sm:hidden divide-y divide-slate-100">
+          <div className="space-y-4">
+            {/* 1. Mobile Premium Card Stack (< sm) */}
+            <div className="sm:hidden space-y-2.5">
               {leads.map((lead) => {
                 const fullName =
                   [lead.first_name, lead.last_name].filter(Boolean).join(' ') ||
                   'Contato sem nome';
                 const stage = stageMap[lead.pipeline_stage_id];
-                const interests = (lead as any).lead_course_interests || [];
+                const rawInterests = (lead as any).lead_course_interests || [];
+                const displayInterests = rawInterests
+                  .sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99))
+                  .slice(0, 3);
+                const hasInterests = displayInterests.length > 0;
+                const legacyCourseInterest = !hasInterests && lead.course_interest ? lead.course_interest : null;
+                const phoneValue = lead.phone_raw || lead.phone_e164 || null;
+                const emailValue = lead.email ? lead.email.trim() : null;
 
                 return (
                   <div
                     key={lead.id}
                     onClick={() => setSelectedLeadId(lead.id)}
-                    className="p-4 hover:bg-slate-50 transition-colors cursor-pointer space-y-2.5"
+                    className="p-3.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-[#449bd5]/50 transition-all duration-150 cursor-pointer space-y-2 select-none group"
                   >
+                    {/* 1. Nome (Destaque Principal) + Discrete Stage Badge */}
                     <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h4 className="text-sm font-bold text-[#08254f] font-heading">
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-bold font-heading text-[#08254f] leading-snug line-clamp-1 group-hover:text-[#449bd5] transition-colors">
                           {fullName}
                         </h4>
                         {lead.external_lead_id && (
-                          <span className="text-[10px] text-slate-400">
+                          <span className="text-[10px] text-slate-400 font-mono">
                             ID: {lead.external_lead_id}
                           </span>
                         )}
                       </div>
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-full border shrink-0 ${getStageBadgeStyle(
-                          stage?.code,
-                        )}`}
-                      >
-                        {stage?.name || 'Novo Lead'}
-                      </span>
-                    </div>
-
-                    {/* Course Interests */}
-                    <div className="flex flex-wrap gap-1">
-                      {interests.length > 0 ? (
-                        interests
-                          .sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99))
-                          .slice(0, 2)
-                          .map((interest: any, idx: number) => {
-                            const formattedDate = formatSessionMonthYear(interest.session?.start_date);
-                            const label = formattedDate
-                              ? `${interest.course?.name || 'Curso'} • ${formattedDate}`
-                              : interest.course?.name || 'Curso';
-                            return (
-                              <span
-                                key={idx}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-slate-50 text-slate-700 rounded border border-slate-200/70"
-                              >
-                                {label}
-                              </span>
-                            );
-                          })
-                      ) : lead.course_interest ? (
-                        <span className="px-2 py-0.5 text-[10px] font-medium bg-slate-50 text-slate-700 rounded border border-slate-200/70">
-                          {lead.course_interest}
+                      {stage && (
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-full border shrink-0 ${getStageBadgeStyle(
+                            stage.code,
+                          )}`}
+                        >
+                          {stage.name}
                         </span>
-                      ) : null}
+                      )}
                     </div>
 
-                    {/* Contact Methods */}
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 pt-1 border-t border-slate-100/70">
-                      {lead.phone_raw && (
-                        <div className="flex items-center gap-1.5 font-medium">
-                          <Phone className="h-3 w-3 text-slate-400 shrink-0" />
-                          <span>{lead.phone_raw}</span>
+                    {/* 2. Telefone & E-mail (Secundários) */}
+                    {(phoneValue || emailValue) ? (
+                      <div className="space-y-0.5 pt-0.5">
+                        {phoneValue && (
+                          <div
+                            className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate"
+                            title={phoneValue}
+                          >
+                            <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{phoneValue}</span>
+                          </div>
+                        )}
+                        {emailValue && (
+                          <div
+                            className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate"
+                            title={emailValue}
+                          >
+                            <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{emailValue}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-400 italic pt-0.5">
+                        Contato não informado
+                      </div>
+                    )}
+
+                    {/* 3. Curso de Interesse (Apoio) */}
+                    <div className="space-y-1 pt-1.5 border-t border-slate-100/80">
+                      {hasInterests ? (
+                        displayInterests.map((interest: any, idx: number) => {
+                          const formattedDate = formatSessionMonthYear(interest.session?.start_date);
+                          const label = formattedDate
+                            ? `${interest.course?.name || 'Curso'} • ${formattedDate}`
+                            : interest.course?.name || 'Curso';
+
+                          return (
+                            <div
+                              key={idx}
+                              className="text-[11px] font-medium text-slate-700 bg-slate-50 hover:bg-slate-100/80 px-2 py-0.5 rounded-md border border-slate-100 truncate flex items-center justify-between gap-1"
+                              title={label}
+                            >
+                              <div className="flex items-center gap-1.5 truncate">
+                                <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
+                                <span className="truncate">{label}</span>
+                              </div>
+                              {interest.priority && (
+                                <span className="text-[9px] font-semibold text-slate-400 shrink-0">
+                                  #{interest.priority}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : legacyCourseInterest ? (
+                        <div
+                          className="text-[11px] font-medium text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100 truncate flex items-center gap-1.5"
+                          title={legacyCourseInterest}
+                        >
+                          <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
+                          <span className="truncate">{legacyCourseInterest}</span>
                         </div>
-                      )}
-                      {lead.email && (
-                        <div className="flex items-center gap-1.5 font-medium">
-                          <Mail className="h-3 w-3 text-slate-400 shrink-0" />
-                          <span className="truncate max-w-[190px]">{lead.email}</span>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 italic px-0.5">
+                          Sem curso de interesse
                         </div>
                       )}
                     </div>
@@ -629,147 +667,10 @@ export function LeadsListPage() {
               })}
             </div>
 
-            {/* 2. Desktop Spacious Table (>= sm) */}
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
-                <thead className="bg-[#f8fafc] text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/80">
-                  <tr>
-                    <th className="px-5 py-3.5">Nome</th>
-                    <th className="px-5 py-3.5">Cursos de Interesse</th>
-                    <th className="px-5 py-3.5">Estágio</th>
-                    <th className="px-5 py-3.5">Contato</th>
-                    <th className="px-5 py-3.5">Quem indicou?</th>
-                    <th className="px-5 py-3.5">Data de Criação</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {leads.map((lead) => {
-                    const fullName =
-                      [lead.first_name, lead.last_name].filter(Boolean).join(' ') ||
-                      'Lead sem nome';
-                    const stage = stageMap[lead.pipeline_stage_id];
-                    const interests = (lead as any).lead_course_interests || [];
-
-                    return (
-                      <tr
-                        key={lead.id}
-                        onClick={() => setSelectedLeadId(lead.id)}
-                        className="hover:bg-[#f0f5fb]/60 transition-colors cursor-pointer group"
-                      >
-                        {/* 1. Nome */}
-                        <td className="px-5 py-3.5 whitespace-nowrap">
-                          <div className="font-semibold text-slate-900 group-hover:text-[#08254f] transition-colors">
-                            {fullName}
-                          </div>
-                          {lead.external_lead_id && (
-                            <div className="text-[11px] text-slate-400">
-                              ID: {lead.external_lead_id}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* 2. Cursos de Interesse (up to 3 prioritized) */}
-                        <td className="px-5 py-3.5">
-                          <div className="flex flex-col gap-1 max-w-[280px]">
-                            {interests.length > 0 ? (
-                              interests
-                                .sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99))
-                                .slice(0, 3)
-                                .map((interest: any, idx: number) => {
-                                  const formattedDate = formatSessionMonthYear(
-                                    interest.session?.start_date,
-                                  );
-                                  const courseName = interest.course?.name || 'Curso';
-                                  const label = formattedDate
-                                    ? `${courseName} • ${formattedDate}`
-                                    : courseName;
-
-                                  return (
-                                    <span
-                                      key={idx}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-slate-50 text-slate-700 rounded border border-slate-200/70 truncate"
-                                      title={label}
-                                    >
-                                      <span className="truncate">{label}</span>
-                                      {interest.priority && (
-                                        <span className="text-[9px] font-bold text-slate-400">
-                                          #{interest.priority}
-                                        </span>
-                                      )}
-                                    </span>
-                                  );
-                                })
-                            ) : lead.course_interest ? (
-                              <span className="inline-block px-2 py-0.5 text-[11px] font-medium bg-slate-50 text-slate-700 rounded border border-slate-200/70 truncate">
-                                {lead.course_interest}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 italic text-[11px]">
-                                Nenhum curso
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* 3. Estágio */}
-                        <td className="px-5 py-3.5 whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-1 text-[11px] font-semibold rounded-full border ${getStageBadgeStyle(
-                              stage?.code,
-                            )}`}
-                          >
-                            {stage?.name || 'Novo Lead'}
-                          </span>
-                        </td>
-
-                        {/* 4. Contato (Email / Phone) */}
-                        <td className="px-5 py-3.5 whitespace-nowrap">
-                          <div className="space-y-0.5">
-                            {lead.email ? (
-                              <div className="flex items-center gap-1.5 text-slate-600">
-                                <Mail className="h-3 w-3 text-slate-400 shrink-0" />
-                                <span className="truncate max-w-[200px]">{lead.email}</span>
-                              </div>
-                            ) : null}
-                            {lead.phone_raw ? (
-                              <div className="flex items-center gap-1.5 text-slate-600">
-                                <Phone className="h-3 w-3 text-slate-400 shrink-0" />
-                                <span>{lead.phone_raw}</span>
-                              </div>
-                            ) : null}
-                            {!lead.email && !lead.phone_raw && (
-                              <span className="text-slate-400 italic">Sem contato</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* 5. Quem indicou? */}
-                        <td className="px-5 py-3.5 whitespace-nowrap">
-                          {lead.referred_by ? (
-                            <span className="text-slate-700 font-medium text-xs">
-                              {lead.referred_by}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-xs">—</span>
-                          )}
-                        </td>
-
-                        {/* 6. Data de Criação */}
-                        <td className="px-5 py-3.5 whitespace-nowrap text-slate-500 text-xs">
-                          {new Date(lead.created_at).toLocaleDateString('pt-BR')}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination Controls */}
-            <div className="px-5 py-3.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+            {/* Mobile Pagination Controls (< sm) */}
+            <div className="sm:hidden bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between text-xs text-slate-600">
               <div>
-                Total de <strong className="text-slate-900">{totalCount}</strong> leads
-                encontrados
+                Total: <strong className="text-slate-900">{totalCount}</strong>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -780,7 +681,7 @@ export function LeadsListPage() {
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 <span className="font-medium">
-                  Página {currentPage} de {totalPages}
+                  {currentPage} / {totalPages}
                 </span>
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
@@ -789,6 +690,162 @@ export function LeadsListPage() {
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
+              </div>
+            </div>
+
+            {/* 2. Desktop Spacious Table (>= sm) */}
+            <div className="hidden sm:block bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                  <thead className="bg-[#f8fafc] text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/80">
+                    <tr>
+                      <th className="px-5 py-3.5">Nome</th>
+                      <th className="px-5 py-3.5">Cursos de Interesse</th>
+                      <th className="px-5 py-3.5">Estágio</th>
+                      <th className="px-5 py-3.5">Contato</th>
+                      <th className="px-5 py-3.5">Quem indicou?</th>
+                      <th className="px-5 py-3.5">Data de Criação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {leads.map((lead) => {
+                      const fullName =
+                        [lead.first_name, lead.last_name].filter(Boolean).join(' ') ||
+                        'Contato sem nome';
+                      const stage = stageMap[lead.pipeline_stage_id];
+                      const interests = (lead as any).lead_course_interests || [];
+
+                      return (
+                        <tr
+                          key={lead.id}
+                          onClick={() => setSelectedLeadId(lead.id)}
+                          className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                        >
+                          {/* 1. Nome & External ID */}
+                          <td className="px-5 py-3.5 whitespace-nowrap">
+                            <div className="font-medium text-slate-900 group-hover:text-[#449bd5] transition-colors">
+                              {fullName}
+                            </div>
+                            {lead.external_lead_id && (
+                              <div className="text-[10px] text-slate-400 font-mono">
+                                ID: {lead.external_lead_id}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* 2. Cursos de Interesse & Turma */}
+                          <td className="px-5 py-3.5">
+                            <div className="flex flex-wrap gap-1 max-w-[280px]">
+                              {interests.length > 0 ? (
+                                interests
+                                  .sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99))
+                                  .slice(0, 2)
+                                  .map((interest: any, idx: number) => {
+                                    const formattedDate = formatSessionMonthYear(interest.session?.start_date);
+                                    const label = formattedDate
+                                      ? `${interest.course?.name || 'Curso'} • ${formattedDate}`
+                                      : interest.course?.name || 'Curso';
+                                    return (
+                                      <span
+                                        key={idx}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-slate-50 text-slate-700 rounded border border-slate-200/70 truncate max-w-[260px]"
+                                        title={label}
+                                      >
+                                        {label}
+                                      </span>
+                                    );
+                                  })
+                              ) : lead.course_interest ? (
+                                <span className="px-2 py-0.5 text-[10px] font-medium bg-slate-50 text-slate-700 rounded border border-slate-200/70">
+                                  {lead.course_interest}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 italic text-[11px]">
+                                  Nenhum curso
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* 3. Estágio */}
+                          <td className="px-5 py-3.5 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 text-[11px] font-bold rounded-full border ${getStageBadgeStyle(
+                                stage?.code,
+                              )}`}
+                            >
+                              {stage?.name || 'Novo Lead'}
+                            </span>
+                          </td>
+
+                          {/* 4. Contato (Email / Phone) */}
+                          <td className="px-5 py-3.5 whitespace-nowrap">
+                            <div className="space-y-0.5">
+                              {lead.email ? (
+                                <div className="flex items-center gap-1.5 text-slate-600">
+                                  <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                                  <span className="truncate max-w-[200px]">{lead.email}</span>
+                                </div>
+                              ) : null}
+                              {lead.phone_raw ? (
+                                <div className="flex items-center gap-1.5 text-slate-600">
+                                  <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+                                  <span>{lead.phone_raw}</span>
+                                </div>
+                              ) : null}
+                              {!lead.email && !lead.phone_raw && (
+                                <span className="text-slate-400 italic">Sem contato</span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* 5. Quem indicou? */}
+                          <td className="px-5 py-3.5 whitespace-nowrap">
+                            {lead.referred_by ? (
+                              <span className="text-slate-700 font-medium text-xs">
+                                {lead.referred_by}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">—</span>
+                            )}
+                          </td>
+
+                          {/* 6. Data de Criação */}
+                          <td className="px-5 py-3.5 whitespace-nowrap text-slate-500 text-xs">
+                            {new Date(lead.created_at).toLocaleDateString('pt-BR')}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Desktop Pagination Controls */}
+              <div className="px-5 py-3.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+                <div>
+                  Total de <strong className="text-slate-900">{totalCount}</strong> leads
+                  encontrados
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 transition-colors"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="font-medium">
+                    Página {currentPage} de {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 transition-colors"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
