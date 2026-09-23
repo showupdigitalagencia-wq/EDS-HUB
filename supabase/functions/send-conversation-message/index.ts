@@ -41,8 +41,9 @@ Deno.serve(async (req) => {
   const authResult = await verifyAuth(authHeader);
 
   if (!authResult.isAuthorized || !authResult.userId) {
+    const status = authResult.statusCode || (authResult.userId ? 403 : 401);
     return new Response(JSON.stringify({ error: authResult.error || 'Unauthorized' }), {
-      status: 401,
+      status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
