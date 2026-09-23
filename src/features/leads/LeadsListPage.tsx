@@ -6,7 +6,7 @@ import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { EmptyState } from '../../components/EmptyState';
 import { NewLeadModal } from './components/NewLeadModal';
-import { LeadQuickViewDrawer } from './components/LeadQuickViewDrawer';
+import { LeadProfileDrawer } from './components/LeadProfileDrawer';
 import { CsvImportModal } from './import/CsvImportModal';
 import type { Lead, PipelineStage, Tag, Course, CourseSession } from '../../types';
 import { formatSessionMonthYear } from '../pipeline/components/MinimalLeadCard';
@@ -869,8 +869,8 @@ export function LeadsListPage() {
           onImportComplete={fetchLeads}
         />
 
-        {/* Lead Quick View Drawer */}
-        <LeadQuickViewDrawer
+        {/* Complete Lead Profile Drawer */}
+        <LeadProfileDrawer
           leadId={selectedLeadId}
           isOpen={Boolean(selectedLeadId)}
           onClose={() => setSelectedLeadId(null)}

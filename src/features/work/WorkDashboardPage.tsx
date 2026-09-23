@@ -24,7 +24,7 @@ import {
 import { WorkItemCard } from './components/WorkItemCard';
 import { CreateTaskModal } from './components/CreateTaskModal';
 import { RescheduleTaskModal } from './components/RescheduleTaskModal';
-import { LeadQuickViewDrawer } from '../leads/components/LeadQuickViewDrawer';
+import { LeadProfileDrawer } from '../leads/components/LeadProfileDrawer';
 import type {
   DailyOperationsDashboardKpis,
   WorkItem,
@@ -631,8 +631,8 @@ export const WorkDashboardPage: React.FC = () => {
         />
       )}
 
-      {/* Lead Quick View Drawer */}
-      <LeadQuickViewDrawer
+      {/* Complete Lead Profile Drawer */}
+      <LeadProfileDrawer
         isOpen={Boolean(selectedLeadId)}
         leadId={selectedLeadId}
         onClose={() => setSelectedLeadId(null)}

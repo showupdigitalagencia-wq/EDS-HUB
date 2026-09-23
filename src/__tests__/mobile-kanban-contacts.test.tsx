@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PipelineKanbanPage } from '../features/pipeline/PipelineKanbanPage';
 import { LeadsListPage } from '../features/leads/LeadsListPage';
 import { MinimalLeadCard } from '../features/pipeline/components/MinimalLeadCard';
-import { LeadQuickViewDrawer } from '../features/leads/components/LeadQuickViewDrawer';
+import { LeadProfileDrawer } from '../features/leads/components/LeadProfileDrawer';
 import { LeadConversationStatus } from '../features/leads/components/LeadConversationStatus';
 import { LeadQuickActionBar } from '../features/leads/components/LeadQuickActionBar';
 import { MobileHeader } from '../components/MobileHeader';
@@ -235,7 +235,7 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       });
     });
 
-    it('opens LeadQuickViewDrawer without navigating away when a Pipeline card is clicked', async () => {
+    it('opens complete LeadProfileDrawer without navigating away when a Pipeline card is clicked', async () => {
       (supabase.from as any).mockImplementation((table: string) => {
         if (table === 'pipeline_stages') return createChainableMock(mockStages);
         if (table === 'leads') return createChainableMock(mockLeads);
@@ -243,6 +243,8 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         if (table === 'lead_course_interests') return createChainableMock([]);
         if (table === 'lead_activities') return createChainableMock([]);
         if (table === 'tasks') return createChainableMock([]);
+        if (table === 'lead_notes') return createChainableMock([]);
+        if (table === 'enrollments') return createChainableMock([]);
         return createChainableMock([]);
       });
 
@@ -260,12 +262,22 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       expect(card).toBeInTheDocument();
       fireEvent.click(card!);
 
-      // Quick View drawer opens with contextual details
+      // Complete profile drawer opens immediately
       await waitFor(() => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('Ver em página completa')).toBeInTheDocument();
+      const dialog = screen.getByRole('dialog');
+      // All functional tabs and quick actions immediately available without secondary step
+      expect(within(dialog).getByText('Resumo')).toBeInTheDocument();
+      expect(within(dialog).getByText('Conversas')).toBeInTheDocument();
+      expect(within(dialog).getByText('Atividades')).toBeInTheDocument();
+      expect(within(dialog).getByText('Tarefas')).toBeInTheDocument();
+
+      // Quick action bar is immediately present
+      expect(within(dialog).getByRole('button', { name: /Ligar/i })).toBeInTheDocument();
+      expect(within(dialog).getByRole('button', { name: /WhatsApp/i })).toBeInTheDocument();
+
       // Should NOT have navigated immediately away
       expect(mockNavigate).not.toHaveBeenCalled();
     });
@@ -434,7 +446,7 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       expect(mobileStack).toHaveTextContent('Quente');
     });
 
-    it('opens LeadQuickViewDrawer without navigating away when mobile contact card is clicked', async () => {
+    it('opens complete LeadProfileDrawer without navigating away when mobile contact card is clicked', async () => {
       (supabase.from as any).mockImplementation((table: string) => {
         if (table === 'pipeline_stages') return createChainableMock(mockStages);
         if (table === 'courses' || table === 'course_sessions' || table === 'tags') return createChainableMock([]);
@@ -442,6 +454,8 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         if (table === 'conversations') return createChainableMock([]);
         if (table === 'lead_activities') return createChainableMock([]);
         if (table === 'tasks') return createChainableMock([]);
+        if (table === 'lead_notes') return createChainableMock([]);
+        if (table === 'enrollments') return createChainableMock([]);
         return createChainableMock([]);
       });
 
@@ -460,16 +474,20 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
 
       fireEvent.click(mobileCards[0]);
 
-      // Quick View drawer opens
+      // Complete profile drawer opens immediately
       await waitFor(() => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('Ver em página completa')).toBeInTheDocument();
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText('Resumo')).toBeInTheDocument();
+      expect(within(dialog).getByText('Conversas')).toBeInTheDocument();
+      expect(within(dialog).getByText('Atividades')).toBeInTheDocument();
+      expect(within(dialog).getByText('Tarefas')).toBeInTheDocument();
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 
-    it('opens LeadQuickViewDrawer when desktop table row is clicked', async () => {
+    it('opens complete LeadProfileDrawer when desktop table row is clicked', async () => {
       (supabase.from as any).mockImplementation((table: string) => {
         if (table === 'pipeline_stages') return createChainableMock(mockStages);
         if (table === 'courses' || table === 'course_sessions' || table === 'tags') return createChainableMock([]);
@@ -477,6 +495,8 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         if (table === 'conversations') return createChainableMock([]);
         if (table === 'lead_activities') return createChainableMock([]);
         if (table === 'tasks') return createChainableMock([]);
+        if (table === 'lead_notes') return createChainableMock([]);
+        if (table === 'enrollments') return createChainableMock([]);
         return createChainableMock([]);
       });
 
@@ -499,7 +519,11 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('Ver em página completa')).toBeInTheDocument();
+      const desktopDialog = screen.getByRole('dialog');
+      expect(within(desktopDialog).getByText('Resumo')).toBeInTheDocument();
+      expect(within(desktopDialog).getByText('Conversas')).toBeInTheDocument();
+      expect(within(desktopDialog).getByText('Atividades')).toBeInTheDocument();
+      expect(within(desktopDialog).getByText('Tarefas')).toBeInTheDocument();
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 
@@ -511,6 +535,8 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         if (table === 'conversations') return createChainableMock([]);
         if (table === 'lead_activities') return createChainableMock([]);
         if (table === 'tasks') return createChainableMock([]);
+        if (table === 'lead_notes') return createChainableMock([]);
+        if (table === 'enrollments') return createChainableMock([]);
         return createChainableMock([]);
       });
 
@@ -537,19 +563,20 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       await waitFor(() => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
-      expect(screen.getByText('Ver em página completa')).toBeInTheDocument();
+      const clickDialog = screen.getByRole('dialog');
+      expect(within(clickDialog).getByText('Resumo')).toBeInTheDocument();
       expect(mockNavigate).not.toHaveBeenCalled();
     });
   });
 
   // ---------------------------------------------------------------------------
-  // 4. Lead Quick View Details, Full Profile Action & Conversation Visibility
+  // 4. Complete Lead Profile Content & Immediate 4-Tab Accessibility
   // ---------------------------------------------------------------------------
-  describe('Lead Quick View Content, Full Profile Action & Conversation Visibility', () => {
-    it('clicking "Ver em página completa" in LeadQuickViewDrawer explicitly navigates to /leads/:id', () => {
+  describe('Complete Lead Profile Content & Immediate 4-Tab Accessibility', () => {
+    it('LeadProfileDrawer immediately renders complete profile data and all 4 functional tabs without intermediate step', () => {
       render(
         <MemoryRouter>
-          <LeadQuickViewDrawer
+          <LeadProfileDrawer
             leadId="lead-test-1"
             isOpen={true}
             initialLead={mockLeadWithCourse}
@@ -558,11 +585,24 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         </MemoryRouter>
       );
 
-      const fullProfileBtn = screen.getByRole('button', { name: /Ver em página completa/i });
-      expect(fullProfileBtn).toBeInTheDocument();
+      // Name and Stage in header
+      expect(screen.getByText('Dra. Camila Nogueira')).toBeInTheDocument();
 
-      fireEvent.click(fullProfileBtn);
-      expect(mockNavigate).toHaveBeenCalledWith('/leads/lead-test-1');
+      // Quick Actions immediately available
+      expect(screen.getByRole('button', { name: /Ligar/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Email/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /SMS/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /WhatsApp/i })).toBeInTheDocument();
+
+      // All 4 tabs immediately available
+      expect(screen.getByText('Resumo')).toBeInTheDocument();
+      expect(screen.getByText('Conversas')).toBeInTheDocument();
+      expect(screen.getByText('Atividades')).toBeInTheDocument();
+      expect(screen.getByText('Tarefas')).toBeInTheDocument();
+
+      // Contact details displayed inside profile
+      expect(screen.getByText('(11) 97777-8888')).toBeInTheDocument();
+      expect(screen.getByText('camila@odontoclinic.com')).toBeInTheDocument();
     });
 
     it('renders factual stored conversation when available without fake read status', async () => {

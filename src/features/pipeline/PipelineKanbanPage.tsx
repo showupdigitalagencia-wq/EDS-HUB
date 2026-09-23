@@ -9,7 +9,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { NewLeadModal } from '../leads/components/NewLeadModal';
-import { LeadQuickViewDrawer } from '../leads/components/LeadQuickViewDrawer';
+import { LeadProfileDrawer } from '../leads/components/LeadProfileDrawer';
 import {
   MinimalLeadCard,
   resolveAttentionState,
@@ -415,8 +415,8 @@ export function PipelineKanbanPage() {
           onLeadCreated={loadPipelineData}
         />
 
-        {/* Lead Quick View Drawer */}
-        <LeadQuickViewDrawer
+        {/* Complete Lead Profile Drawer */}
+        <LeadProfileDrawer
           leadId={selectedLeadId}
           isOpen={Boolean(selectedLeadId)}
           onClose={() => setSelectedLeadId(null)}
