@@ -7,6 +7,7 @@ import { ErrorState } from '../../components/ErrorState';
 import { EmptyState } from '../../components/EmptyState';
 import { SavedSegmentsModal } from './components/SavedSegmentsModal';
 import type { Campaign, CampaignStatus, CampaignChannel } from '../../types';
+import { Modal } from '../../components/ui/Modal';
 import {
   Mail,
   MessageSquare,
@@ -129,7 +130,7 @@ export function CampaignsListPage() {
       case 'call':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded-md bg-purple-50 text-purple-700 border border-purple-200">
-            <PhoneCall className="h-3 w-3" /> Call
+            <PhoneCall className="h-3 w-3" /> Ligações
           </span>
         );
       case 'sms':
@@ -153,43 +154,43 @@ export function CampaignsListPage() {
       case 'draft':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">
-            <FileEdit className="h-3 w-3" /> Draft
+            <FileEdit className="h-3 w-3" /> Rascunho
           </span>
         );
       case 'pending_approval':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-800">
-            <Clock className="h-3 w-3" /> Pending Approval
+            <Clock className="h-3 w-3" /> Pendente de Aprovação
           </span>
         );
       case 'approved':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-            <CheckCircle2 className="h-3 w-3" /> Approved
+            <CheckCircle2 className="h-3 w-3" /> Aprovada
           </span>
         );
       case 'scheduled':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-            <Calendar className="h-3 w-3" /> Scheduled
+            <Calendar className="h-3 w-3" /> Agendada
           </span>
         );
       case 'sending':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800 animate-pulse">
-            <Send className="h-3 w-3" /> Sending
+            <Send className="h-3 w-3" /> Enviando
           </span>
         );
       case 'sent':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800">
-            <CheckCircle2 className="h-3 w-3" /> Sent
+            <CheckCircle2 className="h-3 w-3" /> Enviada
           </span>
         );
       case 'failed':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-            <AlertCircle className="h-3 w-3" /> Failed
+            <AlertCircle className="h-3 w-3" /> Falha
           </span>
         );
       default:
@@ -264,13 +265,13 @@ export function CampaignsListPage() {
 
         {/* Content List */}
         {isLoading ? (
-          <LoadingState message="Loading campaigns..." />
+          <LoadingState message="Carregando campanhas..." />
         ) : error ? (
           <ErrorState message={error} onRetry={fetchCampaigns} />
         ) : campaigns.length === 0 ? (
           <EmptyState
-            title="No campaigns found"
-            message="Create your first marketing or call campaign with canonical audience segmentation, snapshot freezing, and approval workflows."
+            title="Nenhuma campanha criada"
+            message="Crie sua primeira campanha multicanal com segmentação de público, congelamento de snapshot e fluxo de aprovação."
           />
         ) : (
           <div className="card-executive overflow-hidden">
@@ -287,20 +288,20 @@ export function CampaignsListPage() {
                       {getChannelBadge(camp.channel)}
                       {getStatusBadge(camp.status)}
                     </div>
-                    <p className="text-xs text-gray-500 flex flex-wrap items-center gap-2">
-                      <span>Subject: <strong className="text-gray-700">{camp.subject}</strong></span>
-                      {camp.from_name && <span>• Sender: {camp.from_name}</span>}
+                    <p className="text-xs text-slate-500 flex flex-wrap items-center gap-2">
+                      <span>Assunto: <strong className="text-slate-700">{camp.subject}</strong></span>
+                      {camp.from_name && <span>• Remetente: {camp.from_name}</span>}
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-4 text-xs text-gray-400 shrink-0">
+                  <div className="flex items-center gap-4 text-xs text-slate-400 shrink-0">
                     {camp.scheduled_at && (
                       <span className="flex items-center gap-1 text-purple-700 bg-purple-50 px-2.5 py-1 rounded-lg">
                         <Calendar className="h-3.5 w-3.5" />
                         {new Date(camp.scheduled_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                       </span>
                     )}
-                    <span>Created {new Date(camp.created_at).toLocaleDateString()}</span>
+                    <span>Criada em {new Date(camp.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
               ))}
@@ -309,118 +310,117 @@ export function CampaignsListPage() {
         )}
 
         {/* Modal: New Campaign Draft */}
-        {isCreateOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4 border border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900">Create Campaign Draft</h2>
-              <form onSubmit={handleCreateCampaign} className="space-y-4">
-                {/* Channel Selector */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-2">Campaign Channel *</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setNewCampChannel('email')}
-                      className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
-                        newCampChannel === 'email'
-                          ? 'border-brand-500 bg-brand-50/50 text-brand-900 font-bold'
-                          : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                      }`}
-                    >
-                      <Mail className={`h-4 w-4 ${newCampChannel === 'email' ? 'text-brand-600' : 'text-gray-400'}`} />
-                      <span className="text-xs">Email</span>
-                    </button>
+        <Modal
+          isOpen={isCreateOpen}
+          onClose={() => setIsCreateOpen(false)}
+          title="Criar Rascunho de Campanha"
+        >
+          <form onSubmit={handleCreateCampaign} className="space-y-4">
+            {/* Channel Selector */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-2">Canal da Campanha *</label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewCampChannel('email')}
+                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
+                    newCampChannel === 'email'
+                      ? 'border-[#08254f] bg-[#08254f]/5 text-[#08254f] font-bold shadow-2xs'
+                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                  }`}
+                >
+                  <Mail className={`h-4 w-4 ${newCampChannel === 'email' ? 'text-[#08254f]' : 'text-slate-400'}`} />
+                  <span className="text-xs">Email</span>
+                </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setNewCampChannel('sms')}
-                      className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
-                        newCampChannel === 'sms'
-                          ? 'border-emerald-500 bg-emerald-50/50 text-emerald-900 font-bold'
-                          : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                      }`}
-                    >
-                      <MessageSquare className={`h-4 w-4 ${newCampChannel === 'sms' ? 'text-emerald-600' : 'text-gray-400'}`} />
-                      <span className="text-xs">SMS</span>
-                    </button>
+                <button
+                  type="button"
+                  onClick={() => setNewCampChannel('sms')}
+                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
+                    newCampChannel === 'sms'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-900 font-bold shadow-2xs'
+                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                  }`}
+                >
+                  <MessageSquare className={`h-4 w-4 ${newCampChannel === 'sms' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  <span className="text-xs">SMS</span>
+                </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setNewCampChannel('call')}
-                      className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
-                        newCampChannel === 'call'
-                          ? 'border-purple-500 bg-purple-50/50 text-purple-900 font-bold'
-                          : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                      }`}
-                    >
-                      <PhoneCall className={`h-4 w-4 ${newCampChannel === 'call' ? 'text-purple-600' : 'text-gray-400'}`} />
-                      <span className="text-xs">Call Tasks</span>
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-gray-500 mt-1.5">
-                    {newCampChannel === 'call'
-                      ? 'Creates deduplicated call tasks in Daily Operations Work Queue upon activation.'
-                      : 'Audience builder & snapshot freeze ready. Live sending deferred to Phase 7.'}
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Campaign Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={newCampName}
-                    onChange={(e) => setNewCampName(e.target.value)}
-                    placeholder={
-                      newCampChannel === 'call'
-                        ? 'e.g. Q3 Alumni Direct Phone Follow-up'
-                        : 'e.g. Q3 Alumni Masterclass Announcement'
-                    }
-                    className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    {newCampChannel === 'call'
-                      ? 'Call Script Goal / Objective'
-                      : newCampChannel === 'sms'
-                      ? 'SMS Topic / Header'
-                      : 'Email Subject Line'}
-                  </label>
-                  <input
-                    type="text"
-                    value={newCampSubject}
-                    onChange={(e) => setNewCampSubject(e.target.value)}
-                    placeholder={
-                      newCampChannel === 'call'
-                        ? 'e.g. Follow-up regarding Next Level Restorative certification'
-                        : 'e.g. Exclusive Masterclass for Dental Practitioners'
-                    }
-                    className="w-full px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
-                  <button
-                    type="button"
-                    onClick={() => setIsCreateOpen(false)}
-                    className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isCreating}
-                    className="px-5 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs"
-                  >
-                    {isCreating ? 'Creating...' : 'Create Draft'}
-                  </button>
-                </div>
-              </form>
+                <button
+                  type="button"
+                  onClick={() => setNewCampChannel('call')}
+                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
+                    newCampChannel === 'call'
+                      ? 'border-purple-600 bg-purple-50 text-purple-900 font-bold shadow-2xs'
+                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                  }`}
+                >
+                  <PhoneCall className={`h-4 w-4 ${newCampChannel === 'call' ? 'text-purple-600' : 'text-slate-400'}`} />
+                  <span className="text-xs">Fila de Ligações</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1.5">
+                {newCampChannel === 'call'
+                  ? 'Gera tarefas de ligação deduplicadas na Fila de Operações ao ativar.'
+                  : 'Segmentação e congelamento de snapshot prontos. Envio real inativo nesta fase.'}
+              </p>
             </div>
-          </div>
-        )}
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Nome da Campanha *</label>
+              <input
+                type="text"
+                required
+                value={newCampName}
+                onChange={(e) => setNewCampName(e.target.value)}
+                placeholder={
+                  newCampChannel === 'call'
+                    ? 'Ex: Follow-up Telefônico Alunos Q3'
+                    : 'Ex: Lançamento Masterclass Q3'
+                }
+                className="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {newCampChannel === 'call'
+                  ? 'Objetivo da Ligação'
+                  : newCampChannel === 'sms'
+                  ? 'Tópico / Cabeçalho do SMS'
+                  : 'Assunto do Email'}
+              </label>
+              <input
+                type="text"
+                value={newCampSubject}
+                onChange={(e) => setNewCampSubject(e.target.value)}
+                placeholder={
+                  newCampChannel === 'call'
+                    ? 'Ex: Follow-up sobre certificação Next Level'
+                    : 'Ex: Oportunidade Exclusiva para Cirurgiões-Dentistas'
+                }
+                className="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsCreateOpen(false)}
+                className="btn-secondary text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isCreating}
+                className="btn-crimson text-xs disabled:opacity-50"
+              >
+                {isCreating ? 'Criando...' : 'Criar Rascunho'}
+              </button>
+            </div>
+          </form>
+        </Modal>
 
         {/* Saved Segments Management Modal */}
         <SavedSegmentsModal

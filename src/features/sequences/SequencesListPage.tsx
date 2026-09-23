@@ -120,23 +120,23 @@ export function SequencesListPage() {
         {metrics && (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             <div className="card-executive p-3.5">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Active</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Ativas</div>
               <div className="text-xl font-bold font-heading text-blue-600 mt-1">{metrics.active_runs}</div>
             </div>
             <div className="card-executive p-3.5">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Waiting</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Aguardando</div>
               <div className="text-xl font-bold font-heading text-indigo-600 mt-1">{metrics.waiting_runs}</div>
             </div>
             <div className="card-executive p-3.5">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Paused</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Pausadas</div>
               <div className="text-xl font-bold font-heading text-amber-600 mt-1">{metrics.paused_runs}</div>
             </div>
             <div className="card-executive p-3.5">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Completed</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Concluídas</div>
               <div className="text-xl font-bold font-heading text-emerald-600 mt-1">{metrics.completed_runs}</div>
             </div>
             <div className="card-executive p-3.5">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Stopped</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Interrompidas</div>
               <div className="text-xl font-bold font-heading text-purple-600 mt-1">{metrics.stopped_by_condition_runs}</div>
             </div>
             <div className="card-executive p-3.5">
@@ -153,7 +153,7 @@ export function SequencesListPage() {
             </div>
             <div className="card-executive p-3.5">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading flex items-center gap-1">
-                <ListTodo className="w-3 h-3 text-purple-500" /> Tasks
+                <ListTodo className="w-3 h-3 text-purple-500" /> Tarefas
               </div>
               <div className="text-xl font-bold font-heading text-slate-800 mt-1">{metrics.tasks_created}</div>
             </div>
@@ -163,28 +163,34 @@ export function SequencesListPage() {
         {/* Filter & Search */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search sequences..."
+              placeholder="Buscar sequências..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+              className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-[#08254f]"
             />
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-            {['all', 'active', 'draft', 'paused', 'archived'].map((st) => (
+            {[
+              { id: 'all', label: 'Todas' },
+              { id: 'active', label: 'Ativas' },
+              { id: 'draft', label: 'Rascunhos' },
+              { id: 'paused', label: 'Pausadas' },
+              { id: 'archived', label: 'Arquivadas' },
+            ].map((st) => (
               <button
-                key={st}
-                onClick={() => setStatusFilter(st)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize transition-colors whitespace-nowrap ${
-                  statusFilter === st
-                    ? 'bg-gray-900 text-white'
-                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                key={st.id}
+                onClick={() => setStatusFilter(st.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap font-heading ${
+                  statusFilter === st.id
+                    ? 'bg-[#08254f] text-white shadow-xs'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                {st}
+                {st.label}
               </button>
             ))}
           </div>
@@ -192,31 +198,31 @@ export function SequencesListPage() {
 
         {/* Sequences Grid / Cards */}
         {isLoading ? (
-          <div className="py-16 text-center text-xs text-gray-400">Loading sequences...</div>
+          <div className="py-16 text-center text-xs text-slate-400">Carregando sequências...</div>
         ) : filteredSequences.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-3xl p-12 text-center max-w-lg mx-auto space-y-4 shadow-xs">
-            <div className="w-12 h-12 rounded-2xl bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600 mx-auto">
+          <div className="card-executive p-12 text-center max-w-lg mx-auto space-y-4 shadow-xs">
+            <div className="w-12 h-12 rounded-2xl bg-[#08254f]/10 border border-[#08254f]/20 flex items-center justify-center text-[#08254f] mx-auto">
               <GitFork className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="font-bold text-gray-900 text-sm">No follow-up sequences found</h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Start from a pre-configured template to set up a multi-touch cadence in seconds.
+              <h3 className="font-bold text-[#08254f] text-sm font-heading">Nenhuma sequência de cadência encontrada</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Utilize um template pré-configurado para iniciar uma cadência multicanal em segundos.
               </p>
             </div>
             <div className="pt-2 flex items-center justify-center gap-3">
               <button
                 onClick={() => setIsTemplateModalOpen(true)}
-                className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-xs"
+                className="btn-secondary text-xs"
               >
-                <Sparkles className="w-4 h-4" />
-                Browse Templates
+                <Sparkles className="w-4 h-4 text-[#449bd5]" />
+                Explorar Templates
               </button>
               <button
                 onClick={() => navigate('/sequences/new')}
-                className="px-4 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold text-xs transition-colors"
+                className="btn-crimson text-xs"
               >
-                Create from Scratch
+                Criar do Zero
               </button>
             </div>
           </div>

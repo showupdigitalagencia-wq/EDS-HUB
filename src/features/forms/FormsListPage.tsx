@@ -194,77 +194,77 @@ export function FormsListPage() {
         {/* Metrics Summary */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Forms</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Total de Formulários</p>
             <p className="text-2xl font-extrabold text-[#08254f] font-heading mt-1">{totalForms}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">{activeForms} active</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">{activeForms} ativos</p>
           </div>
           <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Forms</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Formulários Ativos</p>
             <p className="text-2xl font-extrabold text-emerald-600 font-heading mt-1">{activeForms}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">Ready for public submissions</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Prontos para submissão pública</p>
           </div>
           <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Submissions</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Submissões Recebidas</p>
             <p className="text-2xl font-extrabold text-[#08254f] font-heading mt-1">{totalSubmissions}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">Across all active versions</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Em todas as versões ativas</p>
           </div>
           <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Leads Generated</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">Leads Gerados</p>
             <p className="text-2xl font-extrabold text-[#125e95] font-heading mt-1">{totalLeads}</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {totalSubmissions > 0 ? `${Math.round((totalLeads / totalSubmissions) * 100)}% lead capture rate` : '0%'}
+              {totalSubmissions > 0 ? `${Math.round((totalLeads / totalSubmissions) * 100)}% taxa de conversão` : '0%'}
             </p>
           </div>
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="relative w-full sm:w-80">
-            <Search className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search by name, slug..."
+              placeholder="Buscar por nome, slug..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-[#08254f]"
             />
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-xs font-medium text-gray-500">Status:</span>
-            <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+            <span className="text-xs font-semibold text-slate-500 font-heading">Status:</span>
+            <div className="inline-flex rounded-xl border border-slate-200 p-0.5 bg-slate-50">
               <button
                 type="button"
                 onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors font-heading ${
                   statusFilter === 'all'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-[#08254f] shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                All ({totalForms})
+                Todos ({totalForms})
               </button>
               <button
                 type="button"
                 onClick={() => setStatusFilter('active')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors font-heading ${
                   statusFilter === 'active'
-                    ? 'bg-white text-emerald-700 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-emerald-700 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                Active ({activeForms})
+                Ativos ({activeForms})
               </button>
               <button
                 type="button"
                 onClick={() => setStatusFilter('inactive')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors font-heading ${
                   statusFilter === 'inactive'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-slate-700 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                Inactive ({totalForms - activeForms})
+                Inativos ({totalForms - activeForms})
               </button>
             </div>
           </div>
@@ -272,17 +272,17 @@ export function FormsListPage() {
 
         {/* Content Area */}
         {isLoading ? (
-          <LoadingState message="Loading forms..." />
+          <LoadingState message="Carregando formulários..." />
         ) : error ? (
           <ErrorState message={error} onRetry={fetchForms} />
         ) : filteredForms.length === 0 ? (
           <EmptyState
-            icon={<ClipboardList className="h-7 w-7 text-gray-300" />}
-            title={searchQuery || statusFilter !== 'all' ? 'No matching forms found' : 'No forms created yet'}
+            icon={<ClipboardList className="h-7 w-7 text-slate-300" />}
+            title={searchQuery || statusFilter !== 'all' ? 'Nenhum formulário encontrado' : 'Nenhum formulário criado'}
             message={
               searchQuery || statusFilter !== 'all'
-                ? 'Try adjusting your search query or status filter.'
-                : 'Build your first native form to start capturing and qualifying leads directly into EDS HUB.'
+                ? 'Tente ajustar sua busca ou filtro de status.'
+                : 'Crie seu primeiro formulário nativo para capturar e qualificar leads diretamente no EDS HUB.'
             }
           />
         ) : (

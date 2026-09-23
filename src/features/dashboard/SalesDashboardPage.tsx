@@ -215,7 +215,59 @@ export const SalesDashboardPage: React.FC = () => {
           {/* Loaded Dashboard Content */}
           {metrics && (
             <div className="space-y-8">
-              {/* Row 0: Commercial & Revenue Highlights Bar */}
+              {/* Row 1: Primary Funnel KPI Cards */}
+              <KpiCardsSection metrics={metrics} />
+
+              {/* Row 2: Sales Funnel & Current Stage Distribution */}
+              <SalesFunnelWidget
+                pipeline={metrics.pipeline}
+                qualification={metrics.qualification}
+                onExportPipeline={() =>
+                  exportPipelineSummaryToCsv(metrics.pipeline, boundaries.label)
+                }
+              />
+
+              {/* Row 3: Priority Leads & Needs Attention */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <PriorityLeadsWidget
+                  leads={metrics.priority_leads || []}
+                  onExportCsv={() =>
+                    exportPriorityLeadsToCsv(metrics.priority_leads || [], boundaries.label)
+                  }
+                />
+                <NeedsAttentionWidget
+                  items={metrics.needs_attention || []}
+                  onExportCsv={() =>
+                    exportNeedsAttentionToCsv(metrics.needs_attention || [], boundaries.label)
+                  }
+                />
+              </div>
+
+              {/* Row 4: Tasks & Conversations Status */}
+              <TasksAndConversationsWidget
+                tasks={metrics.tasks}
+                snapshot={metrics.snapshot}
+              />
+
+              {/* Row 5: Course Interest & Demographics */}
+              <ScoreAndInterestWidget
+                scoring={metrics.scoring}
+                demographics={metrics.demographics}
+              />
+
+              {/* Row 6: Canonical Sources & Contact Preferences */}
+              <SourceAndChannelWidget demographics={metrics.demographics} />
+
+              {/* Row 7: Automation Velocity & Activity Trend */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <AutomationVelocityWidget automation={metrics.automation} />
+                <ActivityTrendWidget
+                  trend={metrics.activity?.trend || []}
+                  periodLabel={boundaries.label}
+                />
+              </div>
+
+              {/* Row 8: Commercial & Revenue Highlights Bar (Secondary Operational Closure) */}
               {revMetrics && revMetrics.kpis && (
                 <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
@@ -263,58 +315,6 @@ export const SalesDashboardPage: React.FC = () => {
                   </Link>
                 </div>
               )}
-
-              {/* Row 1: KPI Cards */}
-              <KpiCardsSection metrics={metrics} />
-
-              {/* Row 2: Sales Funnel & Snapshot Distribution */}
-              <SalesFunnelWidget
-                pipeline={metrics.pipeline}
-                qualification={metrics.qualification}
-                onExportPipeline={() =>
-                  exportPipelineSummaryToCsv(metrics.pipeline, boundaries.label)
-                }
-              />
-
-              {/* Row 3: Priority Leads & Needs Attention */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <PriorityLeadsWidget
-                  leads={metrics.priority_leads || []}
-                  onExportCsv={() =>
-                    exportPriorityLeadsToCsv(metrics.priority_leads || [], boundaries.label)
-                  }
-                />
-                <NeedsAttentionWidget
-                  items={metrics.needs_attention || []}
-                  onExportCsv={() =>
-                    exportNeedsAttentionToCsv(metrics.needs_attention || [], boundaries.label)
-                  }
-                />
-              </div>
-
-              {/* Row 4: Activity Trend */}
-              <ActivityTrendWidget
-                trend={metrics.activity?.trend || []}
-                periodLabel={boundaries.label}
-              />
-
-              {/* Row 5: Score Distribution & Course Interest */}
-              <ScoreAndInterestWidget
-                scoring={metrics.scoring}
-                demographics={metrics.demographics}
-              />
-
-              {/* Row 6: Canonical Sources & Contact Preferences */}
-              <SourceAndChannelWidget demographics={metrics.demographics} />
-
-              {/* Row 7: Automation Velocity & Sequence Performance */}
-              <AutomationVelocityWidget automation={metrics.automation} />
-
-              {/* Row 8: Tasks & Conversations Status */}
-              <TasksAndConversationsWidget
-                tasks={metrics.tasks}
-                snapshot={metrics.snapshot}
-              />
             </div>
           )}
         </div>

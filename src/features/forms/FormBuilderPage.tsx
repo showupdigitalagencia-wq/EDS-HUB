@@ -49,14 +49,14 @@ const FIELD_PALETTE: {
   category: 'crm' | 'general';
   defaultOptions?: string[];
 }[] = [
-  { type: 'first_name', label: 'First Name', defaultLabel: 'First Name', defaultInternal: 'first_name', icon: User, category: 'crm' },
-  { type: 'last_name', label: 'Last Name', defaultLabel: 'Last Name', defaultInternal: 'last_name', icon: User, category: 'crm' },
-  { type: 'email', label: 'Email Address', defaultLabel: 'Email Address', defaultInternal: 'email', icon: Mail, category: 'crm' },
-  { type: 'phone', label: 'Phone Number', defaultLabel: 'Phone Number', defaultInternal: 'phone', icon: Phone, category: 'crm' },
+  { type: 'first_name', label: 'Nome', defaultLabel: 'Nome', defaultInternal: 'first_name', icon: User, category: 'crm' },
+  { type: 'last_name', label: 'Sobrenome', defaultLabel: 'Sobrenome', defaultInternal: 'last_name', icon: User, category: 'crm' },
+  { type: 'email', label: 'Endereço de Email', defaultLabel: 'Email', defaultInternal: 'email', icon: Mail, category: 'crm' },
+  { type: 'phone', label: 'Telefone / WhatsApp', defaultLabel: 'Telefone / WhatsApp', defaultInternal: 'phone', icon: Phone, category: 'crm' },
   {
     type: 'contact_preference',
-    label: 'Contact Preference',
-    defaultLabel: 'Preferred Contact Method',
+    label: 'Preferência de Contato',
+    defaultLabel: 'Canal de Preferência',
     defaultInternal: 'contact_preference',
     icon: Sparkles,
     category: 'crm',
@@ -64,37 +64,37 @@ const FIELD_PALETTE: {
   },
   {
     type: 'course_interest',
-    label: 'Course Interest',
-    defaultLabel: 'Program of Interest',
+    label: 'Curso de Interesse',
+    defaultLabel: 'Programa de Interesse',
     defaultInternal: 'course_interest',
     icon: Layers,
     category: 'crm',
     defaultOptions: ['Comprehensive Esthetics', 'Full Arch Mastery', 'Surgical Foundations'],
   },
-  { type: 'text', label: 'Short Text', defaultLabel: 'Custom Text', defaultInternal: 'custom_text', icon: AlignLeft, category: 'general' },
-  { type: 'textarea', label: 'Long Text', defaultLabel: 'Comments / Notes', defaultInternal: 'comments', icon: AlignLeft, category: 'general' },
+  { type: 'text', label: 'Texto Curto', defaultLabel: 'Campo de Texto', defaultInternal: 'custom_text', icon: AlignLeft, category: 'general' },
+  { type: 'textarea', label: 'Texto Longo', defaultLabel: 'Comentários / Observações', defaultInternal: 'comments', icon: AlignLeft, category: 'general' },
   {
     type: 'select',
-    label: 'Dropdown Select',
-    defaultLabel: 'Select Option',
+    label: 'Menu Suspenso',
+    defaultLabel: 'Selecione uma opção',
     defaultInternal: 'custom_select',
     icon: List,
     category: 'general',
-    defaultOptions: ['Option A', 'Option B', 'Option C'],
+    defaultOptions: ['Opção A', 'Opção B', 'Opção C'],
   },
   {
     type: 'radio',
-    label: 'Radio Options',
-    defaultLabel: 'Choose One',
+    label: 'Múltipla Escolha (Radio)',
+    defaultLabel: 'Escolha uma opção',
     defaultInternal: 'custom_radio',
     icon: List,
     category: 'general',
-    defaultOptions: ['Option 1', 'Option 2'],
+    defaultOptions: ['Opção 1', 'Opção 2'],
   },
   {
     type: 'checkbox',
-    label: 'Checkbox',
-    defaultLabel: 'I agree to receive communications',
+    label: 'Caixa de Seleção (Opt-in)',
+    defaultLabel: 'Concordo em receber comunicações',
     defaultInternal: 'consent_opt_in',
     icon: CheckSquare,
     category: 'general',
@@ -576,38 +576,38 @@ export function FormBuilderPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('builder')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors font-heading ${
                   activeTab === 'builder'
-                    ? 'bg-white text-[#08254f] font-semibold shadow-xs'
+                    ? 'bg-white text-[#08254f] shadow-xs'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 <Sliders className="h-3.5 w-3.5" />
-                Builder
+                Construtor
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('settings')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors font-heading ${
                   activeTab === 'settings'
-                    ? 'bg-white text-[#08254f] font-semibold shadow-xs'
+                    ? 'bg-white text-[#08254f] shadow-xs'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 <Settings className="h-3.5 w-3.5" />
-                Settings
+                Configurações
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('preview')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors font-heading ${
                   activeTab === 'preview'
-                    ? 'bg-white text-[#08254f] font-semibold shadow-xs'
+                    ? 'bg-white text-[#08254f] shadow-xs'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 <Eye className="h-3.5 w-3.5" />
-                Preview
+                Pré-visualização
               </button>
             </div>
 
@@ -619,7 +619,7 @@ export function FormBuilderPage() {
                 className="btn-secondary text-xs"
               >
                 <ExternalLink className="h-3.5 w-3.5 text-slate-500" />
-                Open Link
+                Abrir Link
               </a>
             )}
 
@@ -633,12 +633,12 @@ export function FormBuilderPage() {
               {saveSuccess ? (
                 <>
                   <Check className="h-4 w-4" />
-                  Saved!
+                  Salvo!
                 </>
               ) : (
                 <>
                   <Save className="h-4 w-4" />
-                  {isSaving ? 'Saving...' : 'Save Form'}
+                  {isSaving ? 'Salvando...' : 'Salvar Formulário'}
                 </>
               )}
             </button>
@@ -667,10 +667,10 @@ export function FormBuilderPage() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left Column: Field Palette */}
             <div className="lg:col-span-3 space-y-4">
-              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <Sparkles className="h-3.5 w-3.5 text-brand-600" />
-                  CRM Native Fields
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <h3 className="text-xs font-bold text-[#08254f] uppercase tracking-wider mb-3 flex items-center gap-2 font-heading">
+                  <Sparkles className="h-3.5 w-3.5 text-[#449bd5]" />
+                  Campos Nativos do CRM
                 </h3>
                 <div className="space-y-1.5">
                   {FIELD_PALETTE.filter((f) => f.category === 'crm').map((item) => (
@@ -678,20 +678,20 @@ export function FormBuilderPage() {
                       key={item.type}
                       type="button"
                       onClick={() => addField(item)}
-                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-700 bg-gray-50 hover:bg-brand-50 hover:text-brand-700 rounded-lg border border-gray-200 hover:border-brand-200 transition-all text-left"
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-700 bg-slate-50 hover:bg-[#08254f]/5 hover:text-[#08254f] rounded-lg border border-slate-200 hover:border-[#08254f]/30 transition-all text-left cursor-pointer"
                     >
                       <div className="flex items-center gap-2">
-                        <item.icon className="h-3.5 w-3.5 text-gray-500" />
+                        <item.icon className="h-3.5 w-3.5 text-slate-500" />
                         <span>{item.label}</span>
                       </div>
-                      <Plus className="h-3 w-3 text-gray-400" />
+                      <Plus className="h-3 w-3 text-slate-400" />
                     </button>
                   ))}
                 </div>
 
-                <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider mt-5 mb-3 flex items-center gap-2">
+                <h3 className="text-xs font-bold text-[#08254f] uppercase tracking-wider mt-5 mb-3 flex items-center gap-2 font-heading">
                   <Layers className="h-3.5 w-3.5 text-indigo-600" />
-                  General Inputs
+                  Campos Gerais
                 </h3>
                 <div className="space-y-1.5">
                   {FIELD_PALETTE.filter((f) => f.category === 'general').map((item) => (
@@ -699,13 +699,13 @@ export function FormBuilderPage() {
                       key={item.type}
                       type="button"
                       onClick={() => addField(item)}
-                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-700 bg-gray-50 hover:bg-brand-50 hover:text-brand-700 rounded-lg border border-gray-200 hover:border-brand-200 transition-all text-left"
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-700 bg-slate-50 hover:bg-[#08254f]/5 hover:text-[#08254f] rounded-lg border border-slate-200 hover:border-[#08254f]/30 transition-all text-left cursor-pointer"
                     >
                       <div className="flex items-center gap-2">
-                        <item.icon className="h-3.5 w-3.5 text-gray-500" />
+                        <item.icon className="h-3.5 w-3.5 text-slate-500" />
                         <span>{item.label}</span>
                       </div>
-                      <Plus className="h-3 w-3 text-gray-400" />
+                      <Plus className="h-3 w-3 text-slate-400" />
                     </button>
                   ))}
                 </div>
@@ -714,18 +714,18 @@ export function FormBuilderPage() {
 
             {/* Center Column: Form Canvas */}
             <div className="lg:col-span-5 space-y-4">
-              <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm min-h-[500px]">
-                <div className="flex items-center justify-between pb-4 mb-4 border-b border-gray-100">
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm min-h-[500px]">
+                <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
                   <div>
-                    <h2 className="text-sm font-bold text-gray-900">Form Structure</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">{fields.length} active fields</p>
+                    <h2 className="text-sm font-bold text-[#08254f] font-heading">Estrutura do Formulário</h2>
+                    <p className="text-xs text-slate-400 mt-0.5">{fields.length} campos ativos</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setSelectedFieldIndex(null)}
-                    className="text-xs text-brand-600 hover:underline"
+                    className="text-xs text-[#125e95] hover:underline cursor-pointer"
                   >
-                    Clear selection
+                    Desmarcar seleção
                   </button>
                 </div>
 

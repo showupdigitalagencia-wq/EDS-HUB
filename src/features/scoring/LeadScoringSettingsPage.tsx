@@ -7,11 +7,11 @@ import {
   Play,
   AlertCircle,
   Sliders,
-  X,
 } from 'lucide-react';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
+import { Modal } from '../../components/ui/Modal';
 import { supabase } from '../../lib/supabase';
 import { TestScoreModal } from './TestScoreModal';
 import {
@@ -638,7 +638,7 @@ export function LeadScoringSettingsPage() {
               className="btn-crimson text-xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              Add Rule
+              <span>Nova Regra</span>
             </button>
           </div>
 
@@ -647,12 +647,12 @@ export function LeadScoringSettingsPage() {
             <table className="min-w-full divide-y divide-gray-100 text-left text-xs">
               <thead className="bg-gray-50 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
                 <tr>
-                  <th className="px-5 py-3">Rule Name</th>
-                  <th className="px-5 py-3">Category</th>
-                  <th className="px-5 py-3">Evaluation Signal</th>
-                  <th className="px-5 py-3">Points</th>
-                  <th className="px-5 py-3">Active</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
+                  <th className="px-5 py-3">Regra / Nome</th>
+                  <th className="px-5 py-3">Categoria</th>
+                  <th className="px-5 py-3">Sinal de Avaliação</th>
+                  <th className="px-5 py-3">Pontos</th>
+                  <th className="px-5 py-3">Ativa</th>
+                  <th className="px-5 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -670,12 +670,12 @@ export function LeadScoringSettingsPage() {
                       </td>
                       <td className="px-5 py-3.5">
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                             rule.category === 'fit'
                               ? 'bg-blue-50 text-blue-700'
                               : rule.category === 'intent'
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : 'bg-purple-50 text-purple-700'
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-emerald-50 text-emerald-700'
                           }`}
                         >
                           {rule.category}
@@ -713,14 +713,14 @@ export function LeadScoringSettingsPage() {
                         <button
                           onClick={() => handleOpenEditRule(rule)}
                           className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100"
-                          title="Edit rule"
+                          title="Editar regra"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleDeleteRule(rule.id)}
                           className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50"
-                          title="Delete rule"
+                          title="Excluir regra"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -734,228 +734,217 @@ export function LeadScoringSettingsPage() {
         </div>
 
         {/* Rule Create/Edit Modal */}
-        {isRuleModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-xs">
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-lg p-6 space-y-4">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                <h3 className="text-sm font-bold text-gray-900">
-                  {editingRule ? 'Edit Scoring Rule' : 'Create New Scoring Rule'}
-                </h3>
-                <button
-                  onClick={() => setIsRuleModalOpen(false)}
-                  className="p-1 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100"
+        <Modal
+          isOpen={isRuleModalOpen}
+          onClose={() => setIsRuleModalOpen(false)}
+          title={editingRule ? 'Editar Regra de Pontuação' : 'Nova Regra de Pontuação'}
+          maxWidthClass="max-w-xl"
+        >
+          <form onSubmit={handleSaveRule} className="space-y-4 text-xs">
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Nome da Regra</label>
+              <input
+                type="text"
+                required
+                value={ruleName}
+                onChange={(e) => setRuleName(e.target.value)}
+                placeholder="Ex: Curso VIP Selecionado"
+                className="input-executive text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Categoria</label>
+                <select
+                  value={ruleCategory}
+                  onChange={(e) => setRuleCategory(e.target.value as LeadScoreCategory)}
+                  className="input-executive text-xs bg-white"
                 >
-                  <X className="w-4 h-4" />
-                </button>
+                  <option value="fit">Fit / Perfil</option>
+                  <option value="intent">Intenção</option>
+                  <option value="engagement">Engajamento</option>
+                </select>
               </div>
 
-              <form onSubmit={handleSaveRule} className="space-y-4 text-xs">
-                <div>
-                  <label className="font-semibold text-gray-700 block mb-1">Rule Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={ruleName}
-                    onChange={(e) => setRuleName(e.target.value)}
-                    placeholder="e.g. VIP Course Declared"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Category</label>
-                    <select
-                      value={ruleCategory}
-                      onChange={(e) => setRuleCategory(e.target.value as LeadScoreCategory)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white"
-                    >
-                      <option value="fit">Fit</option>
-                      <option value="intent">Intent</option>
-                      <option value="engagement">Engagement</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Points (+ or -)</label>
-                    <input
-                      type="number"
-                      required
-                      value={rulePoints}
-                      onChange={(e) => setRulePoints(Number(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Field / Signal</label>
-                    <select
-                      value={ruleField}
-                      onChange={(e) => handleFieldChange(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white"
-                    >
-                      <option value="pipeline_stage">Pipeline Stage (Canonical)</option>
-                      <option value="qualification_status">Qualification Status (Canonical)</option>
-                      <option value="source">Lead Source (Canonical)</option>
-                      <option value="contact_preference">Contact Preference (Canonical)</option>
-                      <option value="course_interest">Course Interest</option>
-                      <option value="phone_exists">Phone Available</option>
-                      <option value="email_exists">Email Available</option>
-                      <option value="last_response_at">Inbound Response Received</option>
-                      <option value="inbound_message_count">Inbound Message Count</option>
-                      <option value="days_since_last_activity">Days Since Last Activity</option>
-                      <option value="days_since_last_response">Days Since Last Response</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Operator</label>
-                    <select
-                      value={ruleOperator}
-                      onChange={(e) => setRuleOperator(e.target.value as LeadScoreOperator)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white"
-                    >
-                      <option value="equals">Equals</option>
-                      <option value="not_equals">Not Equals</option>
-                      <option value="in">In List (JSON)</option>
-                      <option value="exists">Exists / Is Set</option>
-                      <option value="not_exists">Not Exists / Empty</option>
-                      <option value="greater_than">Greater Than</option>
-                      <option value="greater_or_equal">Greater Or Equal</option>
-                      <option value="less_than">Less Than</option>
-                      <option value="less_or_equal">Less Or Equal</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-gray-700 block mb-1">
-                    Comparison Value
-                  </label>
-                  {['exists', 'not_exists'].includes(ruleOperator) ||
-                  ['phone_exists', 'email_exists', 'last_response_at'].includes(ruleField) ? (
-                    <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-500 italic">
-                      No comparison value required for existence check.
-                    </div>
-                  ) : ruleField === 'pipeline_stage' && ['equals', 'not_equals'].includes(ruleOperator) ? (
-                    <select
-                      value={ruleValue}
-                      onChange={(e) => setRuleValue(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white focus:ring-1 focus:ring-brand-500 font-medium"
-                    >
-                      {CANONICAL_PIPELINE_STAGES.map((s) => (
-                        <option key={s.code} value={s.code}>
-                          {s.name} ({s.code})
-                        </option>
-                      ))}
-                    </select>
-                  ) : ruleField === 'source' && ['equals', 'not_equals'].includes(ruleOperator) ? (
-                    <select
-                      value={ruleValue}
-                      onChange={(e) => setRuleValue(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white focus:ring-1 focus:ring-brand-500 font-medium"
-                    >
-                      {CANONICAL_SOURCES.map((src) => (
-                        <option key={src} value={src}>
-                          {src}
-                        </option>
-                      ))}
-                    </select>
-                  ) : ruleField === 'qualification_status' && ['equals', 'not_equals'].includes(ruleOperator) ? (
-                    <select
-                      value={ruleValue}
-                      onChange={(e) => setRuleValue(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white focus:ring-1 focus:ring-brand-500 font-medium"
-                    >
-                      {CANONICAL_QUALIFICATION_STATUSES.map((qs) => (
-                        <option key={qs} value={qs}>
-                          {qs}
-                        </option>
-                      ))}
-                    </select>
-                  ) : ruleField === 'contact_preference' && ['equals', 'not_equals'].includes(ruleOperator) ? (
-                    <select
-                      value={ruleValue}
-                      onChange={(e) => setRuleValue(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white focus:ring-1 focus:ring-brand-500 font-medium"
-                    >
-                      {CANONICAL_CONTACT_PREFERENCES.map((cp) => (
-                        <option key={cp} value={cp}>
-                          {cp}
-                        </option>
-                      ))}
-                    </select>
-                  ) : ['days_since_last_activity', 'days_since_last_response', 'inbound_message_count'].includes(
-                      ruleField
-                    ) ? (
-                    <input
-                      type="number"
-                      value={ruleValue}
-                      onChange={(e) => setRuleValue(e.target.value)}
-                      placeholder="e.g. 7"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      value={ruleValue}
-                      onChange={(e) => setRuleValue(e.target.value)}
-                      placeholder={
-                        ruleOperator === 'in'
-                          ? 'e.g. ["qualification", "acquisition"]'
-                          : 'e.g. Bootcamp or keyword'
-                      }
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500 font-mono"
-                    />
-                  )}
-                </div>
-
-                <div>
-                  <label className="font-semibold text-gray-700 block mb-1">Description</label>
-                  <textarea
-                    rows={2}
-                    value={ruleDescription}
-                    onChange={(e) => setRuleDescription(e.target.value)}
-                    placeholder="Short summary for why this score is granted..."
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 pt-2">
-                  <input
-                    type="checkbox"
-                    id="ruleActiveCheck"
-                    checked={ruleActive}
-                    onChange={(e) => setRuleActive(e.target.checked)}
-                    className="rounded text-brand-600 focus:ring-brand-500"
-                  />
-                  <label htmlFor="ruleActiveCheck" className="text-xs text-gray-700 font-medium">
-                    Rule is Active
-                  </label>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                  <button
-                    type="button"
-                    onClick={() => setIsRuleModalOpen(false)}
-                    className="px-4 py-2 font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSavingRule}
-                    className="px-5 py-2 font-semibold text-white bg-brand-600 rounded-xl hover:bg-brand-700 disabled:opacity-50"
-                  >
-                    {isSavingRule ? 'Saving...' : 'Save Rule'}
-                  </button>
-                </div>
-              </form>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Pontos (+ ou -)</label>
+                <input
+                  type="number"
+                  required
+                  value={rulePoints}
+                  onChange={(e) => setRulePoints(Number(e.target.value))}
+                  className="input-executive text-xs"
+                />
+              </div>
             </div>
-          </div>
-        )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Campo / Sinal</label>
+                <select
+                  value={ruleField}
+                  onChange={(e) => handleFieldChange(e.target.value)}
+                  className="input-executive text-xs bg-white"
+                >
+                  <option value="pipeline_stage">Etapa do Funil (Canônico)</option>
+                  <option value="qualification_status">Status de Qualificação (Canônico)</option>
+                  <option value="source">Origem do Lead (Canônico)</option>
+                  <option value="contact_preference">Canal de Preferência (Canônico)</option>
+                  <option value="course_interest">Curso de Interesse</option>
+                  <option value="phone_exists">Telefone Cadastrado</option>
+                  <option value="email_exists">Email Cadastrado</option>
+                  <option value="last_response_at">Resposta Inbound Recebida</option>
+                  <option value="inbound_message_count">Qtd. Mensagens Inbound</option>
+                  <option value="days_since_last_activity">Dias sem Atividade</option>
+                  <option value="days_since_last_response">Dias sem Resposta</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Operador</label>
+                <select
+                  value={ruleOperator}
+                  onChange={(e) => setRuleOperator(e.target.value as LeadScoreOperator)}
+                  className="input-executive text-xs bg-white"
+                >
+                  <option value="equals">Igual a</option>
+                  <option value="not_equals">Diferente de</option>
+                  <option value="in">Contido na lista (JSON)</option>
+                  <option value="exists">Existe / Preenchido</option>
+                  <option value="not_exists">Não existe / Vazio</option>
+                  <option value="greater_than">Maior que</option>
+                  <option value="greater_or_equal">Maior ou igual a</option>
+                  <option value="less_than">Menor que</option>
+                  <option value="less_or_equal">Menor ou igual a</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">
+                Valor de Comparação
+              </label>
+              {['exists', 'not_exists'].includes(ruleOperator) ||
+              ['phone_exists', 'email_exists', 'last_response_at'].includes(ruleField) ? (
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 italic">
+                  Nenhum valor de comparação necessário para checagem de existência.
+                </div>
+              ) : ruleField === 'pipeline_stage' && ['equals', 'not_equals'].includes(ruleOperator) ? (
+                <select
+                  value={ruleValue}
+                  onChange={(e) => setRuleValue(e.target.value)}
+                  className="input-executive text-xs bg-white font-medium"
+                >
+                  {CANONICAL_PIPELINE_STAGES.map((s) => (
+                    <option key={s.code} value={s.code}>
+                      {s.name} ({s.code})
+                    </option>
+                  ))}
+                </select>
+              ) : ruleField === 'source' && ['equals', 'not_equals'].includes(ruleOperator) ? (
+                <select
+                  value={ruleValue}
+                  onChange={(e) => setRuleValue(e.target.value)}
+                  className="input-executive text-xs bg-white font-medium"
+                >
+                  {CANONICAL_SOURCES.map((src) => (
+                    <option key={src} value={src}>
+                      {src}
+                    </option>
+                  ))}
+                </select>
+              ) : ruleField === 'qualification_status' && ['equals', 'not_equals'].includes(ruleOperator) ? (
+                <select
+                  value={ruleValue}
+                  onChange={(e) => setRuleValue(e.target.value)}
+                  className="input-executive text-xs bg-white font-medium"
+                >
+                  {CANONICAL_QUALIFICATION_STATUSES.map((qs) => (
+                    <option key={qs} value={qs}>
+                      {qs}
+                    </option>
+                  ))}
+                </select>
+              ) : ruleField === 'contact_preference' && ['equals', 'not_equals'].includes(ruleOperator) ? (
+                <select
+                  value={ruleValue}
+                  onChange={(e) => setRuleValue(e.target.value)}
+                  className="input-executive text-xs bg-white font-medium"
+                >
+                  {CANONICAL_CONTACT_PREFERENCES.map((cp) => (
+                    <option key={cp} value={cp}>
+                      {cp}
+                    </option>
+                  ))}
+                </select>
+              ) : ['days_since_last_activity', 'days_since_last_response', 'inbound_message_count'].includes(
+                  ruleField
+                ) ? (
+                <input
+                  type="number"
+                  value={ruleValue}
+                  onChange={(e) => setRuleValue(e.target.value)}
+                  placeholder="Ex: 7"
+                  className="input-executive text-xs"
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={ruleValue}
+                  onChange={(e) => setRuleValue(e.target.value)}
+                  placeholder={
+                    ruleOperator === 'in'
+                      ? 'Ex: ["qualification", "acquisition"]'
+                      : 'Ex: Bootcamp ou palavra-chave'
+                  }
+                  className="input-executive text-xs font-mono"
+                />
+              )}
+            </div>
+
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Descrição</label>
+              <textarea
+                rows={2}
+                value={ruleDescription}
+                onChange={(e) => setRuleDescription(e.target.value)}
+                placeholder="Breve resumo sobre o motivo desta pontuação..."
+                className="input-executive text-xs"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <input
+                type="checkbox"
+                id="ruleActiveCheck"
+                checked={ruleActive}
+                onChange={(e) => setRuleActive(e.target.checked)}
+                className="rounded text-[#08254f] focus:ring-[#08254f]"
+              />
+              <label htmlFor="ruleActiveCheck" className="text-xs text-slate-700 font-medium">
+                Regra Ativa
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsRuleModalOpen(false)}
+                className="btn-secondary text-xs px-4 py-2"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingRule}
+                className="btn-crimson text-xs px-5 py-2 disabled:opacity-50"
+              >
+                {isSavingRule ? 'Salvando...' : 'Salvar Regra'}
+              </button>
+            </div>
+          </form>
+        </Modal>
 
         {/* Test Score Simulator Sandbox Modal */}
         <TestScoreModal isOpen={isTestModalOpen} onClose={() => setIsTestModalOpen(false)} />

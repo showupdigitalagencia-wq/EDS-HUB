@@ -354,7 +354,7 @@ export function SequenceBuilderPage() {
       backTo="/sequences"
       eyebrow="MOTORES & CADÊNCIAS"
       title={isNew ? 'Nova Sequência de Cadência' : name || 'Sequência de Cadência'}
-      subtitle="WHEN (Gatilho) → STOP IF (Condições de parada) → THEN (Ações programadas de contato)"
+      subtitle="QUANDO (Gatilho) → SE (Condições de parada) → ENTÃO (Ações programadas de contato)"
     >
       <div className="space-y-6 max-w-6xl mx-auto pb-16">
         {/* Top Header */}
@@ -369,14 +369,14 @@ export function SequenceBuilderPage() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold font-heading text-[#08254f] tracking-tight">
-                  {isNew ? 'Create Follow-up Sequence' : name}
+                  {isNew ? 'Criar Sequência de Cadência' : name}
                 </h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#08254f]/10 text-[#08254f] border border-[#08254f]/20">
                   v{currentVersion} • {status}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                WHEN (Trigger) → STOP IF (Conditions) → THEN (Scheduled outreach actions)
+                QUANDO (Gatilho) → SE (Condições de parada) → ENTÃO (Ações programadas de contato)
               </p>
             </div>
           </div>
@@ -387,7 +387,7 @@ export function SequenceBuilderPage() {
               className="btn-secondary text-xs"
             >
               <Sparkles className="w-3.5 h-3.5 text-[#449bd5]" />
-              Test Sequence
+              Testar Sequência
             </button>
 
             <button
@@ -396,7 +396,7 @@ export function SequenceBuilderPage() {
               className="btn-secondary text-xs disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5 text-slate-400" />
-              {isSaving ? 'Saving...' : 'Save Draft'}
+              {isSaving ? 'Salvando...' : 'Salvar Rascunho'}
             </button>
 
             <button
@@ -405,7 +405,7 @@ export function SequenceBuilderPage() {
               className="btn-crimson text-xs disabled:opacity-50"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              Publish & Activate
+              Publicar & Ativar
             </button>
           </div>
         </div>
@@ -429,86 +429,91 @@ export function SequenceBuilderPage() {
           {/* Left Column: WHEN & STOP IF */}
           <div className="space-y-6">
             {/* General Info Card */}
-            <div className="bg-white border border-gray-200 rounded-3xl p-5 shadow-2xs space-y-4">
-              <h2 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-brand-600" /> General Info
+            <div className="card-executive p-5 space-y-4">
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2 font-heading">
+                <Sliders className="w-4 h-4 text-[#449bd5]" /> Informações Gerais
               </h2>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Sequence Name</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Nome da Sequência</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. New Lead Multi-Touch"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+                  placeholder="Ex: Cadência Novos Leads"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#08254f]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Descrição</label>
                 <textarea
                   rows={2}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Explain the purpose and expected cadence..."
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+                  placeholder="Explique o objetivo e a cadência esperada..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#08254f]"
                 />
               </div>
             </div>
 
             {/* WHEN Trigger Card */}
-            <div className="bg-white border border-gray-200 rounded-3xl p-5 shadow-2xs space-y-3">
-              <h2 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                <Play className="w-4 h-4 text-blue-600 fill-current" /> WHEN (Enrollment Trigger)
+            <div className="card-executive p-5 space-y-3">
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2 font-heading">
+                <Play className="w-4 h-4 text-blue-600 fill-current" /> QUANDO (Gatilho de Inscrição)
               </h2>
 
               <select
                 value={triggerType}
                 onChange={(e) => setTriggerType(e.target.value as AutomationTriggerType)}
-                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#08254f]"
               >
-                <option value="lead_created">Lead Created</option>
-                <option value="form_submitted">Form Submitted</option>
-                <option value="qualification_status_changed">Qualification Status Changed</option>
-                <option value="pipeline_stage_changed">Pipeline Stage Changed</option>
-                <option value="tag_added">Tag Added</option>
-                <option value="manual_enrollment">Manual Enrollment Only</option>
+                <option value="lead_created">Lead Criado</option>
+                <option value="form_submitted">Formulário Enviado</option>
+                <option value="qualification_status_changed">Status de Qualificação Alterado</option>
+                <option value="pipeline_stage_changed">Estágio do Funil Alterado</option>
+                <option value="tag_added">Tag Adicionada</option>
+                <option value="manual_enrollment">Apenas Inscrição Manual</option>
               </select>
 
-              <p className="text-[11px] text-gray-400">
-                Leads can also be manually enrolled at any time directly from the Lead Profile.
+              <p className="text-[11px] text-slate-400">
+                Leads também podem ser inscritos manualmente a qualquer momento a partir do Perfil do Lead.
               </p>
             </div>
 
             {/* STOP IF Card */}
-            <div className="bg-white border border-gray-200 rounded-3xl p-5 shadow-2xs space-y-4">
+            <div className="card-executive p-5 space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold text-purple-900 uppercase tracking-wider flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-purple-600" /> STOP IF (Stop Conditions)
+                <h2 className="text-xs font-bold text-purple-900 uppercase tracking-wider flex items-center gap-2 font-heading">
+                  <ShieldAlert className="w-4 h-4 text-purple-600" /> SE (Condições de Parada Automática)
                 </h2>
                 <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
-                  Auto-Exit
+                  Saída Automática
                 </span>
               </div>
 
-              <p className="text-xs text-gray-600 leading-relaxed">
-                Immediately cancels pending waits and stops the sequence if the clinician reaches any of these qualification statuses:
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Cancela imediatamente esperas pendentes e encerra a sequência se o contato atingir qualquer um destes status:
               </p>
 
               <div className="space-y-2">
-                {(['some_response', 'interested', 'hot', 'confirmed'] as QualificationStatus[]).map((stat) => (
+                {[
+                  { id: 'some_response', label: 'Respondeu' },
+                  { id: 'interested', label: 'Interessado' },
+                  { id: 'hot', label: 'Quente' },
+                  { id: 'confirmed', label: 'Matrícula Confirmada' },
+                ].map((stat) => (
                   <label
-                    key={stat}
-                    className="flex items-center gap-2.5 p-2 bg-gray-50 hover:bg-purple-50/50 rounded-xl border border-gray-200 cursor-pointer transition-colors text-xs font-semibold text-gray-800"
+                    key={stat.id}
+                    className="flex items-center gap-2.5 p-2 bg-slate-50 hover:bg-purple-50/50 rounded-xl border border-slate-200 cursor-pointer transition-colors text-xs font-semibold text-slate-800"
                   >
                     <input
                       type="checkbox"
-                      checked={stopQualificationStatuses.includes(stat)}
-                      onChange={() => toggleQualificationStop(stat)}
-                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 w-4 h-4"
+                      checked={stopQualificationStatuses.includes(stat.id as QualificationStatus)}
+                      onChange={() => toggleQualificationStop(stat.id as QualificationStatus)}
+                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 w-4 h-4"
                     />
-                    <span className="capitalize">{stat.replace('_', ' ')}</span>
+                    <span>{stat.label}</span>
                   </label>
                 ))}
               </div>
@@ -517,20 +522,20 @@ export function SequenceBuilderPage() {
 
           {/* Center Column: THEN (Sequence Steps Timeline) */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-2xs space-y-5">
+            <div className="card-executive p-6 space-y-5">
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-brand-600" /> THEN (Sequence Outreach Cadence)
+                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2 font-heading">
+                  <Clock className="w-4 h-4 text-[#08254f]" /> ENTÃO (Cadência de Mensagens & Tarefas)
                 </h2>
-                <span className="text-xs font-mono text-gray-400">{steps.length} Steps</span>
+                <span className="text-xs font-mono text-slate-400">{steps.length} Etapas</span>
               </div>
 
               {steps.length === 0 ? (
-                <div className="py-12 border-2 border-dashed border-gray-200 rounded-2xl text-center space-y-2 p-6">
-                  <Clock className="w-8 h-8 text-gray-300 mx-auto" />
-                  <p className="text-xs font-semibold text-gray-600">No steps defined yet</p>
-                  <p className="text-[11px] text-gray-400">
-                    Add emails, SMS, delays, or tasks below to construct the follow-up flow.
+                <div className="py-12 border-2 border-dashed border-slate-200 rounded-2xl text-center space-y-2 p-6">
+                  <Clock className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-xs font-semibold text-slate-600">Nenhuma etapa definida ainda</p>
+                  <p className="text-[11px] text-slate-400">
+                    Adicione emails, SMS, intervalos ou tarefas abaixo para estruturar a cadência de contato.
                   </p>
                 </div>
               ) : (
@@ -543,12 +548,12 @@ export function SequenceBuilderPage() {
                         onClick={() => setSelectedStepIndex(idx)}
                         className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
                           isSelected
-                            ? 'bg-brand-50/30 border-brand-500 shadow-xs ring-2 ring-brand-500/10'
-                            : 'bg-gray-50/70 border-gray-200 hover:bg-gray-100/60'
+                            ? 'bg-[#08254f]/5 border-[#08254f] shadow-xs ring-2 ring-[#08254f]/10'
+                            : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/60'
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-7 h-7 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-xs font-bold text-gray-700 shadow-2xs">
+                          <div className="w-7 h-7 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-700 shadow-2xs font-mono">
                             {idx + 1}
                           </div>
 
@@ -560,15 +565,23 @@ export function SequenceBuilderPage() {
                               {step.action_type === 'create_call_task' && <PhoneCall className="w-4 h-4 text-purple-500" />}
                               {step.action_type === 'create_task' && <CheckCircle2 className="w-4 h-4 text-amber-500" />}
 
-                              <span className="text-xs font-bold text-gray-900 uppercase">
+                              <span className="text-xs font-bold text-slate-900 uppercase font-heading">
                                 {step.step_type === 'wait'
-                                  ? `Wait ${step.config?.duration_value || 1} ${step.config?.duration_unit || 'days'}`
-                                  : step.action_type?.replace(/_/g, ' ') || step.step_type}
+                                  ? `Aguardar ${step.config?.duration_value || 1} ${step.config?.duration_unit === 'hours' ? 'horas' : step.config?.duration_unit === 'minutes' ? 'minutos' : 'dias'}`
+                                  : step.action_type === 'send_email'
+                                  ? 'Enviar Email'
+                                  : step.action_type === 'send_sms'
+                                  ? 'Enviar SMS'
+                                  : step.action_type === 'create_call_task'
+                                  ? 'Tarefa de Ligação'
+                                  : step.action_type === 'create_task'
+                                  ? 'Tarefa Interna'
+                                  : step.step_type}
                               </span>
                             </div>
 
-                            <p className="text-[11px] text-gray-500 truncate max-w-md">
-                              {step.config?.subject || step.config?.title || step.config?.message || 'Configured action'}
+                            <p className="text-[11px] text-slate-500 truncate max-w-md">
+                              {step.config?.subject || step.config?.title || step.config?.message || 'Ação configurada'}
                             </p>
                           </div>
                         </div>
@@ -579,7 +592,7 @@ export function SequenceBuilderPage() {
                               e.stopPropagation();
                               removeStep(idx);
                             }}
-                            className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -591,56 +604,56 @@ export function SequenceBuilderPage() {
               )}
 
               {/* Add Step Toolbar */}
-              <div className="pt-4 border-t border-gray-100 space-y-2">
-                <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-                  Add Next Action or Delay
+              <div className="pt-4 border-t border-slate-100 space-y-2">
+                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider font-heading">
+                  Adicionar Ação ou Intervalo
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => addStep('action', 'send_email')}
-                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer font-heading"
                   >
-                    <Mail className="w-3.5 h-3.5" /> Send Email
+                    <Mail className="w-3.5 h-3.5" /> Enviar Email
                   </button>
                   <button
                     onClick={() => addStep('wait')}
-                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer font-heading"
                   >
-                    <Clock className="w-3.5 h-3.5" /> Add Delay
+                    <Clock className="w-3.5 h-3.5" /> Adicionar Espera
                   </button>
                   <button
                     onClick={() => addStep('action', 'send_sms')}
-                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer font-heading"
                   >
-                    <MessageSquare className="w-3.5 h-3.5" /> Send SMS
+                    <MessageSquare className="w-3.5 h-3.5" /> Enviar SMS
                   </button>
                   <button
                     onClick={() => addStep('action', 'create_call_task')}
-                    className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer font-heading"
                   >
-                    <PhoneCall className="w-3.5 h-3.5" /> Call Task
+                    <PhoneCall className="w-3.5 h-3.5" /> Tarefa de Ligação
                   </button>
                   <button
                     onClick={() => addStep('action', 'create_task')}
-                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer font-heading"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> CRM Task
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Tarefa Interna
                   </button>
                 </div>
               </div>
 
               {/* Step Editor Drawer/Card when selected */}
               {selectedStep && (
-                <div className="p-5 bg-gray-50 border border-brand-200 rounded-2xl space-y-4">
-                  <div className="flex items-center justify-between border-b border-gray-200 pb-3">
-                    <span className="text-xs font-bold text-gray-900 uppercase">
-                      Edit Step {selectedStepIndex! + 1}: {selectedStep.action_type || selectedStep.step_type}
+                <div className="p-5 bg-slate-50/70 border border-slate-200 rounded-2xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                    <span className="text-xs font-bold text-[#08254f] uppercase font-heading">
+                      Editar Etapa {selectedStepIndex! + 1}: {selectedStep.action_type || selectedStep.step_type}
                     </span>
                     <button
                       onClick={() => setSelectedStepIndex(null)}
-                      className="text-xs text-gray-400 hover:text-gray-600 font-semibold"
+                      className="text-xs text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
                     >
-                      Done
+                      Concluir
                     </button>
                   </div>
 

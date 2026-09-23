@@ -182,18 +182,26 @@ export function AutomationsListPage() {
   const getTriggerLabel = (type: string) => {
     switch (type) {
       case 'form_submitted':
-        return 'Form Submitted';
+        return 'Formulário Enviado';
       case 'lead_created':
-        return 'Lead Created';
+        return 'Lead Criado';
       case 'qualification_status_changed':
-        return 'Qualification Status Changed';
+        return 'Status de Qualificação';
       case 'pipeline_stage_changed':
-        return 'Pipeline Stage Changed';
+        return 'Estágio do Funil';
       case 'tag_added':
-        return 'Tag Added';
+        return 'Tag Adicionada';
       default:
         return type;
     }
+  };
+
+  const statusLabels: Record<string, string> = {
+    all: 'Todas',
+    active: 'Ativas',
+    draft: 'Rascunhos',
+    paused: 'Pausadas',
+    archived: 'Arquivadas',
   };
 
   return (
@@ -217,25 +225,25 @@ export function AutomationsListPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-              Total Automations
+              Total de Automações
             </span>
             <span className="text-2xl font-extrabold text-[#08254f] font-heading">{totalAutomations}</span>
           </div>
           <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
             <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block mb-1">
-              Active Workflows
+              Fluxos Ativos
             </span>
             <span className="text-2xl font-extrabold text-emerald-600 font-heading">{activeAutomations}</span>
           </div>
           <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-              Total Enrolled Leads
+              Leads Inscritos
             </span>
             <span className="text-2xl font-extrabold text-[#08254f] font-heading">{totalEnrolled}</span>
           </div>
           <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all">
             <span className="text-[10px] font-bold text-[#125e95] uppercase tracking-wider block mb-1">
-              Active / Waiting Runs
+              Execuções em Andamento
             </span>
             <span className="text-2xl font-extrabold text-[#125e95] font-heading">{totalActiveRuns}</span>
           </div>
@@ -248,13 +256,13 @@ export function AutomationsListPage() {
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer font-heading ${
                   statusFilter === st
                     ? 'bg-[#08254f] text-white shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                {st.charAt(0).toUpperCase() + st.slice(1)}
+                {statusLabels[st] || st}
               </button>
             ))}
           </div>
@@ -262,50 +270,50 @@ export function AutomationsListPage() {
           <div className="w-72">
             <input
               type="text"
-              placeholder="Search automations..."
+              placeholder="Buscar automações..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none"
+              className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] focus:outline-none"
             />
           </div>
         </div>
 
         {/* Automations Table */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-2xs overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
           {isLoading ? (
-            <div className="p-12 text-center text-xs text-gray-400">Loading automations...</div>
+            <div className="p-12 text-center text-xs text-slate-400">Carregando automações...</div>
           ) : filteredAutomations.length === 0 ? (
             <div className="p-12 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-gray-100 text-gray-400 flex items-center justify-center mx-auto">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
                 <Zap className="h-6 w-6" />
               </div>
-              <p className="text-sm font-semibold text-gray-700">No automations found</p>
-              <p className="text-xs text-gray-400 max-w-sm mx-auto">
-                Create your first WHEN $\to$ IF $\to$ THEN workflow to automatically nurture leads.
+              <p className="text-sm font-semibold text-slate-700">Nenhuma automação encontrada</p>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Crie seu primeiro fluxo de nutrição de leads com regras e ações automatizadas.
               </p>
               <button
                 onClick={() => navigate('/automations/new')}
-                className="px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-xs"
+                className="btn-crimson text-xs"
               >
-                Create Automation
+                Criar Automação
               </button>
             </div>
           ) : (
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50">
-                  <th className="py-3.5 px-6">Automation Name</th>
-                  <th className="py-3.5 px-4">Trigger</th>
+                <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
+                  <th className="py-3.5 px-6">Nome da Automação</th>
+                  <th className="py-3.5 px-4">Gatilho</th>
                   <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-center">Enrolled</th>
-                  <th className="py-3.5 px-4 text-center">Active Runs</th>
-                  <th className="py-3.5 px-4 text-center">Completed</th>
-                  <th className="py-3.5 px-4 text-center">Failed</th>
-                  <th className="py-3.5 px-4">Updated</th>
-                  <th className="py-3.5 px-6 text-right">Actions</th>
+                  <th className="py-3.5 px-4 text-center">Inscritos</th>
+                  <th className="py-3.5 px-4 text-center">Execuções Ativas</th>
+                  <th className="py-3.5 px-4 text-center">Concluídos</th>
+                  <th className="py-3.5 px-4 text-center">Falhas</th>
+                  <th className="py-3.5 px-4">Atualizado</th>
+                  <th className="py-3.5 px-6 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 text-xs">
+              <tbody className="divide-y divide-slate-100 text-xs">
                 {filteredAutomations.map((auto) => {
                   const m = auto.metrics || { enrolled: 0, active: 0, completed: 0, failed: 0 };
                   const isMenuOpen = actionMenuOpenId === auto.id;

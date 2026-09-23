@@ -481,7 +481,7 @@ export function AutomationBuilderPage() {
               className="btn-secondary text-xs"
             >
               <Play className="h-3.5 w-3.5 text-amber-600" />
-              Test Mode
+              Modo de Teste
             </button>
             <button
               onClick={handleSaveDraft}
@@ -489,7 +489,7 @@ export function AutomationBuilderPage() {
               className="btn-secondary text-xs disabled:opacity-50"
             >
               <Save className="h-3.5 w-3.5" />
-              {isSaving ? 'Saving...' : 'Save Draft'}
+              {isSaving ? 'Salvando...' : 'Salvar Rascunho'}
             </button>
             <button
               onClick={handlePublish}
@@ -497,7 +497,7 @@ export function AutomationBuilderPage() {
               className="btn-crimson text-xs disabled:opacity-50"
             >
               <Rocket className="h-3.5 w-3.5" />
-              {isPublishing ? 'Publishing...' : 'Publish / Activate'}
+              {isPublishing ? 'Publicando...' : 'Publicar & Ativar'}
             </button>
           </div>
         </div>
@@ -527,7 +527,7 @@ export function AutomationBuilderPage() {
                   <Zap className="h-4 w-4" />
                 </div>
                 <span className="text-xs font-bold uppercase tracking-wider text-[#08254f] font-heading">
-                  WHEN (Trigger)
+                  QUANDO (Gatilho de Entrada)
                 </span>
               </div>
             </div>
@@ -535,7 +535,7 @@ export function AutomationBuilderPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Trigger Event
+                  Evento Disparador
                 </label>
                 <select
                   value={automation.trigger_type}
@@ -545,13 +545,13 @@ export function AutomationBuilderPage() {
                       trigger_type: e.target.value as AutomationTriggerType,
                     })
                   }
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] focus:outline-none bg-white"
                 >
-                  <option value="form_submitted">Form Submitted</option>
-                  <option value="lead_created">Lead Created</option>
-                  <option value="qualification_status_changed">Qualification Status Changed</option>
-                  <option value="pipeline_stage_changed">Pipeline Stage Changed</option>
-                  <option value="tag_added">Tag Added</option>
+                  <option value="form_submitted">Formulário Enviado</option>
+                  <option value="lead_created">Lead Criado</option>
+                  <option value="qualification_status_changed">Status de Qualificação Alterado</option>
+                  <option value="pipeline_stage_changed">Estágio do Funil Alterado</option>
+                  <option value="tag_added">Tag Adicionada</option>
                 </select>
               </div>
 
@@ -703,17 +703,17 @@ export function AutomationBuilderPage() {
                       </span>
                       {isCondition && (
                         <span className="text-xs font-bold uppercase tracking-wider text-[#449bd5] font-heading flex items-center gap-1.5">
-                          <Filter className="h-3.5 w-3.5" /> IF (Condition)
+                          <Filter className="h-3.5 w-3.5" /> SE (Condição de Filtro)
                         </span>
                       )}
                       {isWait && (
                         <span className="text-xs font-bold uppercase tracking-wider text-amber-700 font-heading flex items-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5" /> WAIT (Delay)
+                          <Clock className="h-3.5 w-3.5" /> ESPERAR (Intervalo de Tempo)
                         </span>
                       )}
                       {isAction && (
                         <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 font-heading flex items-center gap-1.5">
-                          <Zap className="h-3.5 w-3.5" /> THEN (Action)
+                          <Zap className="h-3.5 w-3.5" /> ENTÃO (Ação do Fluxo)
                         </span>
                       )}
                     </div>
@@ -870,15 +870,15 @@ export function AutomationBuilderPage() {
                           }
                           className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
                         >
-                          <option value="send_email">Send Email (Resend)</option>
-                          <option value="send_sms">Send SMS (Twilio)</option>
-                          <option value="create_call_task">Create Call Task</option>
-                          <option value="create_task">Create Internal Task</option>
-                          <option value="add_tag">Add Tag</option>
-                          <option value="remove_tag">Remove Tag</option>
-                          <option value="move_pipeline_stage">Move Pipeline Stage</option>
-                          <option value="update_qualification_status">Update Qualification Status</option>
-                          <option value="stop_automation">Stop Automation</option>
+                          <option value="send_email">Enviar Email</option>
+                          <option value="send_sms">Enviar SMS</option>
+                          <option value="create_call_task">Criar Tarefa de Ligação</option>
+                          <option value="create_task">Criar Tarefa Interna</option>
+                          <option value="add_tag">Adicionar Tag</option>
+                          <option value="remove_tag">Remover Tag</option>
+                          <option value="move_pipeline_stage">Mover Estágio no Funil</option>
+                          <option value="update_qualification_status">Atualizar Status de Qualificação</option>
+                          <option value="stop_automation">Encerrar Automação</option>
                         </select>
                       </div>
 
@@ -1061,28 +1061,28 @@ export function AutomationBuilderPage() {
 
           {/* Add Step Action Bar */}
           <div className="flex justify-center pt-4">
-            <div className="inline-flex items-center gap-2 p-1.5 bg-gray-50 border border-gray-200 rounded-2xl shadow-xs">
-              <span className="text-xs font-semibold text-gray-500 px-3">Add Step:</span>
+            <div className="inline-flex items-center gap-2 p-1.5 bg-slate-50 border border-slate-200 rounded-2xl shadow-xs">
+              <span className="text-xs font-semibold text-slate-500 px-3 font-heading">Adicionar Etapa:</span>
               <button
                 onClick={() => handleAddStep('condition')}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#08254f] bg-[#08254f]/10 hover:bg-[#08254f]/15 rounded-xl transition-colors font-heading"
               >
                 <Plus className="h-3.5 w-3.5" />
-                IF Condition
+                Condição (SE)
               </button>
               <button
                 onClick={() => handleAddStep('action')}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-colors font-heading"
               >
                 <Plus className="h-3.5 w-3.5" />
-                THEN Action
+                Ação (ENTÃO)
               </button>
               <button
                 onClick={() => handleAddStep('wait')}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-xl transition-colors font-heading"
               >
                 <Plus className="h-3.5 w-3.5" />
-                WAIT Delay
+                Espera (Intervalo)
               </button>
             </div>
           </div>

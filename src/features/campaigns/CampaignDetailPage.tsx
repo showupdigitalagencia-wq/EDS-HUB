@@ -383,39 +383,39 @@ export function CampaignDetailPage() {
   const getStatusBadge = (status: CampaignStatus) => {
     switch (status) {
       case 'draft':
-        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">Draft</span>;
+        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700">Rascunho</span>;
       case 'pending_approval':
         return (
           <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 flex items-center gap-1">
-            <Clock className="h-3 w-3" /> Pending Approval
+            <Clock className="h-3 w-3" /> Pendente de Aprovação
           </span>
         );
       case 'approved':
         return (
           <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" /> Approved
+            <CheckCircle2 className="h-3 w-3" /> Aprovada
           </span>
         );
       case 'scheduled':
         return (
           <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 flex items-center gap-1">
-            <Calendar className="h-3 w-3" /> Scheduled
+            <Calendar className="h-3 w-3" /> Agendada
           </span>
         );
       case 'sending':
         return (
           <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800 flex items-center gap-1">
-            <RotateCw className="h-3 w-3 animate-spin" /> Sending
+            <RotateCw className="h-3 w-3 animate-spin" /> Enviando
           </span>
         );
       case 'sent':
         return (
           <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
-            <Check className="h-3 w-3" /> {campaign.channel === 'call' ? 'Activated' : 'Sent'}
+            <Check className="h-3 w-3" /> {campaign.channel === 'call' ? 'Ativada' : 'Enviada'}
           </span>
         );
       default:
-        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">{status}</span>;
+        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700">{status}</span>;
     }
   };
 
@@ -480,7 +480,7 @@ export function CampaignDetailPage() {
                 onClick={() => handleTransitionStatus('pending_approval')}
                 className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-1.5 cursor-pointer font-heading"
               >
-                <Clock className="h-3.5 w-3.5" /> Submit for Approval
+                <Clock className="h-3.5 w-3.5" /> Submeter para Aprovação
               </button>
             )}
 
@@ -489,7 +489,7 @@ export function CampaignDetailPage() {
                 onClick={() => handleTransitionStatus('approved')}
                 className="btn-secondary text-xs"
               >
-                <ShieldCheck className="h-3.5 w-3.5 text-[#449bd5]" /> Approve Campaign
+                <ShieldCheck className="h-3.5 w-3.5 text-[#449bd5]" /> Aprovar Campanha
               </button>
             )}
 
@@ -499,7 +499,7 @@ export function CampaignDetailPage() {
               className="btn-crimson text-xs disabled:opacity-50"
             >
               <Save className="h-3.5 w-3.5" />
-              {isSaving ? 'Saving...' : 'Save & Snapshot Version'}
+              {isSaving ? 'Salvando...' : 'Salvar Versão (Snapshot)'}
             </button>
           </div>
         </div>
@@ -519,92 +519,92 @@ export function CampaignDetailPage() {
         )}
 
         {/* Campaign Header Settings Bar */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+        <div className="card-executive p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-gray-900 tracking-tight uppercase text-gray-400">
-              Envelope & Channel Settings
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-heading">
+              Configurações de Envio e Canal
             </h2>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 font-medium">Channel:</span>
+              <span className="text-xs text-slate-500 font-medium">Canal:</span>
               <select
                 disabled={campaign.status === 'sent'}
                 value={channel}
                 onChange={(e) => setChannel(e.target.value as 'email' | 'sms' | 'call')}
-                className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-gray-50 font-bold text-gray-800"
+                className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800"
               >
-                <option value="email">Email Campaign</option>
-                <option value="sms">SMS Campaign</option>
-                <option value="call">Call Campaign (Operational)</option>
+                <option value="email">Campanha de Email</option>
+                <option value="sms">Campanha de SMS</option>
+                <option value="call">Campanha de Ligações (Operacional)</option>
               </select>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                {channel === 'call' ? 'Call Campaign Purpose' : 'Subject Line'}
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {channel === 'call' ? 'Objetivo da Ligação' : 'Linha de Assunto'}
               </label>
               <input
                 type="text"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                placeholder={channel === 'call' ? 'e.g. VIP Consultation Outreach' : 'e.g. Invitation for {{salutation}}'}
-                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
+                placeholder={channel === 'call' ? 'Ex: Follow-up Consulta VIP' : 'Ex: Convite para {{salutation}}'}
+                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                {channel === 'call' ? 'Internal Call Script Notes' : 'Preview Text'}
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {channel === 'call' ? 'Notas do Script de Ligação' : 'Texto de Pré-visualização'}
               </label>
               <input
                 type="text"
                 value={previewText}
                 onChange={(e) => setPreviewText(e.target.value)}
-                placeholder={channel === 'call' ? 'Focus on course enrollment balance...' : 'Inbox preheader text...'}
-                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
+                placeholder={channel === 'call' ? 'Foco nas vagas remanescentes...' : 'Texto do preheader no email...'}
+                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Sender Name / Organizer</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Nome do Remetente</label>
               <input
                 type="text"
                 value={fromName}
                 onChange={(e) => setFromName(e.target.value)}
                 placeholder="Expert Dental Solutions"
-                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
+                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Reply-To (Optional)</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Responder Para (Opcional)</label>
               <input
                 type="email"
                 value={replyTo}
                 onChange={(e) => setReplyTo(e.target.value)}
-                placeholder="support@expdentalsolutions.com"
-                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-1 focus:ring-brand-500"
+                placeholder="contato@expdentalsolutions.com"
+                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
               />
             </div>
           </div>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-gray-200 gap-2 bg-white px-4 pt-3 rounded-t-2xl overflow-x-auto">
+        <div className="flex border-b border-slate-200 gap-2 bg-white px-4 pt-3 rounded-t-2xl overflow-x-auto">
           {[
-            { id: 'editor', label: 'Content Editor', icon: Mail, visible: channel === 'email' },
-            { id: 'audience', label: `Audience (${campaignAudience?.eligible_count ?? '0'})`, icon: Users, visible: true },
-            { id: 'ab_test', label: 'A/B Testing', icon: FlaskConical, visible: channel === 'email' },
-            { id: 'versions', label: `Versions (${versions.length})`, icon: History, visible: true },
-            { id: 'send', label: channel === 'call' ? 'Activate & Dispatch' : 'Execution & Delivery', icon: Send, visible: true },
+            { id: 'editor', label: 'Editor de Conteúdo', icon: Mail, visible: channel === 'email' },
+            { id: 'audience', label: `Público (${campaignAudience?.eligible_count ?? '0'})`, icon: Users, visible: true },
+            { id: 'ab_test', label: 'Teste A/B', icon: FlaskConical, visible: channel === 'email' },
+            { id: 'versions', label: `Versões (${versions.length})`, icon: History, visible: true },
+            { id: 'send', label: channel === 'call' ? 'Ativar & Despachar' : 'Execução & Envio', icon: Send, visible: true },
           ]
             .filter((t) => t.visible)
             .map((t) => (
               <button
                 key={t.id}
                 onClick={() => setActiveTab(t.id as TabType)}
-                className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer shrink-0 ${
+                className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer shrink-0 font-heading ${
                   activeTab === t.id
-                    ? 'border-brand-600 text-brand-700'
-                    : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-200'
+                    ? 'border-[#08254f] text-[#08254f]'
+                    : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-200'
                 }`}
               >
                 <t.icon className="h-4 w-4" />

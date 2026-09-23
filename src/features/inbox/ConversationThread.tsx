@@ -5,7 +5,7 @@ import {
   Clock,
   AlertCircle,
   Paperclip,
-  CheckCheck,
+  Check,
   User,
   Bot,
   Lock,
@@ -157,8 +157,8 @@ export function ConversationThread({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-gray-900">
-                {conversation.subject || `${conversation.channel.toUpperCase()} Thread`}
+              <h3 className="text-sm font-bold text-gray-900 font-heading">
+                {conversation.subject || `Conversa via ${conversation.channel.toUpperCase()}`}
               </h3>
               <span
                 className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -167,12 +167,12 @@ export function ConversationThread({
                     : 'bg-gray-100 text-gray-600 border border-gray-200'
                 }`}
               >
-                {conversation.status}
+                {conversation.status === 'open' ? 'Aberta' : 'Fechada'}
               </span>
             </div>
             <p className="text-[11px] text-gray-400">
-              {messages.length} message{messages.length === 1 ? '' : 's'} • Last active{' '}
-              {new Date(conversation.last_message_at).toLocaleString([], {
+              {messages.length} {messages.length === 1 ? 'mensagem' : 'mensagens'} • Última atividade{' '}
+              {new Date(conversation.last_message_at).toLocaleString('pt-BR', {
                 month: 'short',
                 day: 'numeric',
                 hour: '2-digit',
@@ -192,12 +192,12 @@ export function ConversationThread({
             {conversation.status === 'open' ? (
               <>
                 <Lock className="w-3.5 h-3.5 text-gray-400" />
-                Close Conversation
+                <span>Fechar Conversa</span>
               </>
             ) : (
               <>
                 <Unlock className="w-3.5 h-3.5 text-gray-400" />
-                Reopen
+                <span>Reabrir Conversa</span>
               </>
             )}
           </button>
@@ -208,12 +208,12 @@ export function ConversationThread({
       <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-gray-50/50">
         {isLoading && messages.length === 0 ? (
           <div className="flex items-center justify-center py-12 text-gray-400 text-xs">
-            Loading messages...
+            Carregando mensagens...
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400 space-y-2">
             <MessageSquare className="w-8 h-8 text-gray-300 stroke-1" />
-            <p className="text-xs">No messages yet in this conversation.</p>
+            <p className="text-xs">Nenhuma mensagem nesta conversa.</p>
           </div>
         ) : (
           messages.map((msg) => {
@@ -255,10 +255,10 @@ export function ConversationThread({
                   {/* Metadata Header */}
                   <div className="flex items-center justify-between gap-3 text-[10px] opacity-80">
                     <span className="font-semibold truncate">
-                      {isInbound ? msg.sender : msg.is_manual_reply ? 'Staff (Manual)' : 'Automated Sequence'}
+                      {isInbound ? msg.sender : msg.is_manual_reply ? 'Equipe (Manual)' : 'Sequência Automatizada'}
                     </span>
                     <span className="shrink-0 font-mono">
-                      {new Date(msg.timestamp).toLocaleTimeString([], {
+                      {new Date(msg.timestamp).toLocaleTimeString('pt-BR', {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
@@ -297,31 +297,31 @@ export function ConversationThread({
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-700 text-[10px] border border-gray-200"
                         >
                           <Paperclip className="w-3 h-3 text-gray-400" />
-                          {att.filename} ({att.size ? `${Math.round(att.size / 1024)} KB` : 'file'})
+                          {att.filename} ({att.size ? `${Math.round(att.size / 1024)} KB` : 'arquivo'})
                         </span>
                       ))}
                     </div>
                   )}
 
-                  {/* Delivery Status Indicator (Outbound) */}
+                  {/* Delivery Status Indicator (Outbound) - Factual Single Check per Correction 2 */}
                   {!isInbound && (
-                    <div className="flex items-center justify-end gap-1 text-[10px] opacity-80 pt-1">
+                    <div className="flex items-center justify-end gap-1 text-[10px] opacity-80 pt-1 font-sans">
                       {msg.status === 'sent' && (
                         <>
-                          <CheckCheck className="w-3 h-3 text-emerald-300" />
-                          <span>Sent</span>
+                          <Check className="w-3 h-3 text-emerald-300" />
+                          <span>Enviado</span>
                         </>
                       )}
-                      {msg.status === 'pending' && (
+                      {(msg.status === 'pending' || msg.status === 'queued') && (
                         <>
                           <Clock className="w-3 h-3 text-amber-300" />
-                          <span>Queued</span>
+                          <span>Na fila</span>
                         </>
                       )}
                       {msg.status === 'failed' && (
                         <>
                           <AlertCircle className="w-3 h-3 text-rose-300" />
-                          <span>Failed</span>
+                          <span>Falha</span>
                         </>
                       )}
                     </div>
