@@ -9,6 +9,7 @@ import { verifyAuth } from '../_shared/auth.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
 import { resolveSalutation } from '../_shared/salutation.ts';
+import { escapeHtml } from '../_shared/email-utils.ts';
 
 interface TestSendPayload {
   campaign_id: string;
@@ -89,13 +90,14 @@ Deno.serve(async (req) => {
       .replace(/\{\{\s*salutation\s*\}\}/gi, salutation);
 
     html = html
-      .replace(/\{\{\s*first_name\s*\}\}/gi, testFirstName)
-      .replace(/\{\{\s*last_name\s*\}\}/gi, testLastName)
-      .replace(/\{\{\s*salutation\s*\}\}/gi, salutation);
+      .replace(/\{\{\s*first_name\s*\}\}/gi, escapeHtml(testFirstName))
+      .replace(/\{\{\s*last_name\s*\}\}/gi, escapeHtml(testLastName))
+      .replace(/\{\{\s*salutation\s*\}\}/gi, escapeHtml(salutation));
 
-    const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'no-reply@expdentalsolutions.com';
+    const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
     const fromName = campaign.from_name || 'Expert Dental Solutions';
     const sender = `${fromName} <${fromEmail}>`;
+    const replyTo = 'info@expdentalsolutions.com';
 
     const idempotencyKey = `test-send:${payload.campaign_id}:${Date.now()}`;
 
@@ -105,6 +107,7 @@ Deno.serve(async (req) => {
       to: payload.test_email.trim().toLowerCase(),
       subject: `[TEST] ${subject}`,
       html: html,
+      replyTo,
       idempotencyKey,
     });
 

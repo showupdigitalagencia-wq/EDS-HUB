@@ -97,7 +97,7 @@ export function FoundationStatusPage() {
         resend: {
           apiKey: edgeStatus?.resend?.api_key_configured === false ? 'Missing' : 'Configured',
           fromEmail: 'Configured',
-          fromEmailValue: 'no-reply@expdentalsolutions.com',
+          fromEmailValue: 'info@expdentalsolutions.com',
           domain: 'expdentalsolutions.com',
           domainStatus: 'Verified',
           spfStatus: 'Verified',
@@ -132,7 +132,7 @@ export function FoundationStatusPage() {
           resend: {
             apiKey: 'Configured',
             fromEmail: 'Configured',
-            fromEmailValue: 'no-reply@expdentalsolutions.com',
+            fromEmailValue: 'info@expdentalsolutions.com',
             domain: 'expdentalsolutions.com',
             domainStatus: 'Verified',
             spfStatus: 'Verified',
@@ -250,7 +250,7 @@ export function FoundationStatusPage() {
               title="From Email"
               value={data?.providers.resend.fromEmail ?? 'Configured'}
               variant="success"
-              detail={data?.providers.resend.fromEmailValue ?? 'no-reply@expdentalsolutions.com'}
+              detail={data?.providers.resend.fromEmailValue ?? 'info@expdentalsolutions.com'}
               icon={<Mail className="h-5 w-5" />}
             />
             <StatusCard

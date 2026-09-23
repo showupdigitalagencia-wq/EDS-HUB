@@ -159,7 +159,9 @@ Deno.serve(async (req) => {
         );
       }
 
-      const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'team@expertdentalsolutions.org';
+      const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
+      const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
+      const replyTo = 'info@expdentalsolutions.com';
       const finalSubject = subject || 'Update from Expert Dental Solutions';
       const htmlBody = body.includes('<p>') ? body : `<p>${body.replace(/\n/g, '<br/>')}</p>`;
 
@@ -170,10 +172,11 @@ Deno.serve(async (req) => {
       }
 
       const sendRes = await sendEmail({
-        from: fromEmail,
+        from: sender,
         to: recipient,
         subject: finalSubject,
         html: htmlBody,
+        replyTo,
         idempotencyKey,
         headers,
       });

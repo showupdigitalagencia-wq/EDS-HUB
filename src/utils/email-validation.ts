@@ -75,3 +75,16 @@ export function resolveEmailRecipients(
 
   return candidates;
 }
+
+/**
+ * HTML escapes user-supplied dynamic variables before template substitution.
+ */
+export function escapeHtml(str: string | null | undefined): string {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

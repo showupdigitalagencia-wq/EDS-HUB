@@ -10,7 +10,7 @@ import { corsHeaders, corsResponse } from '../_shared/cors.ts';
 import { verifyAuth } from '../_shared/auth.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { resolveSalutation } from '../_shared/salutation.ts';
-import { resolveEmailRecipients } from '../_shared/email-utils.ts';
+import { resolveEmailRecipients, escapeHtml } from '../_shared/email-utils.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
 import { sendSms } from '../_shared/twilio-adapter.ts';
 import type { LeadIntakePayload, LeadIntakeResponse } from '../_shared/types.ts';
@@ -795,13 +795,13 @@ async function handleEmailPreference(
   }
 
   // Get settings for from email
-  const fromEmail = Deno.env.get('RESEND_FROM_EMAIL');
-  if (!fromEmail) {
-    return { sent: 0, failed: 0, tasksCreated: 0, allSucceeded: false, errors: ['RESEND_FROM_EMAIL not configured'] };
-  }
+  const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
+  const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
+  const replyTo = 'info@expdentalsolutions.com';
 
   const subject = renderTemplate(template.subject_template || '', salutation);
   const body = renderTemplate(template.body_template, salutation);
+  const escapedHtmlBody = renderTemplate(template.body_template, escapeHtml(salutation)).replace(/\n/g, '<br>');
 
   let sent = 0;
   let failed = 0;
@@ -809,6 +809,35 @@ async function handleEmailPreference(
 
   for (const recipient of recipients) {
     const msgIdempotencyKey = `${intakeEventId}:email:${recipient}`;
+
+    // Check if recipient email is suppressed
+    const { data: suppression } = await db
+      .from('email_suppressions')
+      .select('reason')
+      .eq('normalized_email', recipient)
+      .maybeSingle();
+
+    if (suppression) {
+      await db.from('outbound_messages').insert({
+        lead_id: leadId,
+        intake_event_id: intakeEventId,
+        channel: 'email',
+        provider: 'resend',
+        recipient,
+        template_key: 'lead_intake_email',
+        subject_snapshot: subject,
+        body_snapshot: body,
+        status: 'failed',
+        error_code: 'EMAIL_SUPPRESSED',
+        error_message: `Recipient email is suppressed (${suppression.reason})`,
+        idempotency_key: msgIdempotencyKey,
+        attempt_count: 1,
+        failed_at: new Date().toISOString(),
+      });
+      failed++;
+      errors.push(`Recipient ${recipient} is suppressed (${suppression.reason})`);
+      continue;
+    }
 
     // Check if already sent (for retry scenarios)
     const { data: existingMsg } = await db
@@ -853,10 +882,12 @@ async function handleEmailPreference(
 
     // Send via Resend
     const result = await sendEmail({
-      from: fromEmail,
+      from: sender,
       to: recipient,
       subject,
-      html: body.replace(/\n/g, '<br>'),
+      html: escapedHtmlBody,
+      text: body,
+      replyTo,
       idempotencyKey: msgIdempotencyKey,
     });
 

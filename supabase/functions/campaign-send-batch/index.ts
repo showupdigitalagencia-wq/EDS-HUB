@@ -10,6 +10,7 @@ import { verifyAuth } from '../_shared/auth.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
 import { resolveSalutation } from '../_shared/salutation.ts';
+import { escapeHtml } from '../_shared/email-utils.ts';
 
 interface SendBatchPayload {
   campaign_id?: string;
@@ -162,9 +163,23 @@ Deno.serve(async (req) => {
       );
     }
 
-    const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'no-reply@expdentalsolutions.com';
+    // Requirement 17: Campaign physical address requirement for CAN-SPAM compliance
+    const physicalAddress = campaign.physical_address || Deno.env.get('COMPANY_PHYSICAL_ADDRESS');
+    if (!physicalAddress) {
+      return new Response(
+        JSON.stringify({
+          error: 'Campaign sending blocked: Company physical address is required for CAN-SPAM compliance. Configure company address before activating marketing campaigns.',
+          code: 'PHYSICAL_ADDRESS_REQUIRED',
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
     const fromName = campaign.from_name || 'Expert Dental Solutions';
     const sender = `${fromName} <${fromEmail}>`;
+    const replyTo = 'info@expdentalsolutions.com';
+    const intraBatchDelayMs = Math.max(Number(Deno.env.get('CAMPAIGN_SEND_DELAY_MS')) || 100, 50);
 
     let sentCount = 0;
     let failedCount = 0;
@@ -180,6 +195,29 @@ Deno.serve(async (req) => {
 
       if (currentRec?.status === 'sent') {
         continue; // Already sent — skip
+      }
+
+      // Check if recipient is suppressed
+      const normalizedRecipient = recipient.email.toLowerCase().trim();
+      const { data: suppression } = await db
+        .from('email_suppressions')
+        .select('reason')
+        .eq('normalized_email', normalizedRecipient)
+        .maybeSingle();
+
+      if (suppression) {
+        await db
+          .from('campaign_recipients')
+          .update({
+            status: 'skipped',
+            error_code: 'EMAIL_SUPPRESSED',
+            error_message: `Recipient email is suppressed (${suppression.reason})`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', recipient.id);
+
+        failedCount++;
+        continue;
       }
 
       // Fetch lead details for personalization
@@ -204,7 +242,7 @@ Deno.serve(async (req) => {
         html = variantMap[recipient.variant].html_snapshot || html;
       }
 
-      // Replace variables
+      // Replace variables safely with HTML entity escaping for HTML body
       const firstName = lead?.first_name || '';
       const lastName = lead?.last_name || '';
 
@@ -214,17 +252,21 @@ Deno.serve(async (req) => {
         .replace(/\{\{\s*salutation\s*\}\}/gi, salutation);
 
       html = html
-        .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
-        .replace(/\{\{\s*last_name\s*\}\}/gi, lastName)
-        .replace(/\{\{\s*salutation\s*\}\}/gi, salutation);
+        .replace(/\{\{\s*first_name\s*\}\}/gi, escapeHtml(firstName))
+        .replace(/\{\{\s*last_name\s*\}\}/gi, escapeHtml(lastName))
+        .replace(/\{\{\s*salutation\s*\}\}/gi, escapeHtml(salutation));
 
       const idempotencyKey = `campaign:${campaign.id}:${recipient.id}`;
+
+      // Throttling pacing between sequential sends
+      await new Promise((resolve) => setTimeout(resolve, intraBatchDelayMs));
 
       const sendResult = await sendEmail({
         from: sender,
         to: recipient.email,
         subject,
         html,
+        replyTo,
         idempotencyKey,
       });
 

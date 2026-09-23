@@ -6,7 +6,7 @@ export type LeadSource = 'meta' | 'google' | 'manual' | 'test' | 'form';
 export type ContactPreference = 'email' | 'sms' | 'call';
 export type MessageChannel = 'email' | 'sms' | 'call';
 export type MessageProvider = 'resend' | 'twilio';
-export type MessageStatus = 'pending' | 'sent' | 'failed';
+export type MessageStatus = 'queued' | 'pending' | 'sent' | 'delivered' | 'failed' | 'bounced' | 'complained';
 export type IntakeStatus = 'received' | 'processing' | 'processed' | 'failed' | 'duplicate';
 export type TaskType = 'call' | 'data_review' | 'general' | 'follow_up' | 'payment';
 export type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
@@ -124,7 +124,7 @@ export type QualificationStatus =
 export type ImportStatus = 'pending' | 'processing' | 'completed' | 'completed_with_errors' | 'failed';
 export type ImportRowStatus = 'created' | 'updated' | 'skipped' | 'failed' | 'conflict';
 export type CampaignStatus = 'draft' | 'pending_approval' | 'approved' | 'scheduled' | 'sending' | 'sent' | 'cancelled' | 'failed';
-export type RecipientStatus = 'pending' | 'sent' | 'failed' | 'skipped';
+export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'failed' | 'bounced' | 'complained' | 'skipped';
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 // --- Phase 1 Table Row Types ---
@@ -241,6 +241,11 @@ export interface OutboundMessage {
   error_code: string | null;
   error_message: string | null;
   sent_at: string | null;
+  delivered_at?: string | null;
+  bounced_at?: string | null;
+  complained_at?: string | null;
+  failed_at?: string | null;
+  provider_status?: string | null;
   automation_run_id?: string | null;
   automation_run_step_id?: string | null;
   conversation_id?: string | null;
@@ -454,6 +459,10 @@ export interface CampaignRecipient {
   variant: 'A' | 'B' | null;
   provider_message_id: string | null;
   sent_at: string | null;
+  delivered_at?: string | null;
+  bounced_at?: string | null;
+  complained_at?: string | null;
+  failed_at?: string | null;
   error_code: string | null;
   error_message: string | null;
   snapshot_stage_id?: string | null;
@@ -2298,4 +2307,34 @@ export interface HubSpotDryRunResult {
   would_update: number;
   conflicts: number;
   skipped: number;
+}
+
+// --- Email Delivery Lifecycle & Suppressions (Batch 7.2) ---
+
+export type EmailSuppressionReason = 'hard_bounce' | 'complaint' | 'unsubscribe' | 'manual';
+
+export interface EmailSuppression {
+  id: string;
+  normalized_email: string;
+  reason: EmailSuppressionReason;
+  provider: string;
+  provider_event_id?: string | null;
+  source_message_id?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailProviderEventLog {
+  id: string;
+  provider: string;
+  provider_event_id: string;
+  provider_message_id: string;
+  event_type: string;
+  outbound_message_id?: string | null;
+  campaign_recipient_id?: string | null;
+  recipient_email: string;
+  occurred_at?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
 }

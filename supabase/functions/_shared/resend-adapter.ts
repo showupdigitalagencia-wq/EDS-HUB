@@ -9,6 +9,8 @@ interface SendEmailParams {
   to: string;
   subject: string;
   html: string;
+  text?: string;
+  replyTo?: string;
   idempotencyKey: string;
   headers?: Record<string, string>;
 }
@@ -38,6 +40,14 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
       subject: params.subject,
       html: params.html,
     };
+
+    if (params.text) {
+      payload.text = params.text;
+    }
+
+    if (params.replyTo) {
+      payload.reply_to = params.replyTo;
+    }
 
     if (params.headers && Object.keys(params.headers).length > 0) {
       payload.headers = params.headers;

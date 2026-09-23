@@ -6,6 +6,7 @@ export interface PreferenceGuardResult {
     | 'CONTACT_PREFERENCE_MISMATCH'
     | 'WEBSITE_INITIAL_OUTREACH_SUPPRESSED'
     | 'HISTORICAL_IMPORT_SUPPRESSED'
+    | 'TEST_LEAD_SUPPRESSED'
     | 'NO_VALID_EMAIL'
     | 'NO_VALID_PHONE';
   skip_reason_message?: string;
@@ -23,10 +24,10 @@ export interface CheckPreferenceContext {
 /**
  * Contact Preference Guard:
  * Mandatory rule for any automated outreach action:
- * - When isInitialOutreach is true:
- *   - Meta leads: triggers both Email and SMS if channels are valid, regardless of preference.
- *   - Website leads (source = 'form' | source_detail = 'website'): suppresses automated initial outreach.
- *   - Historical imports (hubspot_sync, hubspot_historical, csv_import): suppresses initial outreach.
+ * - Test leads: strictly suppressed from automatic outreach.
+ * - Historical imports (hubspot_sync, hubspot_historical, csv_import): suppressed from automatic outreach.
+ * - Website leads (source = 'form' | source_detail = 'website'): suppresses automated initial outreach.
+ * - Meta leads: triggers both Email and SMS if channels are valid on initial outreach, regardless of preference.
  * - Ongoing sequences / standard actions:
  *   - send_email: allowed ONLY if lead.contact_preference === 'email'
  *   - send_sms: allowed ONLY if lead.contact_preference === 'sms'
@@ -40,21 +41,41 @@ export function checkContactPreference(
 ): PreferenceGuardResult {
   const pref = (leadPreference || 'email').toLowerCase();
 
-  // If this is initial automated outreach, evaluate source-based routing rules
-  if (context?.isInitialOutreach) {
-    if (context.source === 'form' || context.source_detail === 'website') {
+  // Guard against automated outreach to test or historical import leads
+  if (context) {
+    if (context.source === 'test' || context.source_detail === 'test') {
       return {
         allowed: false,
-        skip_reason_code: 'WEBSITE_INITIAL_OUTREACH_SUPPRESSED',
-        skip_reason_message: 'Website leads require manual client initial outreach',
+        skip_reason_code: 'TEST_LEAD_SUPPRESSED',
+        skip_reason_message: 'Test leads are excluded from automatic outreach',
       };
     }
 
-    if (context.source_detail && ['hubspot_sync', 'hubspot_historical', 'csv_import'].includes(context.source_detail)) {
+    const isImport =
+      Boolean(context.source && ['hubspot_sync', 'hubspot_historical', 'csv_import'].includes(context.source)) ||
+      Boolean(context.source_detail && ['hubspot_sync', 'hubspot_historical', 'csv_import'].includes(context.source_detail));
+
+    if (isImport) {
       return {
         allowed: false,
         skip_reason_code: 'HISTORICAL_IMPORT_SUPPRESSED',
         skip_reason_message: 'Historical import leads are excluded from automatic initial contact',
+      };
+    }
+  }
+
+  // If this is initial automated outreach, evaluate source-based routing rules
+  if (context?.isInitialOutreach) {
+    if (
+      context.source === 'form' ||
+      context.source === 'website' ||
+      context.source_detail === 'website' ||
+      context.source_detail === 'website-register'
+    ) {
+      return {
+        allowed: false,
+        skip_reason_code: 'WEBSITE_INITIAL_OUTREACH_SUPPRESSED',
+        skip_reason_message: 'Website leads require manual client initial outreach',
       };
     }
 

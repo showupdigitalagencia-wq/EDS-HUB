@@ -140,6 +140,9 @@ export type {
   IncompleteEnrollment,
   IncompleteEnrollmentStatus,
   IncompleteEnrollmentProcessingStatus,
+  EmailSuppressionReason,
+  EmailSuppression,
+  EmailProviderEventLog,
 } from './database';
 export type { LeadIntakePayload, LeadIntakeResponse } from './lead-intake';
 

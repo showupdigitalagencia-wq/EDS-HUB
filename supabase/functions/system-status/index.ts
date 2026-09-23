@@ -20,7 +20,7 @@ Deno.serve(async (req) => {
     );
   }
 
-  const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || null;
+  const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
   const fromNumberConfigured = !!Deno.env.get('TWILIO_FROM_NUMBER');
 
   // Check if provider env vars are configured (boolean / public info only — never expose secrets)

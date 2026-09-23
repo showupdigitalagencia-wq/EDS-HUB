@@ -35,7 +35,7 @@ describe('Providers Phase 1 Configuration & Safety', () => {
       const env = getFunctionsEnv();
       expect(Boolean(env.RESEND_API_KEY), 'RESEND_API_KEY should be present in server-side env').toBe(true);
       expect(Boolean(env.RESEND_FROM_EMAIL), 'RESEND_FROM_EMAIL should be present in server-side env').toBe(true);
-      expect(env.RESEND_FROM_EMAIL).toBe('no-reply@expdentalsolutions.com');
+      expect(env.RESEND_FROM_EMAIL).toBe('info@expdentalsolutions.com');
     });
 
     it('confirms RESEND_FROM_EMAIL uses verified domain expdentalsolutions.com', () => {

@@ -180,7 +180,13 @@ Deno.serve(async (req) => {
 
       if (step.step_type === 'action') {
         const action = step.action_type || 'create_task';
-        const prefCheck = checkContactPreference(action, lead.contact_preference);
+        const prefCheck = checkContactPreference(action, lead.contact_preference, {
+          source: lead.source,
+          source_detail: lead.source_detail,
+          isInitialOutreach: true,
+          hasValidEmail: Boolean(lead.email),
+          hasValidPhone: Boolean(lead.phone_e164 || lead.phone_raw),
+        });
 
         if (!prefCheck.allowed) {
           reportSteps.push({

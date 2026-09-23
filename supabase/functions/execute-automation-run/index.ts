@@ -12,6 +12,7 @@ import { createAdminClient } from '../_shared/supabase-client.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
 import { sendSms } from '../_shared/twilio-adapter.ts';
 import { resolveSalutation } from '../_shared/salutation.ts';
+import { escapeHtml } from '../_shared/email-utils.ts';
 import {
   evaluateCondition,
   checkContactPreference,
@@ -445,7 +446,13 @@ Deno.serve(async (req) => {
         const action = step.action_type || 'create_task';
 
         // 1. Strict Contact Preference Guard
-        const prefCheck = checkContactPreference(action, lead.contact_preference);
+        const prefCheck = checkContactPreference(action, lead.contact_preference, {
+          source: lead.source,
+          source_detail: lead.source_detail,
+          isInitialOutreach: true,
+          hasValidEmail: Boolean(lead.email && lead.email.includes('@')),
+          hasValidPhone: Boolean(lead.phone_e164 || lead.phone_raw),
+        });
         if (!prefCheck.allowed) {
           // Skip action due to contact preference mismatch
           await db.from('automation_run_steps').insert({
@@ -542,18 +549,59 @@ Deno.serve(async (req) => {
                 })
                 .eq('id', stepRunId);
             } else {
-              const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'team@expertdentalsolutions.org';
+              // Check email_suppressions before calling provider
+              const { data: suppression } = await db
+                .from('email_suppressions')
+                .select('reason')
+                .eq('normalized_email', recipient)
+                .maybeSingle();
+
+              if (suppression) {
+                await db.from('outbound_messages').insert({
+                  lead_id: lead.id,
+                  channel: 'email',
+                  provider: 'resend',
+                  recipient,
+                  template_key: step.config?.template_id || 'automation_email',
+                  subject_snapshot: step.config?.subject || 'Update from Expert Dental Solutions',
+                  body_snapshot: step.config?.body || '',
+                  status: 'failed',
+                  error_code: 'EMAIL_SUPPRESSED',
+                  error_message: `Recipient email is suppressed (${suppression.reason})`,
+                  idempotency_key: actionIdempotencyKey,
+                  attempt_count: 1,
+                  failed_at: new Date().toISOString(),
+                  automation_run_id: runId,
+                  automation_run_step_id: stepRunId,
+                });
+
+                await db
+                  .from('automation_run_steps')
+                  .update({
+                    status: 'failed',
+                    error_message: `Recipient email is suppressed (${suppression.reason})`,
+                    completed_at: new Date().toISOString(),
+                  })
+                  .eq('id', stepRunId);
+
+                throw new Error(`Email suppressed: ${suppression.reason}`);
+              }
+
+              const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
+              const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
+              const replyTo = 'info@expdentalsolutions.com';
               const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doc');
               const rawSubject = step.config?.subject || 'Important update from Expert Dental Solutions';
               const rawBody = step.config?.body || '<p>Hello {{salutation}}, thank you for connecting with us.</p>';
               const subject = rawSubject.replace(/{{salutation}}/g, salutation).replace(/{{first_name}}/g, lead.first_name || '');
-              const html = rawBody.replace(/{{salutation}}/g, salutation).replace(/{{first_name}}/g, lead.first_name || '');
+              const html = rawBody.replace(/{{salutation}}/g, escapeHtml(salutation)).replace(/{{first_name}}/g, escapeHtml(lead.first_name || ''));
 
               const sendRes = await sendEmail({
-                from: fromEmail,
+                from: sender,
                 to: recipient,
                 subject,
                 html,
+                replyTo,
                 idempotencyKey: actionIdempotencyKey,
               });
 
