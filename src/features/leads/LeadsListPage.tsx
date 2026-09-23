@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
@@ -37,7 +37,6 @@ const OPERATIONAL_STAGE_CODES = [
 ] as const;
 
 export function LeadsListPage() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sortParam = searchParams.get('sort');
 
@@ -568,7 +567,7 @@ export function LeadsListPage() {
                 return (
                   <div
                     key={lead.id}
-                    onClick={() => navigate(`/leads/${lead.id}`)}
+                    onClick={() => setSelectedLeadId(lead.id)}
                     className="p-3.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-[#449bd5]/50 transition-all duration-150 cursor-pointer space-y-2 select-none group"
                   >
                     {/* 1. Nome (Destaque Principal) + Discrete Stage Badge */}
@@ -723,7 +722,7 @@ export function LeadsListPage() {
                       return (
                         <tr
                           key={lead.id}
-                          onClick={() => navigate(`/leads/${lead.id}`)}
+                          onClick={() => setSelectedLeadId(lead.id)}
                           className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
                         >
                           {/* 1. Nome & External ID */}

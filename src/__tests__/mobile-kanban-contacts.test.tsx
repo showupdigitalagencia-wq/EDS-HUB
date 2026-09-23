@@ -4,6 +4,9 @@ import { MemoryRouter } from 'react-router-dom';
 import { PipelineKanbanPage } from '../features/pipeline/PipelineKanbanPage';
 import { LeadsListPage } from '../features/leads/LeadsListPage';
 import { MinimalLeadCard } from '../features/pipeline/components/MinimalLeadCard';
+import { LeadQuickViewDrawer } from '../features/leads/components/LeadQuickViewDrawer';
+import { LeadConversationStatus } from '../features/leads/components/LeadConversationStatus';
+import { LeadQuickActionBar } from '../features/leads/components/LeadQuickActionBar';
 import { MobileHeader } from '../components/MobileHeader';
 import { MobileBottomNav } from '../components/MobileBottomNav';
 import { Layout } from '../components/Layout';
@@ -54,6 +57,9 @@ function createChainableMock(data: any = [], count?: number) {
     order: vi.fn(() => mock),
     in: vi.fn(() => mock),
     eq: vi.fn(() => mock),
+    limit: vi.fn(() => mock),
+    single: vi.fn(() => Promise.resolve({ data: Array.isArray(data) ? data[0] : data, error: null })),
+    maybeSingle: vi.fn(() => Promise.resolve({ data: Array.isArray(data) ? data[0] : data, error: null })),
     range: vi.fn(() => Promise.resolve(resolvedResult)),
     then: (resolve: any) => Promise.resolve(resolvedResult).then(resolve),
   };
@@ -228,10 +234,14 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       });
     });
 
-    it('navigates directly to /leads/:id when a Pipeline card is clicked', async () => {
+    it('opens LeadQuickViewDrawer without navigating away when a Pipeline card is clicked', async () => {
       (supabase.from as any).mockImplementation((table: string) => {
         if (table === 'pipeline_stages') return createChainableMock(mockStages);
         if (table === 'leads') return createChainableMock(mockLeads);
+        if (table === 'conversations') return createChainableMock([]);
+        if (table === 'lead_course_interests') return createChainableMock([]);
+        if (table === 'lead_activities') return createChainableMock([]);
+        if (table === 'tasks') return createChainableMock([]);
         return createChainableMock([]);
       });
 
@@ -249,7 +259,14 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       expect(card).toBeInTheDocument();
       fireEvent.click(card!);
 
-      expect(mockNavigate).toHaveBeenCalledWith('/leads/lead-1');
+      // Quick View drawer opens with contextual details
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('Perfil completo')).toBeInTheDocument();
+      // Should NOT have navigated immediately away
+      expect(mockNavigate).not.toHaveBeenCalled();
     });
   });
 
@@ -333,9 +350,9 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 3. Contatos Standardized Mobile Cards & Direct Navigation
+  // 3. Contatos Standardized Mobile Cards & Lead Quick View Restoration
   // ---------------------------------------------------------------------------
-  describe('Contatos Standardized Mobile Cards & Direct Navigation', () => {
+  describe('Contatos Standardized Mobile Cards & Lead Quick View Restoration', () => {
     const mockStages = [
       { id: 'stage-1', code: 'capture', name: 'Novo Lead', sort_order: 1 },
       { id: 'stage-4', code: 'approval', name: 'Quente', sort_order: 4 },
@@ -409,11 +426,14 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       expect(mobileStack).toHaveTextContent('Quente');
     });
 
-    it('navigates directly to /leads/:id when mobile contact card is clicked', async () => {
+    it('opens LeadQuickViewDrawer without navigating away when mobile contact card is clicked', async () => {
       (supabase.from as any).mockImplementation((table: string) => {
         if (table === 'pipeline_stages') return createChainableMock(mockStages);
         if (table === 'courses' || table === 'course_sessions' || table === 'tags') return createChainableMock([]);
         if (table === 'leads') return createChainableMock(mockLeads, 2);
+        if (table === 'conversations') return createChainableMock([]);
+        if (table === 'lead_activities') return createChainableMock([]);
+        if (table === 'tasks') return createChainableMock([]);
         return createChainableMock([]);
       });
 
@@ -431,10 +451,51 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       expect(mobileCards.length).toBe(2);
 
       fireEvent.click(mobileCards[0]);
-      expect(mockNavigate).toHaveBeenCalledWith('/leads/lead-1');
+
+      // Quick View drawer opens
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('Perfil completo')).toBeInTheDocument();
+      expect(mockNavigate).not.toHaveBeenCalled();
     });
 
-    it('clicking phone or email links inside contact card stops propagation and does not navigate', async () => {
+    it('opens LeadQuickViewDrawer when desktop table row is clicked', async () => {
+      (supabase.from as any).mockImplementation((table: string) => {
+        if (table === 'pipeline_stages') return createChainableMock(mockStages);
+        if (table === 'courses' || table === 'course_sessions' || table === 'tags') return createChainableMock([]);
+        if (table === 'leads') return createChainableMock(mockLeads, 2);
+        if (table === 'conversations') return createChainableMock([]);
+        if (table === 'lead_activities') return createChainableMock([]);
+        if (table === 'tasks') return createChainableMock([]);
+        return createChainableMock([]);
+      });
+
+      render(
+        <MemoryRouter>
+          <LeadsListPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Dra. Camila Nogueira').length).toBeGreaterThan(0);
+      });
+
+      const desktopRows = document.querySelectorAll('tbody tr');
+      expect(desktopRows.length).toBe(2);
+
+      fireEvent.click(desktopRows[0]);
+
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('Perfil completo')).toBeInTheDocument();
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    it('clicking phone or email links inside contact card stops propagation and does not open drawer', async () => {
       (supabase.from as any).mockImplementation((table: string) => {
         if (table === 'pipeline_stages') return createChainableMock(mockStages);
         if (table === 'courses' || table === 'course_sessions' || table === 'tags') return createChainableMock([]);
@@ -457,11 +518,107 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
 
       fireEvent.click(phoneLink);
       expect(mockNavigate).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog')).toBeNull();
     });
   });
 
   // ---------------------------------------------------------------------------
-  // 4. Global Back Navigation & MobileHeader
+  // 4. Lead Quick View Details, Full Profile Action & Conversation Visibility
+  // ---------------------------------------------------------------------------
+  describe('Lead Quick View Content, Full Profile Action & Conversation Visibility', () => {
+    it('clicking "Perfil completo" in LeadQuickViewDrawer explicitly navigates to /leads/:id', () => {
+      render(
+        <MemoryRouter>
+          <LeadQuickViewDrawer
+            leadId="lead-test-1"
+            isOpen={true}
+            initialLead={mockLeadWithCourse}
+            onClose={vi.fn()}
+          />
+        </MemoryRouter>
+      );
+
+      const fullProfileBtn = screen.getByRole('button', { name: /Perfil completo/i });
+      expect(fullProfileBtn).toBeInTheDocument();
+
+      fireEvent.click(fullProfileBtn);
+      expect(mockNavigate).toHaveBeenCalledWith('/leads/lead-test-1');
+    });
+
+    it('renders factual stored conversation when available without fake read status', async () => {
+      (supabase.from as any).mockImplementation((table: string) => {
+        if (table === 'conversations') {
+          return createChainableMock([
+            {
+              id: 'conv-1',
+              lead_id: 'lead-test-1',
+              channel: 'email',
+              subject: 'Dúvidas Harmonização',
+              last_message_at: '2026-03-01T14:30:00Z',
+              last_message_preview: 'Gostaria de saber o valor da matrícula',
+              last_message_direction: 'inbound',
+              status: 'open',
+            },
+          ]);
+        }
+        return createChainableMock([]);
+      });
+
+      render(
+        <MemoryRouter>
+          <LeadConversationStatus leadId="lead-test-1" />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Gostaria de saber o valor da matrícula/i)).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('Recebida')).toBeInTheDocument();
+      expect(screen.queryByText(/Lido/i)).toBeNull();
+      expect(screen.queryByText(/Visualizado/i)).toBeNull();
+    });
+
+    it('renders clean empty state when no conversation exists', async () => {
+      (supabase.from as any).mockImplementation((table: string) => {
+        if (table === 'conversations') {
+          return createChainableMock([]);
+        }
+        return createChainableMock([]);
+      });
+
+      render(
+        <MemoryRouter>
+          <LeadConversationStatus leadId="lead-test-1" />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Nenhuma conversa registrada')).toBeInTheDocument();
+      });
+    });
+
+    it('Payment quick action opens payment reminder task modal without replacing with Matrícula', () => {
+      const onOpenPaymentModal = vi.fn();
+      render(
+        <LeadQuickActionBar
+          lead={mockLeadWithCourse}
+          onOpenTaskModal={vi.fn()}
+          onOpenPaymentModal={onOpenPaymentModal}
+        />
+      );
+
+      const paymentBtn = screen.getByRole('button', { name: /Pagamento/i });
+      expect(paymentBtn).toBeInTheDocument();
+      expect(paymentBtn).toHaveAttribute('title', 'Agendar lembrete operacional de pagamento');
+
+      fireEvent.click(paymentBtn);
+      expect(onOpenPaymentModal).toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 5. Global Back Navigation & MobileHeader
   // ---------------------------------------------------------------------------
   describe('Global Back Navigation & MobileHeader', () => {
     it('renders MobileHeader with back button and navigates to fallback when clicked', () => {
@@ -495,7 +652,7 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 5. Mobile Bottom Navigation & Invariant Protection
+  // 6. Mobile Bottom Navigation & Invariant Protection
   // ---------------------------------------------------------------------------
   describe('Mobile Bottom Navigation', () => {
     it('renders exactly 4 navigation destinations: Contatos, Pipeline, Tarefas, and Menu', () => {
@@ -512,8 +669,6 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
     });
 
     it('never hides bottom nav without a top back button (Layout invariant)', () => {
-      // Invariant: shouldHideBottomNav = hideBottomNav && hasBack
-      // Case 1: hideBottomNav is true but no back button -> bottom nav must remain
       const { unmount } = render(
         <MemoryRouter>
           <Layout title="Primary Screen" hideBottomNav={true}>
@@ -525,7 +680,6 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       expect(document.getElementById('mobile-bottom-nav')).toBeInTheDocument();
       unmount();
 
-      // Case 2: hideBottomNav is true AND back button is provided -> bottom nav can be hidden safely
       render(
         <MemoryRouter>
           <Layout title="Secondary Screen" hideBottomNav={true} backTo="/leads">

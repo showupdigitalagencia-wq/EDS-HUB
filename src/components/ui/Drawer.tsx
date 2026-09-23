@@ -1,5 +1,5 @@
 import { useEffect, useCallback, type ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { X, ArrowLeft } from 'lucide-react';
 
 export interface DrawerProps {
   isOpen: boolean;
@@ -70,7 +70,10 @@ export function Drawer({
         >
           {/* Header */}
           {(title || showCloseButton) && (
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white sticky top-0 z-10 shrink-0">
+            <div
+              className="flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 border-b border-slate-100 bg-white sticky top-0 z-10 shrink-0"
+              style={{ paddingTop: 'max(0.875rem, env(safe-area-inset-top, 0px))' }}
+            >
               <div className="flex-1 min-w-0 pr-3">
                 {typeof title === 'string' ? (
                   <h2 className="text-base sm:text-lg font-bold text-[#08254f] truncate font-heading tracking-tight">
@@ -93,9 +96,12 @@ export function Drawer({
                     type="button"
                     onClick={onClose}
                     aria-label="Fechar"
-                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                    title="Fechar"
+                    className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
                   >
-                    <X className="h-5 w-5" />
+                    <ArrowLeft className="h-5 w-5 sm:hidden text-slate-600" />
+                    <span className="text-xs font-semibold text-slate-700 sm:hidden">Voltar</span>
+                    <X className="h-5 w-5 hidden sm:block text-slate-400" />
                   </button>
                 )}
               </div>
@@ -103,7 +109,10 @@ export function Drawer({
           )}
 
           {/* Scrollable Body */}
-          <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+          <div
+            className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5"
+            style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))' }}
+          >
             {children}
           </div>
 
