@@ -593,30 +593,26 @@ export function LeadsListPage() {
                       )}
                     </div>
 
-                    {/* 2. Telefone & E-mail (Secundários, content-sized hitboxes) */}
+                    {/* 2. Telefone & E-mail (Informacionais, display-only) */}
                     {(phoneValue || emailValue) ? (
                       <div className="flex flex-col items-start gap-0.5 pt-0.5">
                         {phoneValue && (
-                          <a
-                            href={`tel:${phoneValue.replace(/\D/g, '')}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 rounded text-[11px] text-slate-600 hover:text-[#08254f] hover:bg-slate-100/70 transition-colors cursor-pointer"
-                            title={`Ligar para ${phoneValue}`}
+                          <div
+                            className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 text-[11px] text-slate-600 select-none"
+                            title={phoneValue}
                           >
                             <Phone className="h-3 w-3 text-slate-400 shrink-0" />
                             <span className="truncate">{phoneValue}</span>
-                          </a>
+                          </div>
                         )}
                         {emailValue && (
-                          <a
-                            href={`mailto:${emailValue}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 rounded text-[11px] text-slate-500 hover:text-[#08254f] hover:bg-slate-100/70 transition-colors cursor-pointer"
-                            title={`Enviar e-mail para ${emailValue}`}
+                          <div
+                            className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 text-[11px] text-slate-500 select-none"
+                            title={emailValue}
                           >
                             <Mail className="h-3 w-3 text-slate-400 shrink-0" />
                             <span className="truncate">{emailValue}</span>
-                          </a>
+                          </div>
                         )}
                       </div>
                     ) : (
@@ -782,30 +778,26 @@ export function LeadsListPage() {
                             </span>
                           </td>
 
-                          {/* 4. Contato (Email / Phone) */}
+                          {/* 4. Contato (Email / Phone - Informational only) */}
                           <td className="px-5 py-3.5 whitespace-nowrap">
                             <div className="flex flex-col items-start gap-0.5">
                               {lead.email ? (
-                                <a
-                                  href={`mailto:${lead.email}`}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 rounded text-slate-600 hover:text-[#08254f] hover:bg-slate-100/70 transition-colors cursor-pointer"
-                                  title={`Enviar e-mail para ${lead.email}`}
+                                <div
+                                  className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 text-slate-600 select-none"
+                                  title={lead.email}
                                 >
                                   <Mail className="h-3 w-3 text-slate-400 shrink-0" />
                                   <span className="truncate max-w-[200px]">{lead.email}</span>
-                                </a>
+                                </div>
                               ) : null}
                               {lead.phone_raw ? (
-                                <a
-                                  href={`tel:${lead.phone_raw.replace(/\D/g, '')}`}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 rounded text-slate-600 hover:text-[#08254f] hover:bg-slate-100/70 transition-colors cursor-pointer"
-                                  title={`Ligar para ${lead.phone_raw}`}
+                                <div
+                                  className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 px-1 -ml-1 text-slate-600 select-none"
+                                  title={lead.phone_raw}
                                 >
                                   <Phone className="h-3 w-3 text-slate-400 shrink-0" />
                                   <span>{lead.phone_raw}</span>
-                                </a>
+                                </div>
                               ) : null}
                               {!lead.email && !lead.phone_raw && (
                                 <span className="text-slate-400 italic">Sem contato</span>

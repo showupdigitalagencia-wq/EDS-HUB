@@ -11,6 +11,7 @@ import {
   FileText,
   Phone,
   Mail,
+  AlertCircle,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Drawer } from '../../../components/ui/Drawer';
@@ -23,7 +24,7 @@ import { LeadConversationsCard } from '../LeadConversationsCard';
 import { LeadTimeline } from './LeadTimeline';
 import { LeadTaskList } from './LeadTaskList';
 import { LeadTaskModal } from './LeadTaskModal';
-import type { Lead, LeadActivity, Task } from '../../../types';
+import type { Lead, LeadActivity, Task, LeadNote } from '../../../types';
 
 export interface LeadQuickViewDrawerProps {
   leadId: string | null;
@@ -48,6 +49,9 @@ export function LeadQuickViewDrawer({
   const [courseInterests, setCourseInterests] = useState<any[]>([]);
   const [activities, setActivities] = useState<LeadActivity[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [notes, setNotes] = useState<LeadNote[]>([]);
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [isAddingNote, setIsAddingNote] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('resumo');
 
@@ -61,6 +65,7 @@ export function LeadQuickViewDrawer({
       setCourseInterests([]);
       setActivities([]);
       setTasks([]);
+      setNotes([]);
       return;
     }
 
@@ -113,6 +118,15 @@ export function LeadQuickViewDrawer({
         .order('created_at', { ascending: false });
 
       setTasks(taskData || []);
+
+      // 5. Fetch Notes (for notes view)
+      const { data: notesData } = await supabase
+        .from('lead_notes')
+        .select('*')
+        .eq('lead_id', leadId)
+        .order('created_at', { ascending: false });
+
+      setNotes(notesData || []);
     } catch (err) {
       console.error('Failed to load lead in Quick View:', err);
     } finally {
@@ -158,6 +172,37 @@ export function LeadQuickViewDrawer({
 
   const pipelineStage = (lead as any)?.pipeline_stage;
 
+  // Operational Attention State Derivation
+  const overdueTasksCount = tasks.filter(
+    (t) => t.status !== 'completed' && t.due_at && new Date(t.due_at) < new Date()
+  ).length;
+  const pendingTasksCount = tasks.filter((t) => t.status === 'pending').length;
+  const hasNoContact = !lead?.phone_raw && !lead?.phone_e164 && !lead?.email;
+
+  const attentionStatus = hasNoContact
+    ? {
+        label: 'Atenção: Contato ausente',
+        badge: 'bg-rose-50 text-rose-700 border-rose-200',
+        desc: 'Lead sem telefone ou e-mail cadastrado',
+      }
+    : overdueTasksCount > 0
+    ? {
+        label: 'Atenção: Tarefas em atraso',
+        badge: 'bg-amber-50 text-amber-700 border-amber-200',
+        desc: `${overdueTasksCount} tarefa(s) operacional(is) vencida(s)`,
+      }
+    : pendingTasksCount > 0
+    ? {
+        label: 'Operação em andamento',
+        badge: 'bg-sky-50 text-sky-700 border-sky-200',
+        desc: `${pendingTasksCount} tarefa(s) pendente(s)`,
+      }
+    : {
+        label: 'Operação em dia',
+        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        desc: 'Nenhuma pendência operacional',
+      };
+
   return (
     <Drawer
       isOpen={isOpen}
@@ -198,11 +243,11 @@ export function LeadQuickViewDrawer({
               variant="ghost"
               size="sm"
               onClick={handleOpenFullProfile}
-              title="Abrir perfil completo"
+              title="Ver em página completa"
               rightIcon={<ExternalLink className="h-3.5 w-3.5 text-slate-400 group-hover:text-slate-600" />}
               className="text-xs"
             >
-              Perfil completo
+              Ver em página completa
             </Button>
           ) : null}
         </div>
@@ -247,10 +292,26 @@ export function LeadQuickViewDrawer({
           {/* Tab 1: Resumo */}
           {activeTab === 'resumo' && (
             <div className="space-y-4">
+              {/* Operational Attention State Banner */}
+              <div className={`p-3.5 rounded-2xl border flex items-start gap-3 ${attentionStatus.badge}`}>
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-xs font-heading">{attentionStatus.label}</span>
+                    {lead.lead_score !== undefined && lead.lead_score !== null && (
+                      <span className="text-[10px] opacity-75 font-mono">
+                        Score: {lead.lead_score}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] opacity-90 mt-0.5">{attentionStatus.desc}</p>
+                </div>
+              </div>
+
               {/* Contact & Registration Summary Card */}
               <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
                 <h3 className="text-xs font-bold text-slate-700 font-heading uppercase tracking-wider">
-                  Dados de Contato
+                  Dados de Contato & Origem
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div>
@@ -285,8 +346,16 @@ export function LeadQuickViewDrawer({
                       <span className="font-semibold text-slate-400 italic">Não informado</span>
                     )}
                   </div>
+                  {lead.source && (
+                    <div>
+                      <span className="text-slate-400 block text-[11px] mb-0.5">Origem / Canal</span>
+                      <span className="font-semibold text-slate-700 capitalize">
+                        {lead.source} {lead.source_detail ? `(${lead.source_detail})` : ''}
+                      </span>
+                    </div>
+                  )}
                   {lead.referred_by && (
-                    <div className="sm:col-span-2 flex items-center gap-1.5 text-slate-600 bg-slate-50 p-2 rounded-lg">
+                    <div className="flex items-center gap-1.5 text-slate-600 bg-slate-50 p-2 rounded-lg sm:col-span-2">
                       <UserCheck className="h-3.5 w-3.5 text-[#449bd5] shrink-0" />
                       <span className="text-[11px]">
                         Indicado por: <strong>{lead.referred_by}</strong>
@@ -330,6 +399,81 @@ export function LeadQuickViewDrawer({
                     Nenhum curso de interesse selecionado
                   </p>
                 )}
+              </div>
+
+              {/* Notes Card */}
+              <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-700 font-heading uppercase tracking-wider flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5 text-[#449bd5]" />
+                    <span>Observações ({notes.length})</span>
+                  </h3>
+                </div>
+
+                {notes.length > 0 ? (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {notes.map((note) => (
+                      <div
+                        key={note.id}
+                        className="p-2.5 rounded-xl border text-xs leading-relaxed bg-slate-50 border-slate-100 text-slate-700"
+                      >
+                        <p>{note.content}</p>
+                        <span className="text-[10px] text-slate-400 block mt-1">
+                          {new Date(note.created_at).toLocaleDateString('pt-BR', {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">
+                    Nenhuma observação registrada.
+                  </p>
+                )}
+
+                {/* Inline Add Note */}
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!newNoteContent.trim() || !leadId) return;
+                    setIsAddingNote(true);
+                    try {
+                      const { error } = await supabase.from('lead_notes').insert({
+                        lead_id: leadId,
+                        content: newNoteContent.trim(),
+                      });
+                      if (!error) {
+                        setNewNoteContent('');
+                        fetchLeadData();
+                        if (onLeadUpdated) onLeadUpdated();
+                      }
+                    } finally {
+                      setIsAddingNote(false);
+                    }
+                  }}
+                  className="pt-2 border-t border-slate-100 flex gap-2"
+                >
+                  <input
+                    type="text"
+                    placeholder="Adicionar nota rápida..."
+                    value={newNoteContent}
+                    onChange={(e) => setNewNoteContent(e.target.value)}
+                    className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-[#449bd5]"
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant="secondary"
+                    disabled={!newNoteContent.trim() || isAddingNote}
+                    className="text-xs"
+                  >
+                    Adicionar
+                  </Button>
+                </form>
               </div>
             </div>
           )}
@@ -380,3 +524,7 @@ export function LeadQuickViewDrawer({
     </Drawer>
   );
 }
+
+// Unified alias per Section 9
+export const LeadProfileDrawer = LeadQuickViewDrawer;
+

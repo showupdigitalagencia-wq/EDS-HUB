@@ -10,6 +10,7 @@ import { LeadQuickActionBar } from '../features/leads/components/LeadQuickAction
 import { MobileHeader } from '../components/MobileHeader';
 import { MobileBottomNav } from '../components/MobileBottomNav';
 import { Layout } from '../components/Layout';
+import { WorkItemCard } from '../features/work/components/WorkItemCard';
 import { supabase } from '../lib/supabase';
 import type { Lead } from '../types';
 
@@ -264,7 +265,7 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('Perfil completo')).toBeInTheDocument();
+      expect(screen.getByText('Ver em página completa')).toBeInTheDocument();
       // Should NOT have navigated immediately away
       expect(mockNavigate).not.toHaveBeenCalled();
     });
@@ -309,7 +310,7 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       expect(screen.getByText('Sem curso de interesse')).toBeInTheDocument();
     });
 
-    it('clicking phone or email links does NOT trigger card onClick (e.stopPropagation)', () => {
+    it('phone and email on card are DISPLAY ONLY (no tel or mailto links) and clicking them opens profile', () => {
       const onClick = vi.fn();
       render(
         <MemoryRouter>
@@ -317,14 +318,21 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         </MemoryRouter>
       );
 
-      const phoneLink = screen.getByTitle('Ligar para (11) 97777-8888');
-      const emailLink = screen.getByTitle('Enviar e-mail para camila@odontoclinic.com');
+      // Verify no tel: or mailto: links on the card
+      const telLinks = document.querySelectorAll('a[href^="tel:"]');
+      const mailtoLinks = document.querySelectorAll('a[href^="mailto:"]');
+      expect(telLinks.length).toBe(0);
+      expect(mailtoLinks.length).toBe(0);
 
-      fireEvent.click(phoneLink);
-      expect(onClick).not.toHaveBeenCalled();
+      // Clicking phone text bubbles up to card onClick
+      const phoneText = screen.getByText('(11) 97777-8888');
+      fireEvent.click(phoneText);
+      expect(onClick).toHaveBeenCalledTimes(1);
 
-      fireEvent.click(emailLink);
-      expect(onClick).not.toHaveBeenCalled();
+      // Clicking email text bubbles up to card onClick
+      const emailText = screen.getByText('camila@odontoclinic.com');
+      fireEvent.click(emailText);
+      expect(onClick).toHaveBeenCalledTimes(2);
     });
 
     it('dragging card does NOT trigger onClick upon release', () => {
@@ -457,7 +465,7 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('Perfil completo')).toBeInTheDocument();
+      expect(screen.getByText('Ver em página completa')).toBeInTheDocument();
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 
@@ -491,15 +499,18 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('Perfil completo')).toBeInTheDocument();
+      expect(screen.getByText('Ver em página completa')).toBeInTheDocument();
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 
-    it('clicking phone or email links inside contact card stops propagation and does not open drawer', async () => {
+    it('phone and email in contact card are DISPLAY ONLY (no tel: or mailto: anchors) and clicking card opens drawer', async () => {
       (supabase.from as any).mockImplementation((table: string) => {
         if (table === 'pipeline_stages') return createChainableMock(mockStages);
         if (table === 'courses' || table === 'course_sessions' || table === 'tags') return createChainableMock([]);
         if (table === 'leads') return createChainableMock(mockLeads, 2);
+        if (table === 'conversations') return createChainableMock([]);
+        if (table === 'lead_activities') return createChainableMock([]);
+        if (table === 'tasks') return createChainableMock([]);
         return createChainableMock([]);
       });
 
@@ -513,12 +524,21 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         expect(screen.getAllByText('Dra. Camila Nogueira').length).toBeGreaterThan(0);
       });
 
-      const phoneLink = screen.getAllByRole('link', { name: /\(11\) 97777-8888/i })[0];
-      mockNavigate.mockClear();
+      // No tel: or mailto: links in the entire list table/cards
+      const telLinks = document.querySelectorAll('a[href^="tel:"]');
+      const mailtoLinks = document.querySelectorAll('a[href^="mailto:"]');
+      expect(telLinks.length).toBe(0);
+      expect(mailtoLinks.length).toBe(0);
 
-      fireEvent.click(phoneLink);
+      // Mobile card click opens drawer
+      const mobileCard = document.querySelectorAll('.sm\\:hidden.space-y-2\\.5 > div')[0];
+      fireEvent.click(mobileCard);
+
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
+      expect(screen.getByText('Ver em página completa')).toBeInTheDocument();
       expect(mockNavigate).not.toHaveBeenCalled();
-      expect(screen.queryByRole('dialog')).toBeNull();
     });
   });
 
@@ -526,7 +546,7 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
   // 4. Lead Quick View Details, Full Profile Action & Conversation Visibility
   // ---------------------------------------------------------------------------
   describe('Lead Quick View Content, Full Profile Action & Conversation Visibility', () => {
-    it('clicking "Perfil completo" in LeadQuickViewDrawer explicitly navigates to /leads/:id', () => {
+    it('clicking "Ver em página completa" in LeadQuickViewDrawer explicitly navigates to /leads/:id', () => {
       render(
         <MemoryRouter>
           <LeadQuickViewDrawer
@@ -538,7 +558,7 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         </MemoryRouter>
       );
 
-      const fullProfileBtn = screen.getByRole('button', { name: /Perfil completo/i });
+      const fullProfileBtn = screen.getByRole('button', { name: /Ver em página completa/i });
       expect(fullProfileBtn).toBeInTheDocument();
 
       fireEvent.click(fullProfileBtn);
@@ -693,35 +713,27 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 7. Mobile Click Target & Hitbox Precision
+  // 7. Lead Card Display-Only Contacts & Explicit Actions in Lead Profile
   // ---------------------------------------------------------------------------
-  describe('Mobile Click Target & Hitbox Precision', () => {
-    it('phone and email anchors in MinimalLeadCard are content-sized inline-flex w-fit and do not stretch', () => {
+  describe('Lead Card Display-Only Contacts & Explicit Actions in Lead Profile', () => {
+    it('phone and email in MinimalLeadCard have NO tel: or mailto: anchors (display-only)', () => {
       render(
         <MemoryRouter>
           <MinimalLeadCard lead={mockLeadWithCourse} />
         </MemoryRouter>
       );
 
-      const phoneLink = screen.getByTitle('Ligar para (11) 97777-8888');
-      const emailLink = screen.getByTitle('Enviar e-mail para camila@odontoclinic.com');
+      // MinimalLeadCard contains only display-only elements for phone and email
+      const telLinks = document.querySelectorAll('a[href^="tel:"]');
+      const mailtoLinks = document.querySelectorAll('a[href^="mailto:"]');
+      expect(telLinks.length).toBe(0);
+      expect(mailtoLinks.length).toBe(0);
 
-      expect(phoneLink.className).toContain('inline-flex');
-      expect(phoneLink.className).toContain('w-fit');
-      expect(phoneLink.className.split(' ')).not.toContain('w-full');
-      expect(phoneLink.className.split(' ')).not.toContain('flex-1');
-
-      expect(emailLink.className).toContain('inline-flex');
-      expect(emailLink.className).toContain('w-fit');
-      expect(emailLink.className.split(' ')).not.toContain('w-full');
-      expect(emailLink.className.split(' ')).not.toContain('flex-1');
-
-      // Parent container must be items-start so anchors don't stretch
-      const container = phoneLink.parentElement;
-      expect(container?.className).toContain('items-start');
+      expect(screen.getByText('(11) 97777-8888')).toBeInTheDocument();
+      expect(screen.getByText('camila@odontoclinic.com')).toBeInTheDocument();
     });
 
-    it('phone and email anchors in Contatos mobile cards are content-sized inline-flex w-fit', async () => {
+    it('phone and email in Contatos mobile cards have NO tel: or mailto: anchors (display-only)', async () => {
       (supabase.from as any).mockImplementation((table: string) => {
         if (table === 'pipeline_stages') return createChainableMock([{ id: 'stage-1', code: 'capture', name: 'Novo Lead', sort_order: 1 }]);
         if (table === 'courses' || table === 'course_sessions' || table === 'tags') return createChainableMock([]);
@@ -739,16 +751,13 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         expect(screen.getAllByText('Dra. Camila Nogueira').length).toBeGreaterThan(0);
       });
 
-      const phoneLink = screen.getAllByRole('link', { name: /\(11\) 97777-8888/i })[0];
-      const emailLink = screen.getAllByRole('link', { name: /camila@odontoclinic\.com/i })[0];
-
-      expect(phoneLink.className).toContain('inline-flex');
-      expect(phoneLink.className).toContain('w-fit');
-      expect(emailLink.className).toContain('inline-flex');
-      expect(emailLink.className).toContain('w-fit');
+      const telLinks = document.querySelectorAll('a[href^="tel:"]');
+      const mailtoLinks = document.querySelectorAll('a[href^="mailto:"]');
+      expect(telLinks.length).toBe(0);
+      expect(mailtoLinks.length).toBe(0);
     });
 
-    it('tapping neutral card space triggers card onClick to open Lead Quick View', () => {
+    it('tapping card anywhere (name, course, phone, email, empty space) triggers card onClick to open Lead Profile', () => {
       const onClick = vi.fn();
       render(
         <MemoryRouter>
@@ -756,53 +765,33 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
         </MemoryRouter>
       );
 
-      // Tap lead name
+      // 1. Tap lead name
       const nameEl = screen.getByText('Dra. Camila Nogueira');
       fireEvent.click(nameEl);
       expect(onClick).toHaveBeenCalledTimes(1);
 
-      // Tap course area
+      // 2. Tap course area
       const courseEl = screen.getByText(/Harmonização Avançada/i);
       fireEvent.click(courseEl);
       expect(onClick).toHaveBeenCalledTimes(2);
 
-      // Tap empty card space
+      // 3. Tap phone text
+      const phoneEl = screen.getByText('(11) 97777-8888');
+      fireEvent.click(phoneEl);
+      expect(onClick).toHaveBeenCalledTimes(3);
+
+      // 4. Tap email text
+      const emailEl = screen.getByText('camila@odontoclinic.com');
+      fireEvent.click(emailEl);
+      expect(onClick).toHaveBeenCalledTimes(4);
+
+      // 5. Tap empty card space
       const card = screen.getByRole('article');
       fireEvent.click(card);
-      expect(onClick).toHaveBeenCalledTimes(3);
+      expect(onClick).toHaveBeenCalledTimes(5);
     });
 
-    it('tapping phone anchor triggers tel: and does NOT open Lead Quick View', () => {
-      const onClick = vi.fn();
-      render(
-        <MemoryRouter>
-          <MinimalLeadCard lead={mockLeadWithCourse} onClick={onClick} />
-        </MemoryRouter>
-      );
-
-      const phoneLink = screen.getByTitle('Ligar para (11) 97777-8888');
-      expect(phoneLink.getAttribute('href')).toBe('tel:11977778888');
-
-      fireEvent.click(phoneLink);
-      expect(onClick).not.toHaveBeenCalled();
-    });
-
-    it('tapping email anchor triggers mailto: and does NOT open Lead Quick View', () => {
-      const onClick = vi.fn();
-      render(
-        <MemoryRouter>
-          <MinimalLeadCard lead={mockLeadWithCourse} onClick={onClick} />
-        </MemoryRouter>
-      );
-
-      const emailLink = screen.getByTitle('Enviar e-mail para camila@odontoclinic.com');
-      expect(emailLink.getAttribute('href')).toBe('mailto:camila@odontoclinic.com');
-
-      fireEvent.click(emailLink);
-      expect(onClick).not.toHaveBeenCalled();
-    });
-
-    it('Quick Action Bar "Ligar" and "Email" full action buttons remain functional and un-shrunk', () => {
+    it('Quick Actions inside Lead Profile provide explicit external action buttons (Ligar -> tel:, Email -> mailto:, SMS -> sms:, WhatsApp -> wa.me)', () => {
       render(
         <LeadQuickActionBar
           lead={mockLeadWithCourse}
@@ -813,16 +802,59 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
 
       const ligarBtn = screen.getByRole('button', { name: /Ligar/i });
       const emailBtn = screen.getByRole('button', { name: /Email/i });
+      const smsBtn = screen.getByRole('button', { name: /SMS/i });
       const whatsAppBtn = screen.getByRole('button', { name: /WhatsApp/i });
 
-      expect(ligarBtn.getAttribute('href')).toContain('tel:');
-      expect(emailBtn.getAttribute('href')).toContain('mailto:');
-      expect(whatsAppBtn.getAttribute('href')).toContain('https://wa.me/');
+      expect(ligarBtn.getAttribute('href')).toBe('tel:+5511977778888');
+      expect(emailBtn.getAttribute('href')).toBe('mailto:camila@odontoclinic.com');
+      expect(smsBtn.getAttribute('href')).toBe('sms:+5511977778888');
+      expect(whatsAppBtn.getAttribute('href')).toBe('https://wa.me/5511977778888');
 
       // Quick action buttons retain their full accessible layout class
       expect(ligarBtn.className).toContain('min-h-[40px]');
       expect(emailBtn.className).toContain('min-h-[40px]');
+      expect(smsBtn.className).toContain('min-h-[40px]');
       expect(whatsAppBtn.className).toContain('min-h-[40px]');
+    });
+
+    it('clicking lead name inside Task item opens Lead Profile modal without route change', () => {
+      const onSelectLead = vi.fn();
+      const mockTaskItem: any = {
+        id: 'task-1',
+        type: 'TASK',
+        category: 'pending',
+        lead_id: 'lead-test-1',
+        lead_name: 'Dra. Camila Nogueira',
+        title: 'Retornar contato sobre curso',
+        description: 'Lead pediu informações sobre a data de início',
+        task_type: 'call_manual',
+        priority: 'high',
+        status: 'pending',
+        due_at: '2026-03-01T15:00:00Z',
+        created_at: '2026-03-01T10:00:00Z',
+        time_status: 'due_today',
+        is_overdue: false,
+        source: 'manual',
+      };
+
+      render(
+        <MemoryRouter>
+          <WorkItemCard
+            item={mockTaskItem}
+            onCompleteTask={vi.fn()}
+            onRescheduleTask={vi.fn()}
+            onCreateTaskForLead={vi.fn()}
+            onSelectLead={onSelectLead}
+          />
+        </MemoryRouter>
+      );
+
+      const leadBtn = screen.getByRole('button', { name: /Dra\. Camila Nogueira/i });
+      expect(leadBtn).toBeInTheDocument();
+
+      fireEvent.click(leadBtn);
+      expect(onSelectLead).toHaveBeenCalledWith('lead-test-1');
+      expect(mockNavigate).not.toHaveBeenCalled();
     });
   });
 });
