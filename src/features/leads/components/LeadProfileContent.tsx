@@ -14,6 +14,7 @@ import {
   Trash2,
   Clock,
   ArrowRight,
+  Edit2,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Tabs, type TabItem } from '../../../components/ui/Tabs';
@@ -29,6 +30,7 @@ import { LeadEnrollmentCard } from './LeadEnrollmentCard';
 import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
 import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
 import { ManualEmailComposerModal } from './ManualEmailComposerModal';
+import { EditLeadModal } from './EditLeadModal';
 import { fetchLeadEmailHealth, type LeadEmailHealthResult } from '../../dashboard/services/deliverability-health-service';
 import type { Lead, LeadActivity, Task, LeadNote, IncompleteEnrollment } from '../../../types';
 
@@ -36,6 +38,7 @@ export interface LeadProfileContentProps {
   leadId: string;
   initialLead?: Lead | null;
   onLeadUpdated?: () => void;
+  onOpenEditLead?: () => void;
   isStandalonePage?: boolean;
 }
 
@@ -45,9 +48,12 @@ export function LeadProfileContent({
   leadId,
   initialLead,
   onLeadUpdated,
+  onOpenEditLead,
   isStandalonePage = false,
 }: LeadProfileContentProps) {
   const [lead, setLead] = useState<Lead | null>(initialLead || null);
+  const [internalEditLeadOpen, setInternalEditLeadOpen] = useState(false);
+  const handleOpenEdit = onOpenEditLead || (() => setInternalEditLeadOpen(true));
   const [courseInterests, setCourseInterests] = useState<any[]>([]);
   const [activities, setActivities] = useState<LeadActivity[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -318,11 +324,23 @@ export function LeadProfileContent({
             </div>
           </div>
 
-          {isLoading && (
-            <span className="text-xs text-slate-400 animate-pulse font-medium">
-              Sincronizando...
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleOpenEdit}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#08254f] bg-slate-100 hover:bg-slate-200 border border-slate-200/80 rounded-xl transition-colors cursor-pointer"
+              title="Editar lead"
+              data-testid="standalone-edit-lead-button"
+            >
+              <Edit2 className="h-3.5 w-3.5 text-[#449bd5]" />
+              <span>Editar lead</span>
+            </button>
+            {isLoading && (
+              <span className="text-xs text-slate-400 animate-pulse font-medium">
+                Sincronizando...
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -430,9 +448,21 @@ export function LeadProfileContent({
 
           {/* 2. Dados de Contato & Origem Card */}
           <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
-            <h3 className="text-xs font-bold text-slate-700 font-heading uppercase tracking-wider">
-              Dados de Contato & Origem
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-slate-700 font-heading uppercase tracking-wider">
+                Dados de Contato & Origem
+              </h3>
+              <button
+                type="button"
+                onClick={handleOpenEdit}
+                className="text-xs font-semibold text-[#449bd5] hover:text-[#08254f] flex items-center gap-1 cursor-pointer transition-colors"
+                title="Editar dados cadastrais"
+                data-testid="card-edit-lead-button"
+              >
+                <Edit2 className="h-3 w-3" />
+                <span>Editar</span>
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
                 <span className="text-slate-400 block text-[11px] mb-0.5">Telefone</span>
@@ -727,6 +757,16 @@ export function LeadProfileContent({
             setActiveTab('conversas');
             if (onLeadUpdated) onLeadUpdated();
           }}
+        />
+      )}
+
+      {/* Edit Lead Modal */}
+      {internalEditLeadOpen && lead && (
+        <EditLeadModal
+          isOpen={internalEditLeadOpen}
+          onClose={() => setInternalEditLeadOpen(false)}
+          lead={lead}
+          onLeadUpdated={handleLeadRefresh}
         />
       )}
     </div>

@@ -11,6 +11,10 @@ import { CsvImportModal } from './import/CsvImportModal';
 import type { Lead, PipelineStage, Tag, Course, CourseSession } from '../../types';
 import { formatSessionMonthYear } from '../pipeline/components/MinimalLeadCard';
 import {
+  batchFetchPipelineDeliverabilityHealth,
+  type LeadDeliverabilityInfo,
+} from '../dashboard/services/deliverability-health-service';
+import {
   Plus,
   Upload,
   Search,
@@ -41,6 +45,7 @@ export function LeadsListPage() {
   const sortParam = searchParams.get('sort');
 
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [deliverabilityMap, setDeliverabilityMap] = useState<Record<string, LeadDeliverabilityInfo>>({});
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [sessions, setSessions] = useState<CourseSession[]>([]);
@@ -206,6 +211,18 @@ export function LeadsListPage() {
       const loadedLeads = (data as unknown as Lead[]) || [];
       setLeads(loadedLeads);
       setTotalCount(count || 0);
+
+      // Batch fetch factual deliverability health for active leads with email
+      if (loadedLeads.length > 0) {
+        try {
+          const delivMap = await batchFetchPipelineDeliverabilityHealth(loadedLeads);
+          setDeliverabilityMap(delivMap || {});
+        } catch {
+          setDeliverabilityMap({});
+        }
+      } else {
+        setDeliverabilityMap({});
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar leads');
     } finally {
@@ -233,8 +250,15 @@ export function LeadsListPage() {
     const handlePurged = () => {
       fetchLeads();
     };
+    const handleUpdated = () => {
+      fetchLeads();
+    };
     window.addEventListener('leads-purged', handlePurged);
-    return () => window.removeEventListener('leads-purged', handlePurged);
+    window.addEventListener('lead-updated', handleUpdated);
+    return () => {
+      window.removeEventListener('leads-purged', handlePurged);
+      window.removeEventListener('lead-updated', handleUpdated);
+    };
   }, [fetchLeads]);
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
@@ -621,6 +645,23 @@ export function LeadsListPage() {
                       </div>
                     )}
 
+                    {/* Deliverability Health Indicator — Compact Operational Signal (Only for leads with email) */}
+                    {emailValue && deliverabilityMap[lead.id] && (
+                      <div className="pt-0.5">
+                        <div
+                          role="status"
+                          aria-label={`Saúde do e-mail: ${deliverabilityMap[lead.id].label}`}
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors select-none max-w-full truncate ${deliverabilityMap[lead.id].badgeClass}`}
+                          title={deliverabilityMap[lead.id].description}
+                          data-testid="contact-card-deliverability-badge"
+                          data-status={deliverabilityMap[lead.id].status}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${deliverabilityMap[lead.id].dotColor}`} />
+                          <span className="truncate">{deliverabilityMap[lead.id].label}</span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* 3. Curso de Interesse (Apoio) */}
                     <div className="space-y-1 pt-1.5 border-t border-slate-100/80">
                       {hasInterests ? (
@@ -799,6 +840,21 @@ export function LeadsListPage() {
                                   <span>{lead.phone_raw}</span>
                                 </div>
                               ) : null}
+                              {lead.email && deliverabilityMap[lead.id] && (
+                                <div className="pt-0.5">
+                                  <div
+                                    role="status"
+                                    aria-label={`Saúde do e-mail: ${deliverabilityMap[lead.id].label}`}
+                                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors select-none max-w-full truncate ${deliverabilityMap[lead.id].badgeClass}`}
+                                    title={deliverabilityMap[lead.id].description}
+                                    data-testid="desktop-deliverability-badge"
+                                    data-status={deliverabilityMap[lead.id].status}
+                                  >
+                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${deliverabilityMap[lead.id].dotColor}`} />
+                                    <span className="truncate">{deliverabilityMap[lead.id].label}</span>
+                                  </div>
+                                </div>
+                              )}
                               {!lead.email && !lead.phone_raw && (
                                 <span className="text-slate-400 italic">Sem contato</span>
                               )}

@@ -159,6 +159,16 @@ export function LeadDetailPage() {
     loadLeadData();
   }, [loadLeadData]);
 
+  useEffect(() => {
+    const handleUpdated = (e: any) => {
+      if (!e.detail?.leadId || e.detail?.leadId === id) {
+        loadLeadData();
+      }
+    };
+    window.addEventListener('lead-updated', handleUpdated);
+    return () => window.removeEventListener('lead-updated', handleUpdated);
+  }, [id, loadLeadData]);
+
   // Save updated contact fields
   const handleSaveContact = async () => {
     if (!lead) return;
@@ -182,6 +192,12 @@ export function LeadDetailPage() {
         .eq('id', lead.id);
 
       if (updateErr) throw updateErr;
+
+      window.dispatchEvent(
+        new CustomEvent('lead-updated', {
+          detail: { leadId: lead.id },
+        })
+      );
 
       setIsEditing(false);
       loadLeadData();

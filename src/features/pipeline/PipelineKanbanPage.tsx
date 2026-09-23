@@ -156,8 +156,15 @@ export function PipelineKanbanPage() {
     const handlePurged = () => {
       loadPipelineData();
     };
+    const handleUpdated = () => {
+      loadPipelineData();
+    };
     window.addEventListener('leads-purged', handlePurged);
-    return () => window.removeEventListener('leads-purged', handlePurged);
+    window.addEventListener('lead-updated', handleUpdated);
+    return () => {
+      window.removeEventListener('leads-purged', handlePurged);
+      window.removeEventListener('lead-updated', handleUpdated);
+    };
   }, [loadPipelineData]);
 
   // Handle stage drag and drop
