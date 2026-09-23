@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Lead } from '../../../types';
+import type { LeadDeliverabilityInfo } from '../../dashboard/services/deliverability-health-service';
 import {
   GripVertical,
   AlertTriangle,
@@ -22,13 +23,52 @@ export interface OperationalAttentionState {
   variant: 'neutral' | 'warning' | 'error' | 'info';
 }
 
-interface MinimalLeadCardProps {
+export interface MinimalLeadCardProps {
   lead: Lead;
   interests?: FormattedCourseInterest[];
   attentionState?: OperationalAttentionState | null;
+  deliverabilityHealth?: LeadDeliverabilityInfo | null;
+  stageCode?: string | null;
+  stageName?: string | null;
+  isClosed?: boolean;
   isDragging?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
   onClick?: () => void;
+  onDeliverabilityClick?: (e: React.MouseEvent) => void;
+}
+
+/**
+ * Evaluates whether a lead is in a closed/won/completed state.
+ * Deliverability health signal is strictly hidden for closed leads.
+ */
+export function isLeadClosed(
+  lead: Lead,
+  stage?: { code?: string; name?: string } | null,
+  isClosedExplicit?: boolean
+): boolean {
+  if (isClosedExplicit !== undefined) return isClosedExplicit;
+  if ((lead as any).is_closed === true) return true;
+  if ((lead as any).status === 'closed' || (lead as any).status === 'won' || (lead as any).status === 'lost') return true;
+
+  const stageCode = (stage?.code || (lead as any).stage_code || '').toLowerCase();
+  const stageName = (stage?.name || (lead as any).stage_name || '').toLowerCase();
+
+  const closedCodes = ['enrollment', 'post_course', 'alumni', 'closed', 'won', 'lost', 'archived', 'completed'];
+  if (closedCodes.includes(stageCode)) return true;
+
+  if (
+    stageName.includes('matrícula') ||
+    stageName.includes('matriculado') ||
+    stageName.includes('ganho') ||
+    stageName.includes('perdido') ||
+    stageName.includes('arquivado') ||
+    stageName.includes('desqualificado') ||
+    stageName.includes('fechado')
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -110,12 +150,23 @@ export function MinimalLeadCard({
   lead,
   interests = [],
   attentionState,
+  deliverabilityHealth,
+  stageCode,
+  stageName,
+  isClosed,
   isDragging = false,
   onDragStart,
   onClick,
+  onDeliverabilityClick,
 }: MinimalLeadCardProps) {
   const fullName =
     [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Lead sem nome';
+
+  const isClosedLead = isLeadClosed(
+    lead,
+    { code: stageCode || undefined, name: stageName || undefined },
+    isClosed
+  );
 
   // Sort and limit up to 3 prioritized interests
   const displayInterests = interests
@@ -193,6 +244,29 @@ export function MinimalLeadCard({
       ) : (
         <div className="text-[10px] text-slate-400 italic pt-0.5">
           Contato não informado
+        </div>
+      )}
+
+      {/* Deliverability Health Indicator — Compact Operational Signal (Only for active / open leads) */}
+      {!isClosedLead && deliverabilityHealth && (
+        <div className="pt-0.5">
+          <div
+            role="status"
+            aria-label={`Saúde do e-mail: ${deliverabilityHealth.label}`}
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors select-none max-w-full truncate cursor-pointer ${deliverabilityHealth.badgeClass}`}
+            title={deliverabilityHealth.description}
+            data-testid="deliverability-health-badge"
+            data-status={deliverabilityHealth.status}
+            onClick={(e) => {
+              if (onDeliverabilityClick) {
+                e.stopPropagation();
+                onDeliverabilityClick(e);
+              }
+            }}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${deliverabilityHealth.dotColor}`} />
+            <span className="truncate">{deliverabilityHealth.label}</span>
+          </div>
         </div>
       )}
 

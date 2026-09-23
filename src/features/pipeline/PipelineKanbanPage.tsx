@@ -15,6 +15,10 @@ import {
   resolveAttentionState,
   type FormattedCourseInterest,
 } from './components/MinimalLeadCard';
+import {
+  batchFetchPipelineDeliverabilityHealth,
+  type LeadDeliverabilityInfo,
+} from '../dashboard/services/deliverability-health-service';
 
 const OPERATIONAL_STAGE_CODES = [
   'capture',
@@ -37,6 +41,7 @@ export function PipelineKanbanPage() {
   const [leadsByStage, setLeadsByStage] = useState<Record<string, Lead[]>>({});
   const [leadInterestsMap, setLeadInterestsMap] = useState<Record<string, FormattedCourseInterest[]>>({});
   const [leadActivitiesMap, setLeadActivitiesMap] = useState<Record<string, string[]>>({});
+  const [leadDeliverabilityMap, setLeadDeliverabilityMap] = useState<Record<string, LeadDeliverabilityInfo>>({});
   const [totalLeads, setTotalLeads] = useState(0);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -97,7 +102,7 @@ export function PipelineKanbanPage() {
       if (allLeads.length > 0) {
         const leadIds = allLeads.map((l) => l.id);
 
-        const [interestsRes, activitiesRes] = await Promise.all([
+        const [interestsRes, activitiesRes, deliverabilityMap] = await Promise.all([
           supabase
             .from('lead_course_interests')
             .select('lead_id, priority, course:courses(name), session:course_sessions(title, start_date)')
@@ -109,6 +114,7 @@ export function PipelineKanbanPage() {
             .in('lead_id', leadIds)
             .in('activity_type', ['processing_failed', 'website_lead_suppressed', 'channel_skipped'])
             .order('created_at', { ascending: false }),
+          batchFetchPipelineDeliverabilityHealth(allLeads),
         ]);
 
         const intMap: Record<string, FormattedCourseInterest[]> = {};
@@ -133,6 +139,7 @@ export function PipelineKanbanPage() {
           });
         }
         setLeadActivitiesMap(actMap);
+        setLeadDeliverabilityMap(deliverabilityMap || {});
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados do pipeline');
@@ -378,6 +385,7 @@ export function PipelineKanbanPage() {
                             const interests = leadInterestsMap[lead.id] || [];
                             const activities = leadActivitiesMap[lead.id] || [];
                             const attentionState = resolveAttentionState(lead, activities);
+                            const deliverabilityHealth = leadDeliverabilityMap[lead.id];
                             const isDragging = draggedLeadId === lead.id;
 
                             return (
@@ -386,6 +394,9 @@ export function PipelineKanbanPage() {
                                 lead={lead}
                                 interests={interests}
                                 attentionState={attentionState}
+                                deliverabilityHealth={deliverabilityHealth}
+                                stageCode={stage.code}
+                                stageName={stage.name}
                                 isDragging={isDragging}
                                 onDragStart={() => handleDragStart(lead.id)}
                                 onClick={() => setSelectedLeadId(lead.id)}

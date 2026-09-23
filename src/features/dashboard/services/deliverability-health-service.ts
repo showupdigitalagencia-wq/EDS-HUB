@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { supabase } from '../../../lib/supabase';
+import type { Lead } from '../../../types';
 
 export type DeliverabilityHealthLevel =
   | 'Excelente'
@@ -489,3 +490,215 @@ export async function fetchLeadEmailHealth(
     };
   }
 }
+
+// =============================================================================
+// Pipeline Lead Card Deliverability Health Resolution
+// =============================================================================
+
+export type LeadDeliverabilityStatus =
+  | 'saudavel'
+  | 'atencao'
+  | 'risco'
+  | 'suprimido'
+  | 'sem_dados';
+
+export interface LeadDeliverabilityInfo {
+  status: LeadDeliverabilityStatus;
+  label: 'Saudável' | 'Atenção' | 'Risco' | 'Suprimido' | 'Sem dados';
+  description: string;
+  dotColor: string;
+  badgeClass: string;
+}
+
+export interface ResolveDeliverabilityParams {
+  leadEmail?: string | null;
+  suppressionReason?: string | null;
+  recentOutboundMessages?: Array<{
+    status?: string | null;
+    delivered_at?: string | null;
+    bounced_at?: string | null;
+    complained_at?: string | null;
+    failed_at?: string | null;
+  }> | null;
+}
+
+/**
+ * Resolves compact factual deliverability health for a lead card.
+ * Enforces allowed compact states:
+ * - Saudável: recent successful delivery history confirmed and no complaints/bounces
+ * - Atenção: limited data, delayed delivery, or minor caution state
+ * - Risco: bounce history or complaints
+ * - Suprimido: recipient exists in email_suppressions
+ * - Sem dados: no meaningful send history yet or missing email
+ */
+export function resolveLeadDeliverabilityHealth(
+  params: ResolveDeliverabilityParams
+): LeadDeliverabilityInfo {
+  const cleanEmail = params.leadEmail ? params.leadEmail.trim().toLowerCase() : '';
+
+  // 1. Missing or empty email -> Sem dados
+  if (!cleanEmail) {
+    return {
+      status: 'sem_dados',
+      label: 'Sem dados',
+      description: 'Ainda não há histórico suficiente de entrega.',
+      dotColor: 'bg-slate-400',
+      badgeClass: 'bg-slate-50 text-slate-500 border-slate-200/80 hover:bg-slate-100/80',
+    };
+  }
+
+  // 2. Suppression check: hard_bounce, complaint, unsubscribe, manual
+  if (params.suppressionReason) {
+    return {
+      status: 'suprimido',
+      label: 'Suprimido',
+      description: 'Este contato está suprimido para novos envios de e-mail.',
+      dotColor: 'bg-rose-600',
+      badgeClass: 'bg-rose-100/80 text-rose-800 border-rose-300 hover:bg-rose-200/80',
+    };
+  }
+
+  const messages = params.recentOutboundMessages || [];
+
+  // 3. No outbound messages yet -> Sem dados
+  if (messages.length === 0) {
+    return {
+      status: 'sem_dados',
+      label: 'Sem dados',
+      description: 'Ainda não há histórico suficiente de entrega.',
+      dotColor: 'bg-slate-400',
+      badgeClass: 'bg-slate-50 text-slate-500 border-slate-200/80 hover:bg-slate-100/80',
+    };
+  }
+
+  // 4. Risco: complaint or bounce recorded
+  const hasComplaint = messages.some((m) => m.complained_at || m.status === 'complained');
+  const hasBounce = messages.some((m) => m.bounced_at || m.status === 'bounced');
+
+  if (hasComplaint || hasBounce) {
+    return {
+      status: 'risco',
+      label: 'Risco',
+      description: 'Foram detectadas falhas ou problemas recentes de entrega.',
+      dotColor: 'bg-rose-500',
+      badgeClass: 'bg-rose-50/90 text-rose-700 border-rose-200/80 hover:bg-rose-100/80',
+    };
+  }
+
+  // 5. Atenção: technical failures without confirmed delivery, or delayed delivery
+  const hasFailure = messages.some((m) => m.failed_at || m.status === 'failed');
+  const hasDelivered = messages.some((m) => m.delivered_at || m.status === 'delivered');
+
+  if (hasFailure && !hasDelivered) {
+    return {
+      status: 'atencao',
+      label: 'Atenção',
+      description: 'Poucos dados ou sinais mistos de entrega.',
+      dotColor: 'bg-amber-500',
+      badgeClass: 'bg-amber-50/90 text-amber-700 border-amber-200/80 hover:bg-amber-100/80',
+    };
+  }
+
+  // 6. Saudável: verified delivered event and no negative signals
+  if (hasDelivered) {
+    return {
+      status: 'saudavel',
+      label: 'Saudável',
+      description: 'Últimos envios com entrega confirmada.',
+      dotColor: 'bg-emerald-500',
+      badgeClass: 'bg-emerald-50/90 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100/80',
+    };
+  }
+
+  // 7. Limited / in-transit / sent messages awaiting delivery confirmation -> Atenção
+  return {
+    status: 'atencao',
+    label: 'Atenção',
+    description: 'Poucos dados ou sinais mistos de entrega.',
+    dotColor: 'bg-amber-500',
+    badgeClass: 'bg-amber-50/90 text-amber-700 border-amber-200/80 hover:bg-amber-100/80',
+  };
+}
+
+/**
+ * Batch-fetches factual deliverability health data for a list of leads in 2 index-backed queries.
+ * Prevents N+1 queries on the Kanban board.
+ */
+export async function batchFetchPipelineDeliverabilityHealth(
+  leads: Lead[],
+  client = supabase
+): Promise<Record<string, LeadDeliverabilityInfo>> {
+  const result: Record<string, LeadDeliverabilityInfo> = {};
+  if (!leads || leads.length === 0) return result;
+
+  const leadEmailMap: Record<string, string> = {};
+  const emails: string[] = [];
+  const leadIds: string[] = [];
+
+  for (const l of leads) {
+    leadIds.push(l.id);
+    if (l.email && l.email.trim()) {
+      const cleanEmail = l.email.trim().toLowerCase();
+      leadEmailMap[l.id] = cleanEmail;
+      emails.push(cleanEmail);
+    }
+  }
+
+  try {
+    // 1. Batch query email_suppressions
+    const uniqueEmails = Array.from(new Set(emails));
+    const suppressionsMap: Record<string, string> = {};
+
+    if (uniqueEmails.length > 0) {
+      const { data: suppressions } = await client
+        .from('email_suppressions')
+        .select('normalized_email, reason')
+        .in('normalized_email', uniqueEmails);
+
+      if (suppressions) {
+        for (const s of suppressions) {
+          suppressionsMap[s.normalized_email] = s.reason;
+        }
+      }
+    }
+
+    // 2. Batch query recent outbound messages
+    const messagesByLeadId: Record<string, any[]> = {};
+    if (leadIds.length > 0) {
+      const { data: messages } = await client
+        .from('outbound_messages')
+        .select('lead_id, status, delivered_at, bounced_at, complained_at, failed_at, created_at')
+        .eq('channel', 'email')
+        .in('lead_id', leadIds)
+        .order('created_at', { ascending: false });
+
+      if (messages) {
+        for (const m of messages) {
+          if (!messagesByLeadId[m.lead_id]) messagesByLeadId[m.lead_id] = [];
+          messagesByLeadId[m.lead_id].push(m);
+        }
+      }
+    }
+
+    // 3. Resolve status for each lead
+    for (const l of leads) {
+      const email = leadEmailMap[l.id];
+      const suppressionReason = email ? suppressionsMap[email] : null;
+      const recentMessages = messagesByLeadId[l.id] || [];
+
+      result[l.id] = resolveLeadDeliverabilityHealth({
+        leadEmail: email,
+        suppressionReason,
+        recentOutboundMessages: recentMessages,
+      });
+    }
+  } catch (err) {
+    console.error('Failed to batch fetch pipeline deliverability health:', err);
+    for (const l of leads) {
+      result[l.id] = resolveLeadDeliverabilityHealth({ leadEmail: l.email });
+    }
+  }
+
+  return result;
+}
+
