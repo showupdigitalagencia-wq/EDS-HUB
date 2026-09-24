@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    let url = `https://api.hubapi.com/crm/objects/2026-09/contacts?limit=${limit}&properties=firstname,lastname,email,phone,mobilephone,hs_lead_status,course_interest,lastmodifieddate`;
+    let url = `https://api.hubapi.com/crm/v3/objects/contacts?limit=${limit}&properties=firstname,lastname,email,phone,mobilephone,hs_lead_status,course_interest,lastmodifieddate`;
     if (cursor) {
       url += `&after=${encodeURIComponent(cursor)}`;
     }

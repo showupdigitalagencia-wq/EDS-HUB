@@ -27,13 +27,32 @@ Deno.serve(async (req) => {
   const db = createAdminClient();
   const token = Deno.env.get('HUBSPOT_ACCESS_TOKEN');
 
-  // Check connection status
+  // Check connection status & outbound sync governance
   if (!token) {
     return new Response(
       JSON.stringify({
         success: false,
         status: 'configuration_required',
         message: 'HubSpot Private App Token is not configured. Outbox processing halted.',
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  // Safety rule: Verify outbound sync is explicitly enabled before dispatching to HubSpot
+  const { data: conn } = await db
+    .from('integration_connections')
+    .select('outbound_sync_enabled')
+    .eq('provider', 'hubspot')
+    .single();
+
+  if (!conn?.outbound_sync_enabled) {
+    return new Response(
+      JSON.stringify({
+        success: true,
+        processed: 0,
+        quarantined: true,
+        message: 'Outbound sync to HubSpot is disabled (transition period: mirror into EDS HUB only). Outbox records remain quarantined.',
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -93,8 +112,8 @@ Deno.serve(async (req) => {
         let apiErrorMsg = '';
 
         if (externalId) {
-          // Update existing contact via PATCH /crm/objects/2026-09/contacts/{contactId}
-          const patchRes = await fetch(`https://api.hubapi.com/crm/objects/2026-09/contacts/${externalId}`, {
+          // Update existing contact via PATCH /crm/v3/objects/contacts/{contactId}
+          const patchRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${externalId}`, {
             method: 'PATCH',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -110,8 +129,8 @@ Deno.serve(async (req) => {
             apiErrorMsg = `HubSpot API ${patchRes.status}: ${errBody}`;
           }
         } else {
-          // Create new contact in HubSpot via POST /crm/objects/2026-09/contacts
-          const postRes = await fetch(`https://api.hubapi.com/crm/objects/2026-09/contacts`, {
+          // Create new contact in HubSpot via POST /crm/v3/objects/contacts
+          const postRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,

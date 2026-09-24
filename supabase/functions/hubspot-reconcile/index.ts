@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
     // Look back 24 hours
     const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
 
-    const searchRes = await fetch(`https://api.hubapi.com/crm/objects/2026-09/contacts/search`, {
+    const searchRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/search`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
