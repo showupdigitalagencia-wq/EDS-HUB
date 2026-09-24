@@ -215,11 +215,11 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const taskId = item.context_id || item.id.replace('task:', '');
+                      const taskId = (item.context_id || item.id).replace(/^task:/i, '').trim();
                       onCompleteTask(taskId);
                     }}
                     disabled={isCompleting}
-                    data-testid={`complete-task-${item.context_id || item.id.replace('task:', '')}`}
+                    data-testid={`complete-task-${(item.context_id || item.id).replace(/^task:/i, '').trim()}`}
                     className="btn-crimson text-xs px-3.5 py-2 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />

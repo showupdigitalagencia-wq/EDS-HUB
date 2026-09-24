@@ -171,7 +171,11 @@ export function LeadDetailPage() {
       }
     };
     window.addEventListener('lead-updated', handleUpdated);
-    return () => window.removeEventListener('lead-updated', handleUpdated);
+    window.addEventListener('tasks-updated', handleUpdated);
+    return () => {
+      window.removeEventListener('lead-updated', handleUpdated);
+      window.removeEventListener('tasks-updated', handleUpdated);
+    };
   }, [id, loadLeadData]);
 
   // Save updated contact fields

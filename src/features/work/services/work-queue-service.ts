@@ -534,27 +534,110 @@ export async function rescheduleCrmTask(
 }
 
 /**
- * Completes task idempotently with audit logging
+ * Completes task idempotently with audit logging.
+ * Normalizes task ID (stripping any task: prefix) and uses resilient multi-layer
+ * persistence (canonical RPC first, falling back to direct public.tasks update).
  */
 export async function completeCrmTask(
   taskId: string,
   notes?: string,
   idempotencyKey?: string
 ): Promise<{ success: boolean; task_id: string; already_completed?: boolean }> {
-  const { data, error } = await supabase.rpc('complete_crm_task', {
-    p_task_id: taskId,
-    p_notes: notes || null,
-    p_idempotency_key: idempotencyKey || null,
-  });
-
-  if (error) throw new Error(error.message);
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('tasks-updated'));
-    window.dispatchEvent(new CustomEvent('lead-updated'));
+  const cleanTaskId = (taskId || '').replace(/^task:/i, '').trim();
+  if (!cleanTaskId) {
+    throw new Error('Task ID is required');
   }
 
-  return data;
+  let completedSuccessfully = false;
+  let alreadyCompleted = false;
+
+  // 1. Primary Attempt: Canonical RPC with transactional audit logging
+  try {
+    const { data, error } = await supabase.rpc('complete_crm_task', {
+      p_task_id: cleanTaskId,
+      p_notes: notes || null,
+      p_idempotency_key: idempotencyKey || null,
+    });
+
+    if (!error && data !== null && data !== undefined) {
+      completedSuccessfully = true;
+      if (typeof data === 'boolean') {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('tasks-updated', { detail: { taskId: cleanTaskId } }));
+          window.dispatchEvent(new CustomEvent('lead-updated', { detail: { taskId: cleanTaskId } }));
+        }
+        return data as any;
+      }
+      alreadyCompleted = Boolean(data.already_completed);
+    } else if (error) {
+      console.warn('[completeCrmTask] RPC execution failed, evaluating direct update fallback:', error.message);
+    }
+  } catch (rpcErr) {
+    console.warn('[completeCrmTask] RPC invocation threw error, evaluating direct update fallback:', rpcErr);
+  }
+
+  // 2. Resilient Fallback: Direct table update if RPC is unavailable or failed
+  if (!completedSuccessfully) {
+    const nowIso = new Date().toISOString();
+    const { data: updateData, error: updateError } = await supabase
+      .from('tasks')
+      .update({
+        status: 'completed',
+        completed_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq('id', cleanTaskId)
+      .select('id, lead_id, title, status, completed_at');
+
+    if (updateError) {
+      console.error('[completeCrmTask] Direct table update failed:', updateError);
+      throw new Error(updateError.message || 'Não foi possível concluir a tarefa.');
+    }
+
+    if (!updateData || updateData.length === 0) {
+      console.error('[completeCrmTask] Task not found for ID:', cleanTaskId);
+      throw new Error('Task not found: ' + cleanTaskId);
+    }
+
+    completedSuccessfully = true;
+
+    // Best-effort audit logging for fallback execution (non-blocking)
+    try {
+      const updatedTask = updateData[0];
+      const { data: authData } = await supabase.auth.getUser();
+      const currentUserId = authData?.user?.id || null;
+
+      if (updatedTask.lead_id) {
+        await supabase.from('lead_activities').insert({
+          lead_id: updatedTask.lead_id,
+          activity_type: 'task_completed',
+          actor_type: 'user',
+          actor_id: currentUserId,
+          summary: `Task completed: ${updatedTask.title || 'Tarefa'}`,
+          metadata: {
+            task_id: cleanTaskId,
+            notes: notes || null,
+            idempotency_key: idempotencyKey || null,
+            fallback_completed: true,
+          },
+        });
+      }
+    } catch (auditErr) {
+      console.warn('[completeCrmTask] Non-blocking audit log notice:', auditErr);
+    }
+  }
+
+  // 3. Global Synchronous Events for instantaneous UI synchronization
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('tasks-updated', { detail: { taskId: cleanTaskId } }));
+    window.dispatchEvent(new CustomEvent('lead-updated', { detail: { taskId: cleanTaskId } }));
+  }
+
+  return {
+    success: true,
+    task_id: cleanTaskId,
+    already_completed: alreadyCompleted,
+  };
 }
 
 // -----------------------------------------------------------------------------

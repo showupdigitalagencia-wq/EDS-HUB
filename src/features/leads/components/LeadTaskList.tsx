@@ -70,10 +70,11 @@ export function LeadTaskList({
 
   const handleComplete = async (taskId: string) => {
     if (completingTaskId) return;
+    const cleanId = (taskId || '').replace(/^task:/i, '').trim();
     try {
-      setCompletingTaskId(taskId);
+      setCompletingTaskId(cleanId);
       setErrorFeedback(null);
-      await completeCrmTask(taskId);
+      await completeCrmTask(cleanId);
       setSuccessFeedback('Tarefa concluída');
       setTimeout(() => setSuccessFeedback(null), 3000);
       onTaskUpdated();
@@ -150,7 +151,8 @@ export function LeadTaskList({
                 {pendingTasks.map((task) => {
                   const isOverdue = deriveIsOverdue(task.due_at);
                   const isPayment = task.task_type === 'payment';
-                  const isCompleting = completingTaskId === task.id;
+                  const cleanTaskId = task.id.replace(/^task:/i, '').trim();
+                  const isCompleting = completingTaskId === cleanTaskId;
 
                   return (
                     <div

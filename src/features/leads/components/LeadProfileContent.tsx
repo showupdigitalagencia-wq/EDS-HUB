@@ -175,6 +175,22 @@ export function LeadProfileContent({
     }
   }, [leadId, fetchLeadData]);
 
+  // Realtime synchronization: refresh lead profile when tasks or lead data are updated
+  useEffect(() => {
+    const handleSync = (e?: Event) => {
+      const customEvent = e as CustomEvent<{ leadId?: string }>;
+      if (!customEvent?.detail?.leadId || customEvent.detail.leadId === leadId) {
+        fetchLeadData();
+      }
+    };
+    window.addEventListener('tasks-updated', handleSync);
+    window.addEventListener('lead-updated', handleSync);
+    return () => {
+      window.removeEventListener('tasks-updated', handleSync);
+      window.removeEventListener('lead-updated', handleSync);
+    };
+  }, [leadId, fetchLeadData]);
+
   const handleLeadRefresh = () => {
     fetchLeadData();
     if (onLeadUpdated) onLeadUpdated();

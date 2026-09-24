@@ -128,14 +128,14 @@ export const WorkDashboardPage: React.FC = () => {
   // Quick Action Handlers
   const handleCompleteTask = async (taskId: string) => {
     if (completingTaskId) return;
+    const cleanId = (taskId || '').replace(/^task:/i, '').trim();
     try {
-      setCompletingTaskId(taskId);
+      setCompletingTaskId(cleanId);
       setError(null);
-      await completeCrmTask(taskId);
+      await completeCrmTask(cleanId);
       setSuccessMessage('Tarefa concluída');
       setTimeout(() => setSuccessMessage(null), 3000);
-      loadKpis();
-      loadQueue();
+      await Promise.all([loadKpis(), loadQueue()]);
     } catch {
       setError('Não foi possível concluir a tarefa.');
       setTimeout(() => setError(null), 4000);
@@ -604,17 +604,20 @@ export const WorkDashboardPage: React.FC = () => {
                 </p>
               </div>
             ) : (
-              items.map((item) => (
-                <WorkItemCard
-                  key={item.id}
-                  item={item}
-                  isCompleting={completingTaskId === (item.context_id || item.id.replace('task:', ''))}
-                  onCompleteTask={handleCompleteTask}
-                  onRescheduleTask={handleOpenReschedule}
-                  onCreateTaskForLead={handleOpenCreateForLead}
-                  onSelectLead={setSelectedLeadId}
-                />
-              ))
+              items.map((item) => {
+                const cleanId = (item.context_id || item.id).replace(/^task:/i, '').trim();
+                return (
+                  <WorkItemCard
+                    key={item.id}
+                    item={item}
+                    isCompleting={completingTaskId === cleanId}
+                    onCompleteTask={handleCompleteTask}
+                    onRescheduleTask={handleOpenReschedule}
+                    onCreateTaskForLead={handleOpenCreateForLead}
+                    onSelectLead={setSelectedLeadId}
+                  />
+                );
+              })
             )}
           </div>
 
