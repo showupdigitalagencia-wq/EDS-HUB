@@ -20,7 +20,7 @@ export interface PushNotificationPreferences {
 
 export const DEFAULT_VAPID_PUBLIC_KEY =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_VAPID_PUBLIC_KEY) ||
-  'BDZ3rvVXSnYA3Ys2dHln2g4_grlNONS1vIm3HLM57SXWl7EKEFSpGp2gqDRPiREpclijj41-6w5bE31PVj8hAc4';
+  'BCbk5QNXjPgU5u77WGz4XksRr9DrZgewKRKKvyTsaNQvEZpdHGuvOIlO56WUGcYza5J8PB3-S7OzyGfPaeST1Dc';
 
 /**
  * Checks if Service Worker and Web Push are supported in this browser context.
@@ -61,7 +61,13 @@ export function detectDeviceType(): 'mobile' | 'tablet' | 'desktop' | 'unknown' 
 export function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
+  const decodeFn =
+    typeof window !== 'undefined' && typeof window.atob === 'function'
+      ? (s: string) => window.atob(s)
+      : typeof atob === 'function'
+      ? atob
+      : (s: string) => Buffer.from(s, 'base64').toString('binary');
+  const rawData = decodeFn(base64);
   const outputArray = new Uint8Array(rawData.length);
   for (let i = 0; i < rawData.length; ++i) {
     outputArray[i] = rawData.charCodeAt(i);

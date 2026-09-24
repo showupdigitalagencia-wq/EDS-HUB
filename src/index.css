@@ -345,9 +345,29 @@ html, body {
   cursor: not-allowed;
 }
 
-/* Mobile Safe-Area Bottom Padding */
+/* Mobile Safe-Area Insets Utilities (iOS Notch & Dynamic Island & Home Indicator) */
+.pt-safe {
+  padding-top: max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.5rem));
+}
+
 .pb-safe {
   padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+}
+
+.pl-safe {
+  padding-left: max(1rem, env(safe-area-inset-left, 1rem));
+}
+
+.pr-safe {
+  padding-right: max(1rem, env(safe-area-inset-right, 1rem));
+}
+
+.safe-top-offset {
+  top: env(safe-area-inset-top, 0px);
+}
+
+.safe-bottom-offset {
+  bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Executive Card Container */

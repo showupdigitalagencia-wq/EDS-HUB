@@ -36,7 +36,15 @@ export function MobileHeader({
   const hasBack = Boolean(backTo || onBack);
 
   return (
-    <header className="lg:hidden sticky top-0 z-30 bg-white/98 backdrop-blur-md border-b border-slate-200/80 px-3.5 py-2.5 flex items-center justify-between min-h-[56px] shadow-2xs">
+    <header
+      id="mobile-header"
+      className="lg:hidden sticky top-0 z-30 bg-white/98 backdrop-blur-md border-b border-slate-200/80 px-3.5 flex items-center justify-between shadow-2xs transition-all"
+      style={{
+        paddingTop: 'max(0.625rem, calc(env(safe-area-inset-top, 0px) + 0.375rem))',
+        paddingBottom: '0.625rem',
+        minHeight: 'calc(56px + env(safe-area-inset-top, 0px))',
+      }}
+    >
       {/* Left side: Back button or Logo */}
       <div className="flex items-center gap-2 min-w-0">
         {hasBack ? (

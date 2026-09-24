@@ -258,7 +258,10 @@ export function ManualEmailComposerModal({
     >
       <div className="bg-white w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header — Sticky with Back / Close */}
-        <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3">
+        <div
+          className="sticky top-0 z-10 bg-white border-b border-slate-100 px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3"
+          style={{ paddingTop: 'max(0.875rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))' }}
+        >
           <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"

@@ -437,7 +437,10 @@ export function TemplateEditorModal({
         {/* ===================================================================
             1. STICKY TOP HEADER
         =================================================================== */}
-        <header className="sticky top-0 z-20 bg-white border-b border-slate-200/90 px-4 sm:px-6 py-3 shrink-0 flex items-center justify-between gap-3 shadow-2xs">
+        <header
+          className="sticky top-0 z-20 bg-white border-b border-slate-200/90 px-4 sm:px-6 py-3 shrink-0 flex items-center justify-between gap-3 shadow-2xs"
+          style={{ paddingTop: 'max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))' }}
+        >
           {/* Left: Back / Title */}
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -1191,7 +1194,10 @@ export function TemplateEditorModal({
         {/* ===================================================================
             3. STICKY BOTTOM ACTION BAR (~64px)
         =================================================================== */}
-        <footer className="sticky bottom-0 z-20 bg-white border-t border-slate-200/90 px-4 sm:px-6 py-3.5 shrink-0 flex items-center justify-between shadow-2xs">
+        <footer
+          className="sticky bottom-0 z-20 bg-white border-t border-slate-200/90 px-4 sm:px-6 py-3.5 shrink-0 flex items-center justify-between shadow-2xs"
+          style={{ paddingBottom: 'max(0.875rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))' }}
+        >
           <div className="text-xs text-slate-400 truncate max-w-[180px] sm:max-w-md">
             {channel === 'sms'
               ? `${smsMetrics.characterCount} caracteres • ${smsMetrics.segmentCount} segmento(s)`

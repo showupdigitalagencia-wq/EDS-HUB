@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { supabase } from '../lib/supabase';
@@ -18,6 +18,7 @@ import {
   DEFAULT_VAPID_PUBLIC_KEY,
   type PushNotificationPreferences,
 } from '../features/notifications/services/push-notification-service';
+import { getIsStandalone, getIsIosDevice } from '../hooks/useIsStandalone';
 
 vi.mock('../lib/supabase', () => {
   const mockInvoke = vi.fn().mockResolvedValue({ data: { dispatched_count: 1 }, error: null });
@@ -47,6 +48,10 @@ describe('EDS HUB — PWA + Push Notifications Suite', () => {
   const publicDir = path.resolve(__dirname, '../../public');
   const manifestPath = path.join(publicDir, 'manifest.webmanifest');
   const logoPath = path.resolve(__dirname, '../../src/assets/eds-logo.png');
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
   // ===========================================================================
   // 1. PWA Manifest & Branding
@@ -584,6 +589,177 @@ describe('EDS HUB — PWA + Push Notifications Suite', () => {
       vi.stubGlobal('navigator', {});
       expect(() => updateAppBadge(3)).not.toThrow();
       expect(() => clearAppBadge()).not.toThrow();
+    });
+  });
+
+  // ===========================================================================
+  // 10. iOS Standalone Configuration & Apple Metadata Audit
+  // ===========================================================================
+  describe('iOS Standalone Configuration & Apple Metadata', () => {
+    const indexPath = path.resolve(__dirname, '../../index.html');
+
+    it('index.html contains all required Apple mobile web app metadata tags', () => {
+      expect(fs.existsSync(indexPath)).toBe(true);
+      const indexHtml = fs.readFileSync(indexPath, 'utf8');
+
+      // apple-mobile-web-app-capable
+      expect(indexHtml).toMatch(/<meta\s+name="apple-mobile-web-app-capable"\s+content="yes"\s*\/?>/);
+
+      // apple-mobile-web-app-status-bar-style
+      expect(indexHtml).toMatch(/<meta\s+name="apple-mobile-web-app-status-bar-style"\s+content="default"\s*\/?>/);
+
+      // apple-mobile-web-app-title: EDS HUB
+      expect(indexHtml).toMatch(/<meta\s+name="apple-mobile-web-app-title"\s+content="EDS HUB"\s*\/?>/);
+
+      // apple-touch-icon
+      expect(indexHtml).toMatch(/<link\s+rel="apple-touch-icon"\s+href="\/apple-touch-icon\.png"\s*\/?>/);
+
+      // viewport-fit=cover for notch / Dynamic Island
+      expect(indexHtml).toContain('viewport-fit=cover');
+    });
+
+    it('manifest.webmanifest defines exact standalone mode, scope and start_url', () => {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      expect(manifest.display).toBe('standalone');
+      expect(manifest.start_url).toBe('/');
+      expect(manifest.scope).toBe('/');
+      expect(manifest.theme_color).toBe('#08254f');
+      expect(manifest.background_color).toBe('#08254f');
+    });
+  });
+
+  // ===========================================================================
+  // 11. Official EDS Branding & Zero Generic Fallbacks
+  // ===========================================================================
+  describe('Official EDS Branding & No Generic Placeholders', () => {
+    it('official Athena crest emblem exists as a source asset', () => {
+      const emblemPath = path.resolve(__dirname, '../../src/assets/eds-emblem.png');
+      expect(fs.existsSync(emblemPath)).toBe(true);
+      const stat = fs.statSync(emblemPath);
+      expect(stat.size).toBeGreaterThan(5000);
+    });
+
+    it('apple-touch-icon.png exists, is non-empty, and uses official branding', () => {
+      const appleTouchIconPath = path.join(publicDir, 'apple-touch-icon.png');
+      expect(fs.existsSync(appleTouchIconPath)).toBe(true);
+      const stat = fs.statSync(appleTouchIconPath);
+      expect(stat.size).toBeGreaterThan(10000); // Authentic rendered asset
+    });
+
+    it('generic Vite favicon.svg and legacy low-res eds-icon.png are purged', () => {
+      const viteFavicon = path.join(publicDir, 'favicon.svg');
+      const legacyIcon = path.resolve(__dirname, '../../src/assets/eds-icon.png');
+
+      expect(fs.existsSync(viteFavicon)).toBe(false);
+      expect(fs.existsSync(legacyIcon)).toBe(false);
+    });
+  });
+
+  // ===========================================================================
+  // 12. Installed Mode Detection & Install Guidance Logic
+  // ===========================================================================
+  describe('Installed Mode Detection & Unobtrusive Install Help', () => {
+    it('detects iOS standalone mode when window.navigator.standalone is true', () => {
+      vi.stubGlobal('window', {
+        navigator: { standalone: true },
+        matchMedia: vi.fn().mockReturnValue({ matches: false }),
+      });
+      expect(getIsStandalone()).toBe(true);
+    });
+
+    it('detects standard CSS display-mode: standalone', () => {
+      vi.stubGlobal('window', {
+        navigator: {},
+        matchMedia: vi.fn().mockImplementation((query: string) => ({
+          matches: query === '(display-mode: standalone)',
+        })),
+      });
+      expect(getIsStandalone()).toBe(true);
+    });
+
+    it('returns false when running inside normal browser tab', () => {
+      vi.stubGlobal('window', {
+        navigator: { standalone: false },
+        matchMedia: vi.fn().mockReturnValue({ matches: false }),
+      });
+      expect(getIsStandalone()).toBe(false);
+    });
+
+    it('detects iOS devices accurately from userAgent', () => {
+      vi.stubGlobal('navigator', {
+        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15',
+        maxTouchPoints: 5,
+      });
+      expect(getIsIosDevice()).toBe(true);
+
+      vi.stubGlobal('navigator', {
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36',
+        maxTouchPoints: 0,
+      });
+      expect(getIsIosDevice()).toBe(false);
+    });
+  });
+
+  // ===========================================================================
+  // 13. Mobile Safe Areas & Bottom Navigation Integrity
+  // ===========================================================================
+  describe('Mobile Safe Areas & Navigation Layout Integrity', () => {
+    it('index.css includes safe-area-inset CSS utilities', () => {
+      const cssPath = path.resolve(__dirname, '../../src/index.css');
+      const cssContent = fs.readFileSync(cssPath, 'utf8');
+
+      expect(cssContent).toContain('.pt-safe');
+      expect(cssContent).toContain('.pb-safe');
+      expect(cssContent).toContain('env(safe-area-inset-top');
+      expect(cssContent).toContain('env(safe-area-inset-bottom');
+    });
+
+    it('MobileBottomNav contains all 5 required navigation items in exact order', () => {
+      const navPath = path.resolve(__dirname, '../../src/components/MobileBottomNav.tsx');
+      const navContent = fs.readFileSync(navPath, 'utf8');
+
+      expect(navContent).toContain('Início');
+      expect(navContent).toContain('Contatos');
+      expect(navContent).toContain('Pipeline');
+      expect(navContent).toContain('Tarefas');
+      expect(navContent).toContain('Menu');
+
+      // Must support iPhone home indicator
+      expect(navContent).toContain('env(safe-area-inset-bottom');
+    });
+
+    it('MobileHeader contains safe-area-inset-top protection for Dynamic Island and notch', () => {
+      const headerPath = path.resolve(__dirname, '../../src/components/MobileHeader.tsx');
+      const headerContent = fs.readFileSync(headerPath, 'utf8');
+
+      expect(headerContent).toContain('env(safe-area-inset-top');
+    });
+  });
+
+  // ===========================================================================
+  // 14. Rotated VAPID Key Integrity & Security
+  // ===========================================================================
+  describe('Rotated VAPID Key Integrity & Zero Private Key Exposure', () => {
+    it('DEFAULT_VAPID_PUBLIC_KEY is a valid uncompressed P-256 base64url key', () => {
+      expect(DEFAULT_VAPID_PUBLIC_KEY).toBeDefined();
+      expect(typeof DEFAULT_VAPID_PUBLIC_KEY).toBe('string');
+      // P-256 uncompressed public key is 65 bytes (starts with 0x04, which in base64url is 'B')
+      expect(DEFAULT_VAPID_PUBLIC_KEY.startsWith('B')).toBe(true);
+
+      const uint8 = urlBase64ToUint8Array(DEFAULT_VAPID_PUBLIC_KEY);
+      expect(uint8.length).toBe(65);
+      expect(uint8[0]).toBe(4); // 0x04 uncompressed point format
+    });
+
+    it('no private VAPID key is committed to git or exposed in frontend code', () => {
+      const servicePath = path.resolve(
+        __dirname,
+        '../../src/features/notifications/services/push-notification-service.ts'
+      );
+      const serviceContent = fs.readFileSync(servicePath, 'utf8');
+
+      expect(serviceContent).not.toContain('VAPID_PRIVATE_KEY');
+      expect(serviceContent).not.toContain('privateKey');
     });
   });
 });

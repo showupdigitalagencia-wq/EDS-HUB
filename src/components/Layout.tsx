@@ -6,6 +6,7 @@ import { MobileMenuSheet } from './MobileMenuSheet';
 import { MobileHeader } from './MobileHeader';
 import { useAuth } from '../features/auth/AuthProvider';
 import { useSafeBackNavigation } from '../hooks/useSafeBackNavigation';
+import { IosInstallPrompt } from './IosInstallPrompt';
 
 interface LayoutProps {
   children: ReactNode;
@@ -130,7 +131,8 @@ export function Layout({
         </div>
 
         {/* D. Main Content Area with Mobile Safe Area Clearance */}
-        <main className="p-4 sm:p-6 lg:p-8 flex-1 min-w-0 w-full pb-24 lg:pb-10 max-w-7xl mx-auto">
+        <main className="p-4 sm:p-6 lg:p-8 flex-1 min-w-0 w-full max-w-7xl mx-auto pb-[calc(5.5rem+env(safe-area-inset-bottom,1rem))] lg:pb-10">
+          <IosInstallPrompt />
           {children}
         </main>
       </div>

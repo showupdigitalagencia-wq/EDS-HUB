@@ -8,7 +8,7 @@
 // 4. Safe App Shell Management (Zero CRM Data Caching)
 // =============================================================================
 
-const CACHE_NAME = 'eds-hub-shell-v1';
+const CACHE_NAME = 'eds-hub-shell-v2';
 const SHELL_ASSETS = [
   '/',
   '/manifest.webmanifest',

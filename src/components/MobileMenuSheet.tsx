@@ -97,7 +97,10 @@ export function MobileMenuSheet({ isOpen, onClose }: MobileMenuSheetProps) {
         className="relative ml-auto w-80 max-w-[85vw] bg-[#08254f] text-white flex flex-col z-50 shadow-2xl h-full animate-in slide-in-from-right duration-200"
       >
         {/* Header with Official Logo & Close */}
-        <div className="px-5 py-4 border-b border-white/10 bg-[#061a38] flex items-center justify-between">
+        <div
+          className="px-5 py-4 border-b border-white/10 bg-[#061a38] flex items-center justify-between"
+          style={{ paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.75rem))' }}
+        >
           <img
             src={edsLogo}
             alt="Expert Dental Solutions"
@@ -153,7 +156,10 @@ export function MobileMenuSheet({ isOpen, onClose }: MobileMenuSheetProps) {
         </nav>
 
         {/* Footer Profile & Logout */}
-        <div className="border-t border-white/10 p-3 bg-[#061a38]">
+        <div
+          className="border-t border-white/10 p-3 bg-[#061a38]"
+          style={{ paddingBottom: 'max(0.75rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))' }}
+        >
           <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-white/5 border border-white/5 mb-2">
             <div className="w-8 h-8 rounded-full bg-[#449bd5] text-white flex items-center justify-center text-xs font-bold shadow-xs">
               {appUser?.display_name?.charAt(0)?.toUpperCase() || 'U'}
