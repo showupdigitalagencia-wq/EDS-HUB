@@ -230,19 +230,38 @@ Deno.serve(async (req) => {
     let actionSucceeded = false;
     const errors: string[] = [];
 
-    const isWebsiteLead = payload.source === 'form' || payload.source_detail === 'website';
-    const isHistoricalSync = ['hubspot_sync', 'hubspot_historical', 'csv_import'].includes(payload.source_detail || '');
+    const isTestLead =
+      (payload.source || '').toLowerCase() === 'test' ||
+      (payload.source_detail || '').toLowerCase() === 'test' ||
+      Boolean(payload.raw_payload && (payload.raw_payload.is_test === true || payload.raw_payload.test === true));
 
-    if (isWebsiteLead) {
-      // WEBSITE LEAD RULE:
-      // Must NOT receive first-contact automation.
-      // Remains in Novo Lead for manual client response.
+    const isHistoricalSync =
+      ['hubspot', 'csv_import', 'legacy_import', 'historical_migration'].includes((payload.source || '').toLowerCase()) ||
+      ['hubspot_sync', 'hubspot_historical', 'hubspot_reconcile', 'csv_import', 'legacy_import', 'historical_migration'].includes((payload.source_detail || '').toLowerCase());
+
+    const isWebsiteLead =
+      ['form', 'website'].includes((payload.source || '').toLowerCase()) ||
+      ['website', 'website-register', 'website_register', 'website incomplete registration', 'website_incomplete_registration', 'incomplete_registration', 'incomplete-registration'].includes((payload.source_detail || '').toLowerCase()) ||
+      (payload.source_detail || '').toLowerCase().includes('website');
+
+    const isMetaLead =
+      !isTestLead &&
+      !isHistoricalSync &&
+      !isWebsiteLead &&
+      (
+        ['meta', 'facebook', 'instagram', 'fb', 'ig'].includes((payload.source || '').toLowerCase()) ||
+        ['meta', 'facebook', 'instagram', 'fb', 'ig', 'meta_ad', 'instagram_ad', 'facebook_ad'].includes((payload.source_detail || '').toLowerCase())
+      );
+
+    if (isTestLead) {
+      // TEST LEAD RULE:
+      // Strictly suppressed from automatic outreach per safety rule.
       await db.from('lead_activities').insert({
         lead_id: leadId,
         intake_event_id: intakeEventId,
         activity_type: 'intake_received',
         actor_type: 'system',
-        summary: 'Website lead intake received. Automated first-contact outreach is suppressed per business rule (manual client response required).',
+        summary: 'Test lead intake received. Automated outreach is strictly suppressed per safety rule.',
         metadata: { source: payload.source, source_detail: payload.source_detail },
       });
       actionSucceeded = true;
@@ -258,66 +277,113 @@ Deno.serve(async (req) => {
         metadata: { source: payload.source, source_detail: payload.source_detail },
       });
       actionSucceeded = true;
-    } else if (payload.source === 'meta') {
-      // META / INSTAGRAM LEAD INITIAL OUTREACH RULE:
-      // Initial outreach must trigger BOTH Email and SMS when valid email and phone exist,
-      // regardless of which contact_preference the lead selected in the form.
-      // The selected contact_preference remains strictly preserved.
-      const hasValidEmail = Boolean(payload.email && payload.email.includes('@'));
-      const hasValidPhone = Boolean(payload.phone && payload.phone.trim().length >= 8);
+    } else if (isWebsiteLead) {
+      // WEBSITE LEAD RULE:
+      // Must NOT receive first-contact automation.
+      // Remains in Novo Lead for manual client response.
+      await db.from('lead_activities').insert({
+        lead_id: leadId,
+        intake_event_id: intakeEventId,
+        activity_type: 'intake_received',
+        actor_type: 'system',
+        summary: 'Website lead intake received. Automated first-contact outreach is suppressed per business rule (manual client response required).',
+        metadata: { source: payload.source, source_detail: payload.source_detail },
+      });
+      actionSucceeded = true;
+    } else if (!isNewLead) {
+      // EXISTING LEAD RULE:
+      // First-contact automatic outreach is triggered only for genuinely new leads.
+      await db.from('lead_activities').insert({
+        lead_id: leadId,
+        intake_event_id: intakeEventId,
+        activity_type: 'intake_received',
+        actor_type: 'system',
+        summary: 'Intake event received for existing lead. First-contact automatic outreach is suppressed.',
+        metadata: { source: payload.source, source_detail: payload.source_detail },
+      });
+      actionSucceeded = true;
+    } else if (isMetaLead) {
+      // BATCH 7.5: META / INSTAGRAM FIRST EMAIL AUTOMATION (EMAIL-ONLY SAFE ACTIVATION)
+      // SMS is strictly disabled (zero Twilio calls, zero SMS sends).
+      const isMetaAutoEmailActive = Deno.env.get('ENABLE_META_FIRST_EMAIL_AUTOMATION') === 'true';
 
-      let emailRes = { sent: 0, failed: 0, tasksCreated: 0, allSucceeded: false, errors: [] as string[] };
-      let smsRes = { sent: 0, failed: 0, tasksCreated: 0, allSucceeded: false, errors: [] as string[] };
-      let attemptedEmail = false;
-      let attemptedSms = false;
-
-      if (hasValidEmail) {
-        attemptedEmail = true;
-        emailRes = await handleEmailPreference(db, payload, leadId, intakeEventId, salutation, idempotencyKey);
-        messagesSent += emailRes.sent;
-        messagesFailed += emailRes.failed;
-        tasksCreated += emailRes.tasksCreated;
-        errors.push(...emailRes.errors);
-      }
-
-      if (hasValidPhone) {
-        attemptedSms = true;
-        smsRes = await handleSmsPreference(db, payload, leadId, intakeEventId, salutation, idempotencyKey);
-        messagesSent += smsRes.sent;
-        messagesFailed += smsRes.failed;
-        tasksCreated += smsRes.tasksCreated;
-        errors.push(...smsRes.errors);
-      }
-
-      if (!attemptedEmail && !attemptedSms) {
-        actionSucceeded = false;
-        errors.push('Meta lead has neither valid email nor valid phone for first contact');
+      if (!isMetaAutoEmailActive) {
+        // Dormant Mode: deployed safely without dispatching live emails until explicitly activated
+        await db.from('lead_activities').insert({
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'intake_received',
+          actor_type: 'system',
+          summary: 'Meta first email automation is currently dormant (ENABLE_META_FIRST_EMAIL_AUTOMATION is inactive). Lead retained in Novo Lead for manual outreach.',
+          metadata: { source: payload.source, source_detail: payload.source_detail, dormant: true },
+        });
+        actionSucceeded = true;
       } else {
-        // At least one attempted channel was accepted by provider -> advance to Respondido
-        const anyAccepted = (attemptedEmail && emailRes.allSucceeded) || (attemptedSms && smsRes.allSucceeded);
-        actionSucceeded = anyAccepted;
+        const hasValidEmail = Boolean(
+          payload.email &&
+          payload.email.trim().length > 3 &&
+          payload.email.includes('@') &&
+          payload.email.includes('.')
+        );
+        const hasValidPhone = Boolean(payload.phone && payload.phone.replace(/\D/g, '').length >= 8);
 
-        // Partial failure visibility
-        if (attemptedEmail && !emailRes.allSucceeded && attemptedSms && smsRes.allSucceeded) {
+        if (hasValidEmail) {
+          // Stable lead-level first-contact idempotency:
+          // Check if an automatic first email was already attempted or accepted for this lead
+          const { data: existingFirstContact } = await db
+            .from('outbound_messages')
+            .select('id, status, provider_message_id')
+            .eq('lead_id', leadId)
+            .eq('channel', 'email')
+            .eq('template_key', 'lead_intake_email')
+            .in('status', ['sent', 'delivered', 'pending'])
+            .maybeSingle();
+
+          if (existingFirstContact) {
+            await db.from('lead_activities').insert({
+              lead_id: leadId,
+              intake_event_id: intakeEventId,
+              activity_type: 'intake_received',
+              actor_type: 'system',
+              summary: 'First automatic email has already been accepted/sent for this lead. Duplicate send skipped.',
+              metadata: { outbound_message_id: existingFirstContact.id, provider_message_id: existingFirstContact.provider_message_id },
+            });
+            actionSucceeded = true;
+          } else {
+            const emailRes = await handleEmailPreference(
+              db, payload, leadId, intakeEventId, salutation, idempotencyKey,
+            );
+            messagesSent += emailRes.sent;
+            messagesFailed += emailRes.failed;
+            tasksCreated += emailRes.tasksCreated;
+            errors.push(...emailRes.errors);
+            actionSucceeded = emailRes.allSucceeded;
+          }
+        } else if (hasValidPhone && !hasValidEmail) {
+          // Phone-only Meta lead:
+          // In this email-only phase, SMS is inactive. Send NOTHING automatically.
+          // Retain lead in Novo Lead for manual follow-up without creating a failure state.
+          await db.from('lead_activities').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'intake_received',
+            actor_type: 'system',
+            summary: 'Meta lead has phone only. Automated SMS is inactive in email-only phase; lead retained in Novo Lead for manual follow-up.',
+            metadata: { source: payload.source, source_detail: payload.source_detail, has_phone: true, has_email: false },
+          });
+          actionSucceeded = true;
+        } else {
+          // Neither valid email nor valid phone
           await db.from('lead_activities').insert({
             lead_id: leadId,
             intake_event_id: intakeEventId,
             activity_type: 'processing_failed',
-            channel: 'email',
             actor_type: 'system',
-            summary: 'Initial outreach partial failure: SMS accepted, but Email dispatch failed',
-            metadata: { errors: emailRes.errors },
+            summary: 'Meta lead has neither valid email nor valid phone for first contact.',
+            metadata: { source: payload.source, source_detail: payload.source_detail },
           });
-        } else if (attemptedSms && !smsRes.allSucceeded && attemptedEmail && emailRes.allSucceeded) {
-          await db.from('lead_activities').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'processing_failed',
-            channel: 'sms',
-            actor_type: 'system',
-            summary: 'Initial outreach partial failure: Email accepted, but SMS dispatch failed',
-            metadata: { errors: smsRes.errors },
-          });
+          actionSucceeded = false;
+          errors.push('Meta lead has neither valid email nor valid phone for first contact');
         }
       }
     } else {
@@ -530,10 +596,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    // --- 9. Advance pipeline if successful (Website and Historical leads stay in Novo Lead) ---
+    // --- 9. Advance pipeline if successful (Website, Historical, Test, and Meta leads stay in Novo Lead) ---
     let stageAdvanced = false;
     if (actionSucceeded) {
-      if (!isWebsiteLead && !isHistoricalSync) {
+      if (!isWebsiteLead && !isHistoricalSync && !isMetaLead && !isTestLead && isNewLead) {
         // Check current stage — only advance if still in Capture (Novo Lead)
         const { data: currentLead } = await db
           .from('leads')
@@ -619,7 +685,8 @@ Deno.serve(async (req) => {
 
 function validatePayload(p: LeadIntakePayload): string[] {
   const errors: string[] = [];
-  if (!p.source || !['meta', 'google', 'manual', 'test', 'form'].includes(p.source)) {
+  const validSources = ['meta', 'google', 'manual', 'test', 'form', 'facebook', 'instagram'];
+  if (!p.source || !validSources.includes(p.source.toLowerCase())) {
     errors.push('Invalid or missing source');
   }
   return errors;
@@ -702,6 +769,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
     .from('leads')
     .insert({
       source: payload.source,
+      source_detail: payload.source_detail || null,
       external_lead_id: payload.external_lead_id || null,
       first_name: payload.first_name || null,
       last_name: payload.last_name || null,
@@ -799,9 +867,46 @@ async function handleEmailPreference(
   const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
   const replyTo = 'info@expdentalsolutions.com';
 
-  const subject = renderTemplate(template.subject_template || '', salutation);
-  const body = renderTemplate(template.body_template, salutation);
-  const escapedHtmlBody = renderTemplate(template.body_template, escapeHtml(salutation)).replace(/\n/g, '<br>');
+  const subject = renderTemplate(template.subject_template || '', {
+    salutation,
+    first_name: payload.first_name || salutation,
+  });
+  const body = renderTemplate(template.body_template, {
+    salutation,
+    first_name: payload.first_name || salutation,
+  });
+  const escapedHtmlBody = renderTemplate(template.body_template, {
+    salutation: escapeHtml(salutation),
+    first_name: escapeHtml(payload.first_name || salutation),
+  }).replace(/\n/g, '<br>');
+
+  // Ensure or resolve conversation for threading in Lead Profile -> Conversas
+  let conversationId: string | null = null;
+  const { data: existingConv } = await db
+    .from('conversations')
+    .select('id')
+    .eq('lead_id', leadId)
+    .eq('channel', 'email')
+    .maybeSingle();
+
+  if (existingConv) {
+    conversationId = existingConv.id;
+  } else {
+    const { data: createdConv } = await db
+      .from('conversations')
+      .insert({
+        lead_id: leadId,
+        channel: 'email',
+        status: 'open',
+        subject: subject || 'Welcome to Expert Dental Solutions',
+        last_message_at: new Date().toISOString(),
+        last_message_preview: body.slice(0, 120),
+        last_message_direction: 'outbound',
+      })
+      .select('id')
+      .single();
+    conversationId = createdConv?.id || null;
+  }
 
   let sent = 0;
   let failed = 0;
@@ -820,6 +925,7 @@ async function handleEmailPreference(
     if (suppression) {
       await db.from('outbound_messages').insert({
         lead_id: leadId,
+        conversation_id: conversationId,
         intake_event_id: intakeEventId,
         channel: 'email',
         provider: 'resend',
@@ -842,7 +948,7 @@ async function handleEmailPreference(
     // Check if already sent (for retry scenarios)
     const { data: existingMsg } = await db
       .from('outbound_messages')
-      .select('id, status')
+      .select('id, status, attempt_count, conversation_id')
       .eq('idempotency_key', msgIdempotencyKey)
       .single();
 
@@ -857,13 +963,18 @@ async function handleEmailPreference(
       messageId = existingMsg.id;
       await db
         .from('outbound_messages')
-        .update({ status: 'pending', attempt_count: (existingMsg.attempt_count || 0) + 1 })
+        .update({
+          status: 'pending',
+          conversation_id: conversationId || existingMsg.conversation_id,
+          attempt_count: (existingMsg.attempt_count || 0) + 1,
+        })
         .eq('id', messageId);
     } else {
       const { data: newMsg } = await db
         .from('outbound_messages')
         .insert({
           lead_id: leadId,
+          conversation_id: conversationId,
           intake_event_id: intakeEventId,
           channel: 'email',
           provider: 'resend',
@@ -901,6 +1012,18 @@ async function handleEmailPreference(
           updated_at: new Date().toISOString(),
         })
         .eq('id', messageId);
+
+      if (conversationId) {
+        await db
+          .from('conversations')
+          .update({
+            last_message_at: new Date().toISOString(),
+            last_message_preview: body.slice(0, 120),
+            last_message_direction: 'outbound',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', conversationId);
+      }
 
       await db.from('lead_activities').insert({
         lead_id: leadId,
@@ -1152,8 +1275,16 @@ async function handleCallPreference(
   }
 }
 
-function renderTemplate(template: string, salutation: string): string {
-  return template.replace(/\{\{salutation\}\}/g, salutation);
+function renderTemplate(
+  template: string,
+  vars: { salutation: string; first_name?: string } | string
+): string {
+  if (typeof vars === 'string') {
+    return template.replace(/\{\{salutation\}\}/g, vars);
+  }
+  return template
+    .replace(/\{\{salutation\}\}/g, vars.salutation || 'Doctor')
+    .replace(/\{\{first_name\}\}/g, vars.first_name || vars.salutation || 'Doctor');
 }
 
 function jsonResponse(body: LeadIntakeResponse): Response {

@@ -14,6 +14,7 @@ import type { ContactPreference, LeadSource } from './database';
  */
 export interface LeadIntakePayload {
   source: LeadSource;
+  source_detail?: string;
   external_event_id?: string;
   external_lead_id?: string;
   first_name?: string;

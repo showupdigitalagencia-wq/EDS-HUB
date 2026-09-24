@@ -64,6 +64,10 @@ export interface FirstContactOutcome {
   summary: string;
 }
 
+export interface FirstContactRouterOptions {
+  emailOnlyPhase?: boolean;
+}
+
 /**
  * Validates whether an email string is structurally valid for outreach.
  */
@@ -85,13 +89,24 @@ export function isValidPhone(phone?: string | null): boolean {
 /**
  * Evaluates first-contact outreach eligibility according to EDS HUB client rules.
  */
-export function evaluateFirstContactEligibility(lead: FirstContactLeadInput): FirstContactEligibility {
+export function evaluateFirstContactEligibility(
+  lead: FirstContactLeadInput,
+  options?: FirstContactRouterOptions
+): FirstContactEligibility {
   const preservedPreference = lead.contact_preference || 'email';
   const hasValidEmailAddr = isValidEmail(lead.email);
   const hasValidPhoneNum = isValidPhone(lead.phone_e164 || lead.phone_raw);
 
   // 1. Website leads: manual client response required
-  if (lead.source === 'form' || lead.source_detail === 'website') {
+  const isWebsite =
+    lead.source === 'form' ||
+    lead.source === 'website' ||
+    lead.source_detail === 'website' ||
+    lead.source_detail === 'website-register' ||
+    lead.source_detail === 'incomplete_registration' ||
+    (lead.source_detail || '').toLowerCase().includes('website');
+
+  if (isWebsite) {
     return {
       isEligible: false,
       eligibleChannels: [],
@@ -102,11 +117,15 @@ export function evaluateFirstContactEligibility(lead: FirstContactLeadInput): Fi
     };
   }
 
-  // 2. Historical imports: HubSpot batch sync or CSV imports
-  if (
-    lead.source_detail &&
-    ['hubspot_sync', 'hubspot_historical', 'csv_import'].includes(lead.source_detail)
-  ) {
+  // 2. Historical imports: HubSpot batch sync, CSV imports, legacy migrations
+  const isHistorical =
+    ['hubspot', 'csv_import', 'legacy_import', 'historical_migration'].includes(lead.source || '') ||
+    Boolean(
+      lead.source_detail &&
+      ['hubspot_sync', 'hubspot_historical', 'hubspot_reconcile', 'csv_import', 'legacy_import', 'historical_migration'].includes(lead.source_detail)
+    );
+
+  if (isHistorical) {
     return {
       isEligible: false,
       eligibleChannels: [],
@@ -118,7 +137,7 @@ export function evaluateFirstContactEligibility(lead: FirstContactLeadInput): Fi
   }
 
   // 3. Test leads
-  if (lead.source === 'test') {
+  if (lead.source === 'test' || lead.source_detail === 'test') {
     return {
       isEligible: false,
       eligibleChannels: [],
@@ -130,7 +149,46 @@ export function evaluateFirstContactEligibility(lead: FirstContactLeadInput): Fi
   }
 
   // 4. Meta / Instagram advertising leads
-  if (lead.source === 'meta') {
+  const isMeta =
+    lead.source === 'meta' ||
+    ['meta', 'facebook', 'instagram', 'fb', 'ig'].includes((lead.source || '').toLowerCase()) ||
+    ['meta', 'facebook', 'instagram', 'fb', 'ig', 'meta_ad', 'instagram_ad'].includes((lead.source_detail || '').toLowerCase());
+
+  if (isMeta) {
+    if (options?.emailOnlyPhase) {
+      // Batch 7.5 Email-Only Safe Activation: SMS is completely inactive
+      if (hasValidEmailAddr) {
+        return {
+          isEligible: true,
+          eligibleChannels: ['email'],
+          preservedPreference,
+          hasValidEmail: true,
+          hasValidPhone: hasValidPhoneNum,
+        };
+      }
+
+      if (hasValidPhoneNum) {
+        return {
+          isEligible: false,
+          eligibleChannels: [],
+          preservedPreference,
+          suppressedReason: 'Meta lead has phone only; automated SMS is inactive in email-only phase.',
+          hasValidEmail: false,
+          hasValidPhone: true,
+        };
+      }
+
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        suppressedReason: 'Meta lead has neither valid email nor valid phone number for initial outreach.',
+        hasValidEmail: false,
+        hasValidPhone: false,
+      };
+    }
+
+    // Default multi-channel evaluation (for historical compatibility)
     const eligibleChannels: ('email' | 'sms')[] = [];
     if (hasValidEmailAddr) eligibleChannels.push('email');
     if (hasValidPhoneNum) eligibleChannels.push('sms');
@@ -227,4 +285,12 @@ export function resolveFirstContactOutcome(input: FirstContactOutcomeInput): Fir
     firstContactAttentionState: true,
     summary: 'Falha no Primeiro Contato',
   };
+}
+
+/**
+ * Batch 7.5 Helper: Evaluates Meta / Instagram lead eligibility specifically
+ * under the Email-Only Safe Activation phase.
+ */
+export function evaluateMetaFirstContactEligibility(lead: FirstContactLeadInput): FirstContactEligibility {
+  return evaluateFirstContactEligibility(lead, { emailOnlyPhase: true });
 }
