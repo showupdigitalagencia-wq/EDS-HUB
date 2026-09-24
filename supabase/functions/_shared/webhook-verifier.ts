@@ -190,3 +190,51 @@ export async function verifyHubSpotSignatureV3(
     return { valid: false, error: `HubSpot signature verification error: ${err.message}` };
   }
 }
+
+/**
+ * Verifies Meta (Facebook/Instagram) Webhook signature.
+ * Header: X-Hub-Signature-256
+ * Format: sha256=<hex_digest>
+ * Uses HMAC-SHA256 on the raw request body with Meta App Secret.
+ */
+export async function verifyMetaSignature(
+  rawBody: string,
+  signatureHeader: string | null,
+  appSecret: string
+): Promise<{ valid: boolean; error?: string }> {
+  if (!signatureHeader) {
+    return { valid: false, error: 'Missing X-Hub-Signature-256 header' };
+  }
+
+  if (!appSecret) {
+    return { valid: false, error: 'Meta app secret is not configured' };
+  }
+
+  try {
+    const encoder = new TextEncoder();
+    const keyBytes = encoder.encode(appSecret);
+    const dataBytes = encoder.encode(rawBody);
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyBytes,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataBytes);
+    const hashArray = Array.from(new Uint8Array(signatureBuffer));
+    const computedHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    const expectedSignature = `sha256=${computedHex}`;
+
+    if (expectedSignature.toLowerCase() === signatureHeader.trim().toLowerCase()) {
+      return { valid: true };
+    }
+
+    return { valid: false, error: 'Meta signature mismatch' };
+  } catch (err: any) {
+    return { valid: false, error: `Meta signature verification error: ${err.message}` };
+  }
+}
+
