@@ -848,7 +848,9 @@ describe('Mobile Kanban Pipeline & Standardized Contact Cards', () => {
       expect(ligarBtn.getAttribute('href')).toBe('tel:+5511977778888');
       // Batch 7.3: canonical Email action opens internal composer, mailto is removed
       expect(emailBtn.getAttribute('href')).toBeNull();
-      expect(smsBtn.getAttribute('href')).toBe('sms:+5511977778888');
+      // SMS provider is inactive: button is disabled with factual title
+      expect(smsBtn).toBeDisabled();
+      expect(smsBtn.getAttribute('title')).toContain('SMS indisponível');
       expect(whatsAppBtn.getAttribute('href')).toBe('https://wa.me/5511977778888');
 
       // Quick action buttons retain their full accessible layout class

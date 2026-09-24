@@ -92,6 +92,18 @@ export const SalesDashboardPage: React.FC = () => {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const handleSync = () => {
+      loadData();
+    };
+    window.addEventListener('tasks-updated', handleSync);
+    window.addEventListener('lead-updated', handleSync);
+    return () => {
+      window.removeEventListener('tasks-updated', handleSync);
+      window.removeEventListener('lead-updated', handleSync);
+    };
+  }, [loadData]);
+
   const boundaries = getDateRangeBoundaries(periodFilter, customStart, customEnd);
   const hasSpamComplaint = (deliverabilityHealth?.metrics?.complaints ?? 0) > 0;
 

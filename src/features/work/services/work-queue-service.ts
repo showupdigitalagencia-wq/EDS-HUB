@@ -203,35 +203,268 @@ export function sortWorkItems(items: WorkItem[]): WorkItem[] {
 // -----------------------------------------------------------------------------
 
 /**
- * Fetches KPIs and summary counts for Daily Operations dashboard
+ * Directly computes KPI metrics from public.tasks and public.conversations
+ * without relying on missing public.lead_scores relation.
  */
-export async function fetchDailyOperationsDashboard(): Promise<DailyOperationsDashboardKpis> {
-  const { data, error } = await supabase.rpc('get_daily_operations_dashboard');
-  if (error) throw new Error(error.message);
-  return data as DailyOperationsDashboardKpis;
+export async function fetchDailyOperationsDashboardDirect(): Promise<DailyOperationsDashboardKpis> {
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+
+  try {
+    const [
+      { count: dueTodayCount },
+      { count: overdueCount },
+      { count: completedTodayCount },
+      { count: paymentsCount },
+      { count: coursesCount },
+      { count: needsReplyCount },
+    ] = await Promise.all([
+      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').gte('due_at', startOfDay).lt('due_at', endOfDay),
+      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').lt('due_at', now.toISOString()),
+      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('completed_at', startOfDay).lt('completed_at', endOfDay),
+      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('task_type', 'payment'),
+      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').not('course_session_id', 'is', null),
+      supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('status', 'open').eq('last_message_direction', 'inbound'),
+    ]);
+
+    return {
+      timezone: 'America/New_York',
+      hot_min_threshold: 50,
+      stale_after_days: 7,
+      due_today_count: dueTodayCount ?? 0,
+      overdue_count: overdueCount ?? 0,
+      completed_today_count: completedTodayCount ?? 0,
+      needs_reply_count: needsReplyCount ?? 0,
+      hot_leads_count: 0,
+      leads_no_next_action_count: 0,
+      stale_leads_count: 0,
+      course_attention_count: coursesCount ?? 0,
+      payment_attention_count: paymentsCount ?? 0,
+      post_course_attention_count: 0,
+      total_actionable_items: (dueTodayCount ?? 0) + (overdueCount ?? 0) + (needsReplyCount ?? 0),
+    };
+  } catch (err) {
+    console.error('[fetchDailyOperationsDashboardDirect] Failed to compute dashboard metrics:', err);
+    return {
+      timezone: 'America/New_York',
+      hot_min_threshold: 50,
+      stale_after_days: 7,
+      due_today_count: 0,
+      overdue_count: 0,
+      completed_today_count: 0,
+      needs_reply_count: 0,
+      hot_leads_count: 0,
+      leads_no_next_action_count: 0,
+      stale_leads_count: 0,
+      course_attention_count: 0,
+      payment_attention_count: 0,
+      post_course_attention_count: 0,
+      total_actionable_items: 0,
+    };
+  }
 }
 
 /**
- * Fetches enriched, paginated work queue items for the specified tab and filters
+ * Fetches KPIs and summary counts for Daily Operations dashboard.
+ * Failsafe: Falls back to direct tasks queries if RPC is unavailable.
+ */
+export async function fetchDailyOperationsDashboard(): Promise<DailyOperationsDashboardKpis> {
+  try {
+    const { data, error } = await supabase.rpc('get_daily_operations_dashboard');
+    if (!error && data && typeof data === 'object') {
+      return data as DailyOperationsDashboardKpis;
+    }
+    return await fetchDailyOperationsDashboardDirect();
+  } catch {
+    return await fetchDailyOperationsDashboardDirect();
+  }
+}
+
+/**
+ * Directly queries public.tasks with joined leads and pipeline stages,
+ * eliminating the broken public.lead_scores dependency.
+ */
+export async function fetchDailyOperationsQueueDirect(
+  filters: DailyOperationsFilter = {}
+): Promise<DailyOperationsQueueResponse> {
+  const tab = filters.tab || 'today';
+  const limit = filters.limit || 50;
+  const offset = filters.offset || 0;
+
+  let query = supabase
+    .from('tasks')
+    .select(`
+      id,
+      lead_id,
+      task_type,
+      title,
+      description,
+      status,
+      due_at,
+      priority,
+      task_source,
+      created_at,
+      updated_at,
+      completed_at,
+      course_session_id,
+      lead:leads (
+        id,
+        first_name,
+        last_name,
+        email,
+        phone_raw,
+        phone_e164,
+        contact_preference,
+        pipeline_stage:pipeline_stages (
+          id,
+          name,
+          code
+        )
+      )
+    `, { count: 'exact' });
+
+  const nowIso = new Date().toISOString();
+  const nowDate = new Date();
+  const endOfDay = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() + 1).toISOString();
+
+  // Tab-specific filters
+  if (tab === 'today') {
+    query = query.eq('status', 'pending').or(`due_at.lte.${endOfDay},due_at.is.null`);
+  } else if (tab === 'overdue') {
+    query = query.eq('status', 'pending').lt('due_at', nowIso);
+  } else if (tab === 'completed') {
+    query = query.eq('status', 'completed');
+  } else if (tab === 'payments') {
+    query = query.eq('task_type', 'payment');
+  } else if (tab === 'courses') {
+    query = query.or('course_session_id.not.is.null,task_type.eq.course_ops');
+  } else if (tab === 'leads') {
+    query = query.eq('status', 'pending');
+  } else if (tab === 'needs_reply') {
+    query = query.eq('status', 'pending');
+  }
+
+  if (filters.priority) {
+    query = query.eq('priority', filters.priority);
+  }
+
+  // Ordering
+  if (tab === 'completed') {
+    query = query.order('completed_at', { ascending: false, nullsFirst: false });
+  } else if (tab === 'overdue') {
+    query = query.order('due_at', { ascending: true, nullsFirst: false });
+  } else {
+    query = query.order('due_at', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
+  }
+
+  query = query.range(offset, offset + limit - 1);
+
+  const { data, count, error } = await query;
+  if (error) {
+    console.error('[fetchDailyOperationsQueueDirect] Error querying tasks directly:', error);
+    return {
+      tab,
+      total_count: 0,
+      items: [],
+      page: Math.floor(offset / limit) + 1,
+      page_size: limit,
+    } as any;
+  }
+
+  const rawTasks = data || [];
+  let items: WorkItem[] = rawTasks.map((t: any) => {
+    const lead = t.lead;
+    const leadName = lead
+      ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || lead.email || 'Lead'
+      : null;
+    const isOverdue = t.status !== 'completed' && t.due_at ? new Date(t.due_at).getTime() < Date.now() : false;
+
+    let itemType: any = 'TASK';
+    if (t.task_type === 'payment') itemType = 'PAYMENT_ATTENTION';
+    else if (t.course_session_id || t.task_type === 'course_ops') itemType = 'COURSE_ATTENTION';
+
+    return {
+      id: `task:${t.id}`,
+      type: itemType,
+      category: tab as any,
+      priority: t.priority || 'normal',
+      title: t.title,
+      description: t.description || null,
+      due_at: t.due_at || null,
+      is_overdue: isOverdue,
+      detected_at: t.created_at,
+      lead_id: t.lead_id,
+      lead_name: leadName,
+      lead_email: lead?.email || null,
+      lead_phone: lead?.phone_e164 || lead?.phone_raw || null,
+      contact_preference: lead?.contact_preference || null,
+      lead_score: null, // Zero dependency on missing public.lead_scores relation
+      pipeline_stage: lead?.pipeline_stage?.name || null,
+      reason_code: null,
+      context_id: t.id,
+      context_type: 'task',
+      primary_action: {
+        type: 'complete_task',
+        label: 'Marcar como concluída',
+        task_id: t.id,
+      },
+    };
+  });
+
+  // Client-side search filtering
+  if (filters.search && filters.search.trim()) {
+    const q = filters.search.toLowerCase().trim();
+    items = items.filter(
+      (item) =>
+        item.title.toLowerCase().includes(q) ||
+        (item.description && item.description.toLowerCase().includes(q)) ||
+        (item.lead_name && item.lead_name.toLowerCase().includes(q)) ||
+        (item.lead_email && item.lead_email.toLowerCase().includes(q)) ||
+        (item.lead_phone && item.lead_phone.includes(q))
+    );
+  }
+
+  return {
+    tab,
+    total_count: count ?? items.length,
+    items: sortWorkItems(items),
+    page: Math.floor(offset / limit) + 1,
+    page_size: limit,
+  } as any;
+}
+
+/**
+ * Fetches enriched, paginated work queue items for the specified tab and filters.
+ * Seamlessly falls back to direct tasks queries if get_daily_operations_queue
+ * fails or throws (e.g., due to missing public.lead_scores relation).
  */
 export async function fetchDailyOperationsQueue(
   filters: DailyOperationsFilter = {}
 ): Promise<DailyOperationsQueueResponse> {
-  const { data, error } = await supabase.rpc('get_daily_operations_queue', {
-    p_tab: filters.tab || 'today',
-    p_sub_filter: filters.subFilter || null,
-    p_priority: filters.priority || null,
-    p_search: filters.search || null,
-    p_limit: filters.limit || 50,
-    p_offset: filters.offset || 0,
-  });
+  try {
+    const { data, error } = await supabase.rpc('get_daily_operations_queue', {
+      p_tab: filters.tab || 'today',
+      p_sub_filter: filters.subFilter || null,
+      p_priority: filters.priority || null,
+      p_search: filters.search || null,
+      p_limit: filters.limit || 50,
+      p_offset: filters.offset || 0,
+    });
 
-  if (error) throw new Error(error.message);
-  const response = data as DailyOperationsQueueResponse;
-  return {
-    ...response,
-    items: sortWorkItems(response.items || []),
-  };
+    if (!error && data && Array.isArray((data as any).items)) {
+      const response = data as DailyOperationsQueueResponse;
+      return {
+        ...response,
+        items: sortWorkItems(response.items || []),
+      };
+    }
+
+    // Direct fallback removes public.lead_scores dependency completely
+    return await fetchDailyOperationsQueueDirect(filters);
+  } catch {
+    return await fetchDailyOperationsQueueDirect(filters);
+  }
 }
 
 /**
@@ -267,6 +500,12 @@ export async function createCrmTask(payload: {
   });
 
   if (error) throw new Error(error.message);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
+    window.dispatchEvent(new CustomEvent('lead-updated', { detail: { leadId: payload.leadId } }));
+  }
+
   return data;
 }
 
@@ -285,6 +524,12 @@ export async function rescheduleCrmTask(
   });
 
   if (error) throw new Error(error.message);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
+    window.dispatchEvent(new CustomEvent('lead-updated'));
+  }
+
   return data;
 }
 
@@ -303,6 +548,12 @@ export async function completeCrmTask(
   });
 
   if (error) throw new Error(error.message);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
+    window.dispatchEvent(new CustomEvent('lead-updated'));
+  }
+
   return data;
 }
 

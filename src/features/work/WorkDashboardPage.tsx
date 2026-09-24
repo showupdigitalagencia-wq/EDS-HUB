@@ -12,6 +12,7 @@ import {
   Plus,
   Download,
   AlertTriangle,
+  DollarSign,
 } from 'lucide-react';
 import {
   fetchDailyOperationsDashboard,
@@ -44,6 +45,8 @@ export const WorkDashboardPage: React.FC = () => {
   const [loadingKpis, setLoadingKpis] = useState(true);
   const [loadingItems, setLoadingItems] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
 
   // Modals state
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
@@ -108,14 +111,36 @@ export const WorkDashboardPage: React.FC = () => {
     loadQueue();
   }, [loadQueue]);
 
-  // Quick Action Handlers
-  const handleCompleteTask = async (taskId: string) => {
-    try {
-      await completeCrmTask(taskId);
+  // Realtime synchronization: refresh when tasks or leads are updated globally
+  useEffect(() => {
+    const handleSync = () => {
       loadKpis();
       loadQueue();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to complete task');
+    };
+    window.addEventListener('tasks-updated', handleSync);
+    window.addEventListener('lead-updated', handleSync);
+    return () => {
+      window.removeEventListener('tasks-updated', handleSync);
+      window.removeEventListener('lead-updated', handleSync);
+    };
+  }, [loadKpis, loadQueue]);
+
+  // Quick Action Handlers
+  const handleCompleteTask = async (taskId: string) => {
+    if (completingTaskId) return;
+    try {
+      setCompletingTaskId(taskId);
+      setError(null);
+      await completeCrmTask(taskId);
+      setSuccessMessage('Tarefa concluída');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      loadKpis();
+      loadQueue();
+    } catch {
+      setError('Não foi possível concluir a tarefa.');
+      setTimeout(() => setError(null), 4000);
+    } finally {
+      setCompletingTaskId(null);
     }
   };
 
@@ -193,7 +218,7 @@ export const WorkDashboardPage: React.FC = () => {
     >
       <div className="space-y-6">
         {/* Top KPI Cards Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
             {/* Due Today */}
             <div
               onClick={() => {
@@ -297,6 +322,27 @@ export const WorkDashboardPage: React.FC = () => {
               </div>
               <p className="text-xl font-bold text-purple-800 mt-1.5">
                 {loadingKpis ? '...' : kpis?.course_attention_count ?? 0}
+              </p>
+            </div>
+
+            {/* Payments */}
+            <div
+              onClick={() => {
+                setActiveTab('payments');
+                setPage(1);
+              }}
+              className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                activeTab === 'payments'
+                  ? 'bg-emerald-50/70 border-emerald-500 ring-2 ring-emerald-500/20 shadow-sm'
+                  : 'bg-white border-slate-200/80 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+                <span>Pagamentos</span>
+                <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+              </div>
+              <p className="text-xl font-bold text-emerald-800 mt-1.5">
+                {loadingKpis ? '...' : kpis?.payment_attention_count ?? 0}
               </p>
             </div>
 
@@ -417,21 +463,6 @@ export const WorkDashboardPage: React.FC = () => {
 
               <button
                 onClick={() => {
-                  setActiveTab('post_course');
-                  setSubFilter(null);
-                  setPage(1);
-                }}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === 'post_course'
-                    ? 'bg-[#08254f] text-white shadow-sm'
-                    : 'text-slate-600 hover:text-[#08254f] hover:bg-slate-100'
-                }`}
-              >
-                Pós-Curso
-              </button>
-
-              <button
-                onClick={() => {
                   setActiveTab('completed');
                   setSubFilter(null);
                   setPage(1);
@@ -539,6 +570,14 @@ export const WorkDashboardPage: React.FC = () => {
             </div>
           )}
 
+          {/* Success Banner */}
+          {successMessage && (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+              <span className="font-semibold">{successMessage}</span>
+            </div>
+          )}
+
           {/* Error Banner */}
           {error && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
@@ -569,6 +608,7 @@ export const WorkDashboardPage: React.FC = () => {
                 <WorkItemCard
                   key={item.id}
                   item={item}
+                  isCompleting={completingTaskId === (item.context_id || item.id.replace('task:', ''))}
                   onCompleteTask={handleCompleteTask}
                   onRescheduleTask={handleOpenReschedule}
                   onCreateTaskForLead={handleOpenCreateForLead}

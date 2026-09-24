@@ -90,6 +90,7 @@ export function LeadQuickActionBar({
               <a
                 href={`tel:${rawPhone.trim()}`}
                 role="button"
+                data-testid="quick-action-call"
                 onClick={() => logIntentNonBlocking('call_manual_attempt', 'Ligação iniciada', 'call')}
                 title={`Ligar para ${rawPhone}`}
                 className={`${actionBaseClass} ${commButtonActive}`}
@@ -101,6 +102,7 @@ export function LeadQuickActionBar({
               <button
                 type="button"
                 disabled
+                data-testid="quick-action-call"
                 title="Telefone não informado"
                 className={`${actionBaseClass} ${commButtonDisabled}`}
               >
@@ -109,34 +111,23 @@ export function LeadQuickActionBar({
               </button>
             )}
 
-            {/* 2. SMS */}
-            {hasPhone ? (
-              <a
-                href={`sms:${rawPhone.trim()}`}
-                role="button"
-                onClick={() => logIntentNonBlocking('sms_manual_attempt', 'SMS aberto para contato', 'sms')}
-                title={`Enviar SMS para ${rawPhone}`}
-                className={`${actionBaseClass} ${commButtonActive}`}
-              >
-                <MessageSquare className="h-4 w-4 text-[#449bd5] shrink-0" />
-                <span>SMS</span>
-              </a>
-            ) : (
-              <button
-                type="button"
-                disabled
-                title="Telefone não informado"
-                className={`${actionBaseClass} ${commButtonDisabled}`}
-              >
-                <MessageSquare className="h-4 w-4 text-slate-300 shrink-0" />
-                <span>SMS</span>
-              </button>
-            )}
+            {/* 2. SMS — Provider currently inactive */}
+            <button
+              type="button"
+              disabled
+              data-testid="quick-action-sms"
+              title="SMS indisponível: canal Twilio/SMS inativo no momento."
+              className={`${actionBaseClass} ${commButtonDisabled}`}
+            >
+              <MessageSquare className="h-4 w-4 text-slate-300 shrink-0" />
+              <span>SMS</span>
+            </button>
 
             {/* 3. Email — Canonical internal composer without mailto */}
             {isValidEmail ? (
               <button
                 type="button"
+                data-testid="quick-action-email"
                 onClick={() => {
                   logIntentNonBlocking('email_manual_attempt', 'Email manual aberto para contato', 'email');
                   onOpenEmailComposer?.();
@@ -151,6 +142,7 @@ export function LeadQuickActionBar({
               <button
                 type="button"
                 disabled
+                data-testid="quick-action-email"
                 title="Este lead não possui um e-mail válido."
                 className={`${actionBaseClass} ${commButtonDisabled}`}
               >
@@ -166,6 +158,7 @@ export function LeadQuickActionBar({
                 target="_blank"
                 rel="noopener noreferrer"
                 role="button"
+                data-testid="quick-action-whatsapp"
                 onClick={() => logIntentNonBlocking('whatsapp_contact_attempt', 'WhatsApp aberto', 'whatsapp')}
                 title={`Abrir WhatsApp para ${digitsOnly}`}
                 className={`${actionBaseClass} bg-[#25d366] hover:bg-[#20ba5a] text-white border-transparent shadow-xs cursor-pointer active:translate-y-0.5`}
@@ -177,6 +170,7 @@ export function LeadQuickActionBar({
               <button
                 type="button"
                 disabled
+                data-testid="quick-action-whatsapp"
                 title="Telefone não informado"
                 className={`${actionBaseClass} ${commButtonDisabled}`}
               >
@@ -201,6 +195,7 @@ export function LeadQuickActionBar({
             {/* 5. Adicionar Tarefa */}
             <button
               type="button"
+              data-testid="quick-action-add-task"
               onClick={onOpenTaskModal}
               title="Adicionar nova tarefa para este lead"
               className={`${actionBaseClass} bg-slate-50 hover:bg-slate-100 text-[#08254f] border-slate-200/90 shadow-2xs hover:border-slate-300 cursor-pointer`}
@@ -212,6 +207,7 @@ export function LeadQuickActionBar({
             {/* 6. Pagamento (Task Reminder Semantics) */}
             <button
               type="button"
+              data-testid="quick-action-payment"
               onClick={onOpenPaymentModal}
               title="Agendar lembrete operacional de pagamento"
               className={`${actionBaseClass} bg-amber-50/70 hover:bg-amber-100/80 text-amber-900 border-amber-200/80 hover:border-amber-300 shadow-2xs cursor-pointer`}

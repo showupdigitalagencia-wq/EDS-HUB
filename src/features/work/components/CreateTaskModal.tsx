@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
 import { createCrmTask } from '../services/work-queue-service';
 import type { TaskPriority, TaskType } from '../../../types/database';
 
@@ -32,8 +33,11 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   initialSessionId,
   initialEngagementId,
 }) => {
+  const [selectedLeadId, setSelectedLeadId] = useState<string>(initialLeadId || '');
+  const [leadsList, setLeadsList] = useState<Array<{ id: string; first_name: string | null; last_name: string | null; email: string | null }>>([]);
+  const [loadingLeads, setLoadingLeads] = useState(false);
   const [title, setTitle] = useState(initialTitle);
-  const [taskType, setTaskType] = useState<TaskType>('call');
+  const [taskType, setTaskType] = useState<TaskType>('follow_up');
   const [priority, setPriority] = useState<TaskPriority>(initialPriority);
   const [dueDate, setDueDate] = useState(() => {
     const d = new Date();
@@ -48,20 +52,44 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     if (isOpen) {
       setTitle(initialTitle);
       setPriority(initialPriority);
+      setSelectedLeadId(initialLeadId || '');
       setError(null);
+
+      if (!initialLeadId) {
+        setLoadingLeads(true);
+        void (async () => {
+          try {
+            const { data } = await supabase
+              .from('leads')
+              .select('id, first_name, last_name, email')
+              .order('created_at', { ascending: false })
+              .limit(50);
+            if (data) {
+              setLeadsList(data);
+              if (data.length > 0 && !selectedLeadId) {
+                setSelectedLeadId(data[0].id);
+              }
+            }
+          } finally {
+            setLoadingLeads(false);
+          }
+        })();
+      }
     }
-  }, [isOpen, initialTitle, initialPriority]);
+  }, [isOpen, initialTitle, initialPriority, initialLeadId]);
 
   if (!isOpen) return null;
 
+  const targetLeadId = initialLeadId || selectedLeadId;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!initialLeadId) {
-      setError('Lead context is required to create a task.');
+    if (!targetLeadId) {
+      setError('Selecione um lead para associar à tarefa.');
       return;
     }
     if (!title.trim()) {
-      setError('Task title is required.');
+      setError('O título da tarefa é obrigatório.');
       return;
     }
 
@@ -70,7 +98,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
 
     try {
       await createCrmTask({
-        leadId: initialLeadId,
+        leadId: targetLeadId,
         title: title.trim(),
         taskType,
         dueAt: dueDate ? new Date(dueDate).toISOString() : null,
@@ -84,7 +112,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       (onTaskCreated || onCreated)?.();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create task');
+      setError(err instanceof Error ? err.message : 'Falha ao criar tarefa');
     } finally {
       setIsSubmitting(false);
     }
@@ -99,12 +127,12 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-[#449bd5]" />
             <h2 className="text-sm font-bold font-heading uppercase tracking-wider">
-              Create New Task
+              Criar Nova Tarefa
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-slate-300 hover:text-white rounded-lg transition-colors"
+            className="p-1 text-slate-300 hover:text-white rounded-lg transition-colors cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
@@ -118,22 +146,45 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             </div>
           )}
 
-          {displayName && (
+          {displayName ? (
             <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-700 flex items-center justify-between">
-              <span className="text-slate-500 font-medium">Assigned Lead:</span>
+              <span className="text-slate-500 font-medium">Lead associado:</span>
               <span className="font-semibold text-[#08254f]">{displayName}</span>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Selecionar Lead <span className="text-red-500">*</span>
+              </label>
+              {loadingLeads ? (
+                <div className="text-xs text-slate-400 py-1.5">Carregando leads...</div>
+              ) : (
+                <select
+                  value={selectedLeadId}
+                  onChange={(e) => setSelectedLeadId(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5] bg-white cursor-pointer"
+                  required
+                >
+                  <option value="">Selecione um lead...</option>
+                  {leadsList.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {`${l.first_name || ''} ${l.last_name || ''}`.trim() || l.email || 'Lead sem nome'}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           )}
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Title <span className="text-red-500">*</span>
+              Título <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g., Call student regarding cohort schedule"
+              placeholder="Ex: Ligar sobre a turma de Imersão"
               className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5]"
               required
             />
@@ -142,40 +193,41 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Type
+                Tipo
               </label>
               <select
                 value={taskType}
                 onChange={(e) => setTaskType(e.target.value as TaskType)}
-                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5] bg-white"
+                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5] bg-white cursor-pointer"
               >
-                <option value="call">Phone Call</option>
                 <option value="follow_up">Follow-up</option>
-                <option value="data_review">Data Review</option>
-                <option value="general">General Task</option>
+                <option value="call">Ligar</option>
+                <option value="payment">Pagamento (Lembrete)</option>
+                <option value="data_review">Revisão de Dados</option>
+                <option value="general">Geral</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Priority
+                Prioridade
               </label>
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5] bg-white"
+                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5] bg-white cursor-pointer"
               >
-                <option value="critical">Critical</option>
-                <option value="high">High</option>
+                <option value="critical">Crítica</option>
+                <option value="high">Alta</option>
                 <option value="normal">Normal</option>
-                <option value="low">Low</option>
+                <option value="low">Baixa</option>
               </select>
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Due Date & Time
+              Data e Hora Limite
             </label>
             <div className="relative">
               <input
@@ -189,13 +241,13 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Notes / Description (Optional)
+              Observações (opcional)
             </label>
             <textarea
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Additional operational context or details..."
+              placeholder="Detalhes ou contexto operacional adicional..."
               className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5]"
             />
           </div>
@@ -204,16 +256,16 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-100 transition-colors"
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
             >
-              Cancel
+              Cancelar
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="btn-crimson text-xs px-5 py-2 disabled:opacity-50 flex items-center gap-1.5"
+              className="btn-crimson text-xs px-5 py-2 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
             >
-              {isSubmitting ? 'Saving...' : 'Create Task'}
+              {isSubmitting ? 'Salvando...' : 'Criar Tarefa'}
             </button>
           </div>
         </form>

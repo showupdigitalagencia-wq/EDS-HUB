@@ -48,6 +48,8 @@ export function LeadTaskList({
   onTaskUpdated,
 }: LeadTaskListProps) {
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  const [successFeedback, setSuccessFeedback] = useState<string | null>(null);
+  const [errorFeedback, setErrorFeedback] = useState<string | null>(null);
 
   const pendingTasks = tasks
     .filter((t) => t.status !== 'completed')
@@ -67,12 +69,17 @@ export function LeadTaskList({
     });
 
   const handleComplete = async (taskId: string) => {
+    if (completingTaskId) return;
     try {
       setCompletingTaskId(taskId);
+      setErrorFeedback(null);
       await completeCrmTask(taskId);
+      setSuccessFeedback('Tarefa concluída');
+      setTimeout(() => setSuccessFeedback(null), 3000);
       onTaskUpdated();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Falha ao concluir tarefa');
+    } catch {
+      setErrorFeedback('Não foi possível concluir a tarefa.');
+      setTimeout(() => setErrorFeedback(null), 4000);
     } finally {
       setCompletingTaskId(null);
     }
@@ -97,6 +104,22 @@ export function LeadTaskList({
           <span>Adicionar Tarefa</span>
         </button>
       </div>
+
+      {/* Success Feedback */}
+      {successFeedback && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2 font-medium">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+          <span>{successFeedback}</span>
+        </div>
+      )}
+
+      {/* Error Feedback */}
+      {errorFeedback && (
+        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-center gap-2 font-medium">
+          <Clock className="h-4 w-4 text-rose-600 shrink-0" />
+          <span>{errorFeedback}</span>
+        </div>
+      )}
 
       {tasks.length === 0 ? (
         /* Empty state */
@@ -183,7 +206,8 @@ export function LeadTaskList({
                           type="button"
                           onClick={() => handleComplete(task.id)}
                           disabled={isCompleting}
-                          className="btn-crimson py-1 px-3 text-xs flex items-center gap-1.5 disabled:opacity-50"
+                          data-testid={`lead-complete-task-${task.id}`}
+                          className="btn-crimson py-1 px-3 text-xs flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                         >
                           <CheckCircle2 className="h-3.5 w-3.5" />
                           <span>{isCompleting ? 'Concluindo...' : 'Marcar como concluída'}</span>

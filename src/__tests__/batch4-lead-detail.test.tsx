@@ -118,7 +118,7 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
       );
 
       expect(screen.getByRole('button', { name: /ligar/i })).not.toBeDisabled();
-      expect(screen.getByRole('button', { name: /sms/i })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: /sms/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /email/i })).not.toBeDisabled();
       expect(screen.getByRole('button', { name: /whatsapp/i })).not.toBeDisabled();
     });

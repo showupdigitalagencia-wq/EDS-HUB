@@ -24,6 +24,7 @@ interface WorkItemCardProps {
   onRescheduleTask: (task: WorkItem) => void;
   onCreateTaskForLead: (item: WorkItem) => void;
   onSelectLead?: (leadId: string) => void;
+  isCompleting?: boolean;
 }
 
 export const WorkItemCard: React.FC<WorkItemCardProps> = ({
@@ -32,6 +33,7 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
   onRescheduleTask,
   onCreateTaskForLead,
   onSelectLead,
+  isCompleting = false,
 }) => {
   const getPriorityBadge = (priority: TaskPriority) => {
     switch (priority) {
@@ -198,7 +200,7 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
 
         {/* Right Side: Quick Action Buttons */}
         <div className="flex items-center gap-2 sm:shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-          {item.type === 'TASK' ? (
+          {item.type === 'TASK' || item.type === 'PAYMENT_ATTENTION' || item.context_type === 'task' ? (
             <>
               {item.category !== 'completed' ? (
                 <>
@@ -211,14 +213,17 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
                     <span className="hidden md:inline">Reagendar</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       const taskId = item.context_id || item.id.replace('task:', '');
                       onCompleteTask(taskId);
                     }}
-                    className="btn-crimson text-xs px-3.5 py-2 flex items-center gap-1.5 cursor-pointer"
+                    disabled={isCompleting}
+                    data-testid={`complete-task-${item.context_id || item.id.replace('task:', '')}`}
+                    className="btn-crimson text-xs px-3.5 py-2 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Concluir</span>
+                    <span>{isCompleting ? 'Concluindo...' : 'Marcar como concluída'}</span>
                   </button>
                 </>
               ) : (
