@@ -15,6 +15,7 @@ import {
   Clock,
   ArrowRight,
   Edit2,
+  Kanban,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Tabs, type TabItem } from '../../../components/ui/Tabs';
@@ -31,6 +32,7 @@ import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCar
 import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
 import { ManualEmailComposerModal } from './ManualEmailComposerModal';
 import { EditLeadModal } from './EditLeadModal';
+import { ChangeLeadStageModal } from './ChangeLeadStageModal';
 import { fetchLeadEmailHealth, type LeadEmailHealthResult } from '../../dashboard/services/deliverability-health-service';
 import type { Lead, LeadActivity, Task, LeadNote, IncompleteEnrollment } from '../../../types';
 
@@ -68,6 +70,9 @@ export function LeadProfileContent({
   // Task modal
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskModalMode, setTaskModalMode] = useState<'generic' | 'payment'>('generic');
+
+  // Stage change modal
+  const [isStageModalOpen, setIsStageModalOpen] = useState(false);
 
   // Manual Email Composer & Lead Email Health
   const [isEmailComposerOpen, setIsEmailComposerOpen] = useState(false);
@@ -358,6 +363,45 @@ export function LeadProfileContent({
         onOpenEmailComposer={() => setIsEmailComposerOpen(true)}
         onActivityLogged={handleLeadRefresh}
       />
+
+      {/* Current Pipeline Stage Section with 'Alterar etapa' action */}
+      <div
+        className="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        data-testid="lead-stage-bar"
+      >
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-[#08254f]/10 text-[#08254f]">
+            <Kanban className="h-4 w-4" />
+          </div>
+          <div>
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+              Etapa atual:
+            </span>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span
+                className="text-sm font-bold text-[#08254f] font-heading"
+                data-testid="profile-current-stage-name"
+              >
+                {pipelineStage?.name || 'Novo Lead'}
+              </span>
+              <Badge variant="navy" size="sm">
+                {pipelineStage?.name || 'Novo Lead'}
+              </Badge>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setIsStageModalOpen(true)}
+          className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#08254f] bg-slate-100 hover:bg-slate-200 border border-slate-200/80 rounded-xl transition-colors cursor-pointer self-start sm:self-auto"
+          title="Alterar etapa deste lead no pipeline"
+          data-testid="alterar-etapa-button"
+        >
+          <Kanban className="h-3.5 w-3.5 text-[#449bd5]" />
+          <span>Alterar etapa</span>
+        </button>
+      </div>
 
       {/* Recent Conversation Status Banner */}
       <LeadConversationStatus
@@ -767,6 +811,31 @@ export function LeadProfileContent({
           onClose={() => setInternalEditLeadOpen(false)}
           lead={lead}
           onLeadUpdated={handleLeadRefresh}
+        />
+      )}
+
+      {/* Change Lead Stage Modal */}
+      {isStageModalOpen && lead && (
+        <ChangeLeadStageModal
+          isOpen={isStageModalOpen}
+          onClose={() => setIsStageModalOpen(false)}
+          leadId={lead.id}
+          leadName={`${lead.first_name || ''} ${lead.last_name || ''}`.trim() || undefined}
+          currentStageId={lead.pipeline_stage_id || pipelineStage?.id}
+          currentStageName={pipelineStage?.name || 'Novo Lead'}
+          onStageUpdated={(newStageId, newStageName) => {
+            setLead((prev) =>
+              prev
+                ? ({
+                    ...prev,
+                    pipeline_stage_id: newStageId,
+                    pipeline_stage: { id: newStageId, name: newStageName },
+                  } as any)
+                : null
+            );
+            fetchLeadData();
+            if (onLeadUpdated) onLeadUpdated();
+          }}
         />
       )}
     </div>

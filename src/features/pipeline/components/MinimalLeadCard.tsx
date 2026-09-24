@@ -182,20 +182,54 @@ export function MinimalLeadCard({
   const emailValue = lead.email ? lead.email.trim() : null;
 
   const isDraggingInternal = React.useRef(false);
+  const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const hasMovedRef = React.useRef(false);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+    hasMovedRef.current = false;
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!pointerStartRef.current) return;
+    const dx = Math.abs(e.clientX - pointerStartRef.current.x);
+    const dy = Math.abs(e.clientY - pointerStartRef.current.y);
+    if (dx > 6 || dy > 6) {
+      hasMovedRef.current = true;
+    }
+  };
+
+  const handlePointerUp = () => {
+    pointerStartRef.current = null;
+  };
 
   const handleDragStart = (e: React.DragEvent) => {
     isDraggingInternal.current = true;
+    hasMovedRef.current = true;
+    try {
+      if (e.dataTransfer) {
+        e.dataTransfer.setData('text/plain', lead.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }
+    } catch {
+      // Safe fallback for testing environments
+    }
     if (onDragStart) onDragStart(e);
   };
 
   const handleDragEnd = () => {
     setTimeout(() => {
       isDraggingInternal.current = false;
-    }, 100);
+      hasMovedRef.current = false;
+    }, 200);
   };
 
-  const handleClick = () => {
-    if (isDraggingInternal.current) return;
+  const handleClick = (e: React.MouseEvent) => {
+    if (isDraggingInternal.current || hasMovedRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (onClick) onClick();
   };
 
@@ -204,11 +238,16 @@ export function MinimalLeadCard({
       role="article"
       aria-label={`Lead ${fullName}`}
       draggable
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
       className={`p-3 bg-white rounded-xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#449bd5]/50 transition-all duration-150 cursor-grab active:cursor-grabbing space-y-1.5 select-none group ${
-        isDragging ? 'opacity-40 scale-95 border-dashed border-[#449bd5]' : ''
+        isDragging
+          ? 'opacity-40 scale-[0.98] border-dashed border-[#449bd5] shadow-lg ring-2 ring-[#449bd5]/30'
+          : ''
       }`}
     >
       {/* 1. Lead Name + Drag Grip (Strongest visual emphasis) */}

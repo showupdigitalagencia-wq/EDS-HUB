@@ -50,6 +50,8 @@ export function PipelineKanbanPage() {
   // Drag state
   const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null);
   const [activeDropStageId, setActiveDropStageId] = useState<string | null>(null);
+  const [stageErrorMessage, setStageErrorMessage] = useState<string | null>(null);
+  const [stageSuccessMessage, setStageSuccessMessage] = useState<string | null>(null);
 
   // New Lead Modal
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
@@ -168,12 +170,25 @@ export function PipelineKanbanPage() {
   }, [loadPipelineData]);
 
   // Handle stage drag and drop
-  const handleDragStart = (leadId: string) => {
+  const handleDragStart = (e: React.DragEvent, leadId: string) => {
     setDraggedLeadId(leadId);
+    try {
+      if (e.dataTransfer) {
+        e.dataTransfer.setData('text/plain', leadId);
+        e.dataTransfer.effectAllowed = 'move';
+      }
+    } catch {
+      // Safe fallback for test environments
+    }
   };
 
   const handleDragOver = (e: React.DragEvent, stageId: string) => {
     e.preventDefault();
+    try {
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'move';
+      }
+    } catch {}
     if (activeDropStageId !== stageId) {
       setActiveDropStageId(stageId);
     }
@@ -203,6 +218,8 @@ export function PipelineKanbanPage() {
     newGrouped[targetStageId] = [{ ...movedLead, pipeline_stage_id: targetStageId }, ...newGrouped[targetStageId]];
 
     setLeadsByStage(newGrouped);
+    setStageErrorMessage(null);
+
     try {
       // Execute atomic server-side RPC move_lead_stage
       const { data, error: rpcErr } = await supabase.rpc('move_lead_stage', {
@@ -212,11 +229,23 @@ export function PipelineKanbanPage() {
       });
 
       if (rpcErr) throw rpcErr;
-      if (!data?.success) throw new Error('Stage movement rejected by server');
-    } catch (err) {
-      // Rollback on failure
+      if (data && typeof data === 'object' && 'success' in data && !(data as any).success) {
+        throw new Error('Stage movement rejected by server');
+      }
+
+      setStageSuccessMessage('Etapa atualizada');
+      setTimeout(() => setStageSuccessMessage(null), 3000);
+
+      window.dispatchEvent(
+        new CustomEvent('lead-updated', {
+          detail: { leadId, stageId: targetStageId },
+        })
+      );
+    } catch (_err) {
+      // Rollback on failure per Requirement 8
       setLeadsByStage(previousState);
-      alert(err instanceof Error ? err.message : 'Falha ao mover lead');
+      setStageErrorMessage('Não foi possível atualizar a etapa.');
+      setTimeout(() => setStageErrorMessage(null), 4000);
     }
   };
 
@@ -224,9 +253,15 @@ export function PipelineKanbanPage() {
     e.preventDefault();
     setActiveDropStageId(null);
 
-    if (!draggedLeadId) return;
-    const leadId = draggedLeadId;
+    let leadId = draggedLeadId;
+    if (!leadId && e.dataTransfer) {
+      try {
+        leadId = e.dataTransfer.getData('text/plain');
+      } catch {}
+    }
+
     setDraggedLeadId(null);
+    if (!leadId) return;
     await moveLeadToStage(leadId, targetStageId);
   };
 
@@ -318,6 +353,40 @@ export function PipelineKanbanPage() {
           <ErrorState message={error} onRetry={loadPipelineData} />
         ) : (
           <>
+            {/* Feedback Banners for Stage Updates */}
+            {stageSuccessMessage && (
+              <div
+                role="status"
+                className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-xl flex items-center justify-between shadow-2xs"
+                data-testid="pipeline-stage-success"
+              >
+                <span>{stageSuccessMessage}</span>
+                <button
+                  type="button"
+                  onClick={() => setStageSuccessMessage(null)}
+                  className="text-emerald-600 hover:text-emerald-800 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            {stageErrorMessage && (
+              <div
+                role="alert"
+                className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold rounded-xl flex items-center justify-between shadow-2xs"
+                data-testid="pipeline-stage-error"
+              >
+                <span>{stageErrorMessage}</span>
+                <button
+                  type="button"
+                  onClick={() => setStageErrorMessage(null)}
+                  className="text-rose-600 hover:text-rose-800 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* 1. Mobile Quick-Jump Stage Navigation Bar (< lg) */}
             <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none -mx-4 px-4 sm:-mx-6 sm:px-6">
               {operationalStages.map((stage) => {
@@ -405,7 +474,7 @@ export function PipelineKanbanPage() {
                                 stageCode={stage.code}
                                 stageName={stage.name}
                                 isDragging={isDragging}
-                                onDragStart={() => handleDragStart(lead.id)}
+                                onDragStart={(e) => handleDragStart(e, lead.id)}
                                 onClick={() => setSelectedLeadId(lead.id)}
                               />
                             );
@@ -415,6 +484,14 @@ export function PipelineKanbanPage() {
                             <span className="max-w-[190px] leading-relaxed">
                               Nenhum lead neste estágio
                             </span>
+                          </div>
+                        )}
+                        {isDropTarget && (
+                          <div
+                            data-testid={`drop-zone-${stage.code}`}
+                            className="border-2 border-dashed border-[#449bd5] bg-[#449bd5]/10 rounded-xl py-3 text-center text-xs font-bold text-[#08254f] animate-pulse"
+                          >
+                            Soltar lead em {stage.name}
                           </div>
                         )}
                       </div>

@@ -35,7 +35,9 @@ import {
   Share2,
   AlertTriangle,
   AlertCircle,
+  Kanban,
 } from 'lucide-react';
+import { ChangeLeadStageModal } from './components/ChangeLeadStageModal';
 import { moveLeadToAlumni } from '../courses/services/post-course-service';
 import { useSafeBackNavigation } from '../../hooks/useSafeBackNavigation';
 
@@ -80,6 +82,9 @@ export function LeadDetailPage() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskModalMode, setTaskModalMode] = useState<'generic' | 'payment'>('generic');
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
+
+  // Stage change modal state
+  const [isStageModalOpen, setIsStageModalOpen] = useState(false);
 
   // Manual Email Composer Modal
   const [isEmailComposerOpen, setIsEmailComposerOpen] = useState(false);
@@ -425,6 +430,15 @@ export function LeadDetailPage() {
 
             {/* Header Action Buttons */}
             <div className="flex items-center gap-2 self-start sm:self-center">
+              <button
+                type="button"
+                onClick={() => setIsStageModalOpen(true)}
+                className="btn-secondary text-xs text-[#08254f] border-slate-200 hover:border-slate-300 py-1.5 px-3"
+                data-testid="detail-alterar-etapa-button"
+              >
+                <Kanban className="h-3.5 w-3.5 text-[#449bd5]" />
+                <span>Alterar etapa</span>
+              </button>
               {currentStage?.code !== 'alumni' && (
                 <button
                   type="button"
@@ -840,6 +854,19 @@ export function LeadDetailPage() {
           lead={lead}
           onClose={() => setIsEmailComposerOpen(false)}
           onEmailSent={loadLeadData}
+        />
+      )}
+
+      {/* Change Lead Stage Modal */}
+      {isStageModalOpen && lead && (
+        <ChangeLeadStageModal
+          isOpen={isStageModalOpen}
+          onClose={() => setIsStageModalOpen(false)}
+          leadId={lead.id}
+          leadName={fullName}
+          currentStageId={lead.pipeline_stage_id}
+          currentStageName={currentStage?.name}
+          onStageUpdated={loadLeadData}
         />
       )}
     </Layout>
