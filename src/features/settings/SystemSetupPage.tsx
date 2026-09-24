@@ -23,15 +23,29 @@ import { fetchCourses, updateCourse, formatCurrency } from '../revenue/services/
 import { HubSpotIntegrationView } from '../integrations/hubspot/HubSpotIntegrationView';
 import { NotificationPreferencesView } from './components/NotificationPreferencesView';
 
+export type SettingsTab = 'general' | 'courses' | 'data-management' | 'integrations' | 'notifications';
+
 export function SystemSetupPage() {
-  const [activeTab, setActiveTab] = useState<'general' | 'courses' | 'data-management' | 'integrations' | 'notifications'>(() => {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('tab') === 'integrations') return 'integrations';
-      if (params.get('tab') === 'notifications') return 'notifications';
+      const tab = params.get('tab');
+      if (tab === 'courses' || tab === 'data-management' || tab === 'integrations' || tab === 'notifications') {
+        return tab;
+      }
     }
     return 'general';
   });
+
+  const handleTabChange = useCallback((tab: SettingsTab) => {
+    setActiveTab(tab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, []);
+
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -213,70 +227,89 @@ export function SystemSetupPage() {
       title="Configurações Gerais"
       subtitle="Parâmetros globais, catálogo de cursos, gestão de dados e integrações da plataforma"
     >
-      <div className="max-w-4xl space-y-6">
-        {/* Settings Navigation Tabs */}
-        <div className="flex border-b border-slate-200 gap-6">
-          <button
-            type="button"
-            onClick={() => setActiveTab('general')}
-            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading ${
-              activeTab === 'general'
-                ? 'border-[#08254f] text-[#08254f]'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
+      <div className="max-w-4xl w-full min-w-0 space-y-6">
+        {/* Settings Navigation Tabs — Native touch scrollable on mobile, executive tabs on desktop */}
+        <div className="relative -mx-4 px-4 sm:mx-0 sm:px-0">
+          <nav
+            aria-label="Seções de Configurações"
+            className="flex items-center gap-1.5 sm:gap-6 border-b border-slate-200 overflow-x-auto no-scrollbar scroll-smooth pb-0.5"
           >
-            <Sliders className="h-4 w-4" />
-            Configurações Gerais
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('courses')}
-            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading ${
-              activeTab === 'courses'
-                ? 'border-[#08254f] text-[#08254f]'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <BookOpen className="h-4 w-4" />
-            Catálogo de Cursos
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('data-management')}
-            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading ${
-              activeTab === 'data-management'
-                ? 'border-[#08254f] text-[#08254f]'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Database className="h-4 w-4" />
-            Gestão de Dados
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('integrations')}
-            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading ${
-              activeTab === 'integrations'
-                ? 'border-[#08254f] text-[#08254f]'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Share2 className="h-4 w-4" />
-            Integrações
-          </button>
-          <button
-            type="button"
-            id="btn-tab-notifications"
-            onClick={() => setActiveTab('notifications')}
-            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading ${
-              activeTab === 'notifications'
-                ? 'border-[#08254f] text-[#08254f]'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Bell className="h-4 w-4" />
-            Notificações
-          </button>
+            <button
+              type="button"
+              id="btn-tab-general"
+              onClick={() => handleTabChange('general')}
+              aria-selected={activeTab === 'general'}
+              role="tab"
+              className={`flex items-center gap-2 px-3 sm:px-1 py-2.5 sm:pb-3 text-xs sm:text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading shrink-0 whitespace-nowrap min-h-[44px] active:scale-[0.98] ${
+                activeTab === 'general'
+                  ? 'border-[#08254f] text-[#08254f] bg-slate-100/70 sm:bg-transparent rounded-t-lg sm:rounded-none'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
+              }`}
+            >
+              <Sliders className="h-4 w-4 shrink-0" />
+              <span>Configurações Gerais</span>
+            </button>
+            <button
+              type="button"
+              id="btn-tab-courses"
+              onClick={() => handleTabChange('courses')}
+              aria-selected={activeTab === 'courses'}
+              role="tab"
+              className={`flex items-center gap-2 px-3 sm:px-1 py-2.5 sm:pb-3 text-xs sm:text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading shrink-0 whitespace-nowrap min-h-[44px] active:scale-[0.98] ${
+                activeTab === 'courses'
+                  ? 'border-[#08254f] text-[#08254f] bg-slate-100/70 sm:bg-transparent rounded-t-lg sm:rounded-none'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
+              }`}
+            >
+              <BookOpen className="h-4 w-4 shrink-0" />
+              <span>Catálogo de Cursos</span>
+            </button>
+            <button
+              type="button"
+              id="btn-tab-data-management"
+              onClick={() => handleTabChange('data-management')}
+              aria-selected={activeTab === 'data-management'}
+              role="tab"
+              className={`flex items-center gap-2 px-3 sm:px-1 py-2.5 sm:pb-3 text-xs sm:text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading shrink-0 whitespace-nowrap min-h-[44px] active:scale-[0.98] ${
+                activeTab === 'data-management'
+                  ? 'border-[#08254f] text-[#08254f] bg-slate-100/70 sm:bg-transparent rounded-t-lg sm:rounded-none'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
+              }`}
+            >
+              <Database className="h-4 w-4 shrink-0" />
+              <span>Gestão de Dados</span>
+            </button>
+            <button
+              type="button"
+              id="btn-tab-integrations"
+              onClick={() => handleTabChange('integrations')}
+              aria-selected={activeTab === 'integrations'}
+              role="tab"
+              className={`flex items-center gap-2 px-3 sm:px-1 py-2.5 sm:pb-3 text-xs sm:text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading shrink-0 whitespace-nowrap min-h-[44px] active:scale-[0.98] ${
+                activeTab === 'integrations'
+                  ? 'border-[#08254f] text-[#08254f] bg-slate-100/70 sm:bg-transparent rounded-t-lg sm:rounded-none'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
+              }`}
+            >
+              <Share2 className="h-4 w-4 shrink-0" />
+              <span>Integrações</span>
+            </button>
+            <button
+              type="button"
+              id="btn-tab-notifications"
+              onClick={() => handleTabChange('notifications')}
+              aria-selected={activeTab === 'notifications'}
+              role="tab"
+              className={`flex items-center gap-2 px-3 sm:px-1 py-2.5 sm:pb-3 text-xs sm:text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading shrink-0 whitespace-nowrap min-h-[44px] active:scale-[0.98] ${
+                activeTab === 'notifications'
+                  ? 'border-[#08254f] text-[#08254f] bg-slate-100/70 sm:bg-transparent rounded-t-lg sm:rounded-none'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
+              }`}
+            >
+              <Bell className="h-4 w-4 shrink-0" />
+              <span>Notificações no Dispositivo</span>
+            </button>
+          </nav>
         </div>
 
         {/* =============================================================== */}
@@ -284,12 +317,12 @@ export function SystemSetupPage() {
         {/* =============================================================== */}
         {activeTab === 'general' && (
           <div className="card-executive">
-            <div className="px-6 py-5 border-b border-slate-100">
+            <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100">
               <h2 className="text-base font-bold font-heading text-[#08254f]">Configurações Gerais</h2>
               <p className="text-xs text-slate-500 mt-1">Configure os parâmetros da sua instância EDS HUB.</p>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-5">
+            <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-5">
               <div>
                 <label htmlFor="settings-company-name" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Company Name
@@ -466,7 +499,7 @@ export function SystemSetupPage() {
         {/* =============================================================== */}
         {activeTab === 'courses' && (
           <div className="card-executive">
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+            <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h2 className="text-base font-bold font-heading text-[#08254f]">Catálogo de Cursos & Preços</h2>
                 <p className="text-xs text-slate-500 mt-1">
@@ -475,7 +508,7 @@ export function SystemSetupPage() {
               </div>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               {courseSaveError && (
                 <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs text-red-700">
                   {courseSaveError}
@@ -638,26 +671,26 @@ export function SystemSetupPage() {
             )}
 
             <div className="bg-white dark:bg-slate-900 rounded-[var(--radius-card)] shadow-[var(--shadow-card)] border border-gray-100 dark:border-slate-800">
-              <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800">
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white">Data Management</h2>
+              <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-100 dark:border-slate-800">
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">Gestão de Dados</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Manage contact datasets, maintenance actions, and database cleanup.
+                  Gerencie a base de contatos, ações de manutenção e limpeza segura do banco de dados.
                 </p>
               </div>
 
-              <div className="p-6 space-y-6">
+              <div className="p-4 sm:p-6 space-y-6">
                 {/* Danger Zone Section */}
                 <div className="border border-red-200 dark:border-red-900/60 rounded-2xl overflow-hidden bg-red-50/20 dark:bg-red-950/10">
-                  <div className="px-5 py-3.5 border-b border-red-100 dark:border-red-900/40 bg-red-50/70 dark:bg-red-950/30 flex items-center gap-2 text-red-900 dark:text-red-200">
+                  <div className="px-4 sm:px-5 py-3.5 border-b border-red-100 dark:border-red-900/40 bg-red-50/70 dark:bg-red-950/30 flex items-center gap-2 text-red-900 dark:text-red-200">
                     <AlertTriangle className="h-4 w-4 text-red-600" />
-                    <h3 className="text-xs font-bold uppercase tracking-wider">Danger Zone</h3>
+                    <h3 className="text-xs font-bold uppercase tracking-wider">Zona de Perigo</h3>
                   </div>
 
-                  <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="space-y-1 max-w-lg">
-                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">Delete All Contacts</h4>
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">Excluir Todos os Contatos</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                        Permanently delete all contacts and their related CRM data. This action cannot be undone.
+                        Exclua permanentemente todos os contatos e seus dados relacionados do CRM. Esta ação não pode ser desfeita.
                       </p>
                     </div>
 
@@ -665,10 +698,10 @@ export function SystemSetupPage() {
                       type="button"
                       id="btn-delete-all-contacts"
                       onClick={() => setIsDeleteModalOpen(true)}
-                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors shrink-0 cursor-pointer"
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors shrink-0 cursor-pointer min-h-[44px]"
                     >
                       <Trash2 className="h-4 w-4" />
-                      Delete All Contacts
+                      Excluir Todos os Contatos
                     </button>
                   </div>
                 </div>
@@ -681,7 +714,7 @@ export function SystemSetupPage() {
         {/* TAB 4: INTEGRATIONS (HUBSPOT CONTINUOUS SYNC)                   */}
         {/* =============================================================== */}
         {activeTab === 'integrations' && (
-          <div className="card-executive p-6">
+          <div className="card-executive p-4 sm:p-6">
             <HubSpotIntegrationView />
           </div>
         )}

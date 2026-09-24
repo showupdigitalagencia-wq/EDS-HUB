@@ -142,10 +142,10 @@ export function HubSpotIntegrationView() {
       )}
 
       {/* Sub-navigation tabs */}
-      <div className="flex border-b border-gray-200 dark:border-gray-700 space-x-6">
+      <div className="flex border-b border-gray-200 dark:border-gray-700 gap-4 sm:gap-6 overflow-x-auto no-scrollbar scroll-smooth pb-0.5">
         <button
           onClick={() => setSubTab('overview')}
-          className={`pb-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors shrink-0 whitespace-nowrap min-h-[40px] ${
             subTab === 'overview'
               ? 'border-[#08254f] text-[#08254f] dark:border-[#449bd5] dark:text-[#449bd5]'
               : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
@@ -157,7 +157,7 @@ export function HubSpotIntegrationView() {
 
         <button
           onClick={() => setSubTab('mapping')}
-          className={`pb-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors shrink-0 whitespace-nowrap min-h-[40px] ${
             subTab === 'mapping'
               ? 'border-[#08254f] text-[#08254f] dark:border-[#449bd5] dark:text-[#449bd5]'
               : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
@@ -169,7 +169,7 @@ export function HubSpotIntegrationView() {
 
         <button
           onClick={() => setSubTab('activity')}
-          className={`pb-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors shrink-0 whitespace-nowrap min-h-[40px] ${
             subTab === 'activity'
               ? 'border-[#08254f] text-[#08254f] dark:border-[#449bd5] dark:text-[#449bd5]'
               : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
@@ -181,7 +181,7 @@ export function HubSpotIntegrationView() {
 
         <button
           onClick={() => setSubTab('conflicts')}
-          className={`pb-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors shrink-0 whitespace-nowrap min-h-[40px] ${
             subTab === 'conflicts'
               ? 'border-[#08254f] text-[#08254f] dark:border-[#449bd5] dark:text-[#449bd5]'
               : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'

@@ -19,7 +19,8 @@ type NotificationEventType =
   | 'inbound_email'
   | 'incomplete_registration'
   | 'task_due'
-  | 'deliverability_critical';
+  | 'deliverability_critical'
+  | 'system_test';
 
 interface SendPushRequest {
   event_type: NotificationEventType;
@@ -30,6 +31,7 @@ interface SendPushRequest {
   deep_link?: string;
   badge_count?: number;
   target_user_ids?: string[];
+  target_subscription_ids?: string[];
 }
 
 const EVENT_PREFERENCE_MAP: Record<NotificationEventType, string> = {
@@ -39,6 +41,7 @@ const EVENT_PREFERENCE_MAP: Record<NotificationEventType, string> = {
   incomplete_registration: 'incomplete_registrations',
   task_due: 'tasks',
   deliverability_critical: 'deliverability_critical',
+  system_test: 'system_test',
 };
 
 Deno.serve(async (req) => {
@@ -66,6 +69,7 @@ Deno.serve(async (req) => {
       deep_link = '/',
       badge_count,
       target_user_ids,
+      target_subscription_ids,
     } = payload;
 
     if (!event_type || !idempotency_key || !title || !body) {
@@ -119,22 +123,26 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 3. Filter users based on category preferences
-    const prefField = EVENT_PREFERENCE_MAP[event_type];
-    const { data: preferences } = await supabase
-      .from('push_notification_preferences')
-      .select(`user_id, ${prefField}`)
-      .in('user_id', candidateUserIds);
+    // 3. Filter users based on category preferences (system_test bypasses category filtering)
+    let eligibleUserIds = candidateUserIds;
+    if (event_type !== 'system_test') {
+      const prefField = EVENT_PREFERENCE_MAP[event_type];
+      if (prefField) {
+        const { data: preferences } = await supabase
+          .from('push_notification_preferences')
+          .select(`user_id, ${prefField}`)
+          .in('user_id', candidateUserIds);
 
-    const prefMap = new Map<string, boolean>();
-    (preferences || []).forEach((p: Record<string, unknown>) => {
-      prefMap.set(p.user_id as string, p[prefField] !== false);
-    });
+        const prefMap = new Map<string, boolean>();
+        (preferences || []).forEach((p: Record<string, unknown>) => {
+          prefMap.set(p.user_id as string, p[prefField] !== false);
+        });
 
-    // Users who have explicitly disabled this category are excluded
-    const eligibleUserIds = candidateUserIds.filter((uid) => {
-      return prefMap.has(uid) ? prefMap.get(uid) === true : true; // Default true if no record
-    });
+        eligibleUserIds = candidateUserIds.filter((uid) => {
+          return prefMap.has(uid) ? prefMap.get(uid) === true : true; // Default true if no record
+        });
+      }
+    }
 
     if (eligibleUserIds.length === 0) {
       return new Response(
@@ -148,11 +156,17 @@ Deno.serve(async (req) => {
     }
 
     // 4. Fetch all active subscriptions for eligible users
-    const { data: subscriptions, error: subsError } = await supabase
+    let subsQuery = supabase
       .from('push_subscriptions')
       .select('id, user_id, endpoint, p256dh, auth_key, device_type')
       .in('user_id', eligibleUserIds)
       .eq('status', 'active');
+
+    if (target_subscription_ids && target_subscription_ids.length > 0) {
+      subsQuery = subsQuery.in('id', target_subscription_ids);
+    }
+
+    const { data: subscriptions, error: subsError } = await subsQuery;
 
     if (subsError) {
       console.error('[send-push-notification] Error fetching subscriptions:', subsError);
@@ -201,7 +215,7 @@ Deno.serve(async (req) => {
         .eq('idempotency_key', idempotency_key)
         .maybeSingle();
 
-      if (existingLog && existingLog.status === 'delivered') {
+      if (existingLog && existingLog.status === 'sent') {
         skippedCount++;
         continue;
       }
@@ -240,7 +254,7 @@ Deno.serve(async (req) => {
             .update({ last_used_at: new Date().toISOString() })
             .eq('id', sub.id);
 
-          // Log delivery
+          // Log delivery (matches CHECK constraint: status IN ('sent', 'failed', 'suppressed_preference', 'suppressed_idempotent'))
           await supabase.from('push_notification_logs').upsert(
             {
               user_id: sub.user_id,
@@ -250,7 +264,7 @@ Deno.serve(async (req) => {
               idempotency_key,
               title: sanitizedTitle,
               body_preview: sanitizedBody.slice(0, 100),
-              status: 'delivered',
+              status: 'sent',
               deep_link,
               created_at: new Date().toISOString(),
             },
@@ -273,7 +287,7 @@ Deno.serve(async (req) => {
               idempotency_key,
               title: sanitizedTitle,
               body_preview: sanitizedBody.slice(0, 100),
-              status: 'expired',
+              status: 'failed',
               deep_link,
               error_message: `Push service returned ${pushRes.status} (Subscription Expired)`,
               created_at: new Date().toISOString(),

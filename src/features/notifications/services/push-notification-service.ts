@@ -229,6 +229,117 @@ export async function isCurrentDeviceSubscribed(): Promise<boolean> {
 }
 
 /**
+ * Resolves the database UUID of the current device's active subscription.
+ */
+export async function getCurrentDeviceSubscriptionId(): Promise<string | null> {
+  if (!isPushSupported()) return null;
+  if (getNotificationPermission() !== 'granted') return null;
+
+  try {
+    if (!navigator.serviceWorker) return null;
+    const registration = await navigator.serviceWorker.ready;
+    if (!registration.pushManager) return null;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return null;
+
+    const { data } = await supabase
+      .from('push_subscriptions')
+      .select('id')
+      .eq('endpoint', subscription.endpoint)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    return data?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sends a real test Web Push notification targeted strictly to the current registered device.
+ * Does not notify all devices, does not generate fake CRM leads, tasks, or automations.
+ */
+export async function sendTestPushNotification(targetSubscriptionId?: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user) {
+    return {
+      success: false,
+      error: 'Você precisa estar autenticado para testar notificações.',
+    };
+  }
+
+  const userId = authData.user.id;
+
+  if (!isPushSupported()) {
+    return {
+      success: false,
+      error: 'Web Push não é suportado neste navegador.',
+    };
+  }
+
+  if (getNotificationPermission() !== 'granted') {
+    return {
+      success: false,
+      error: 'Ative as notificações neste dispositivo para realizar o teste.',
+    };
+  }
+
+  const subId = targetSubscriptionId || (await getCurrentDeviceSubscriptionId());
+  if (!subId) {
+    return {
+      success: false,
+      error: 'Ative as notificações neste dispositivo para realizar o teste.',
+    };
+  }
+
+  try {
+    const idempotencyKey = `test_push_${subId}_${Date.now()}`;
+    const { data, error } = await supabase.functions.invoke('send-push-notification', {
+      body: {
+        event_type: 'system_test',
+        event_id: 'test-device-verification',
+        idempotency_key: idempotencyKey,
+        title: 'Teste de notificação — EDS HUB',
+        body: 'Se você recebeu este alerta, as notificações do sistema estão funcionando neste dispositivo.',
+        deep_link: '/settings?tab=notifications',
+        target_user_ids: [userId],
+        target_subscription_ids: [subId],
+      },
+    });
+
+    if (error) {
+      console.error('[PushService] Test notification invoke error:', error);
+      return {
+        success: false,
+        error: 'Não foi possível enviar a notificação de teste.',
+      };
+    }
+
+    if (data?.dispatched_count === 0 && data?.skipped_count === 0) {
+      return {
+        success: false,
+        error: data?.message || 'Não foi possível enviar a notificação de teste.',
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Notificação de teste enviada com sucesso.',
+    };
+  } catch (err) {
+    console.error('[PushService] Test notification exception:', err);
+    return {
+      success: false,
+      error: 'Não foi possível enviar a notificação de teste.',
+    };
+  }
+}
+
+/**
  * Fetches user push notification preferences.
  */
 export async function fetchNotificationPreferences(): Promise<PushNotificationPreferences | null> {

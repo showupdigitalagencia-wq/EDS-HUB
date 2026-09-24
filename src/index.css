@@ -383,3 +383,13 @@ html, body {
   box-shadow: 0 4px 14px rgba(8, 37, 79, 0.05), 0 1px 3px rgba(8, 37, 79, 0.02);
   border-color: #cbd5e1;
 }
+
+/* Hide scrollbar utility for clean mobile horizontal tab scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
