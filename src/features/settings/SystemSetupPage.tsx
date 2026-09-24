@@ -16,16 +16,19 @@ import {
   Edit2,
   X,
   Share2,
+  Bell,
 } from 'lucide-react';
 import type { AppSettings, Course } from '../../types';
 import { fetchCourses, updateCourse, formatCurrency } from '../revenue/services/revenue-service';
 import { HubSpotIntegrationView } from '../integrations/hubspot/HubSpotIntegrationView';
+import { NotificationPreferencesView } from './components/NotificationPreferencesView';
 
 export function SystemSetupPage() {
-  const [activeTab, setActiveTab] = useState<'general' | 'courses' | 'data-management' | 'integrations'>(() => {
+  const [activeTab, setActiveTab] = useState<'general' | 'courses' | 'data-management' | 'integrations' | 'notifications'>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('tab') === 'integrations') return 'integrations';
+      if (params.get('tab') === 'notifications') return 'notifications';
     }
     return 'general';
   });
@@ -260,6 +263,19 @@ export function SystemSetupPage() {
           >
             <Share2 className="h-4 w-4" />
             Integrações
+          </button>
+          <button
+            type="button"
+            id="btn-tab-notifications"
+            onClick={() => setActiveTab('notifications')}
+            className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer font-heading ${
+              activeTab === 'notifications'
+                ? 'border-[#08254f] text-[#08254f]'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Bell className="h-4 w-4" />
+            Notificações
           </button>
         </div>
 
@@ -668,6 +684,13 @@ export function SystemSetupPage() {
           <div className="card-executive p-6">
             <HubSpotIntegrationView />
           </div>
+        )}
+
+        {/* =============================================================== */}
+        {/* TAB 5: NOTIFICATIONS (PWA & WEB PUSH PREFERENCES)               */}
+        {/* =============================================================== */}
+        {activeTab === 'notifications' && (
+          <NotificationPreferencesView />
         )}
       </div>
 

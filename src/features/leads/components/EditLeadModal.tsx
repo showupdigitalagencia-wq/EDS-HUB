@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   CheckCircle2,
 } from 'lucide-react';
+import { notifySmsPreference } from '../../notifications/services/push-notification-service';
 
 export interface EditLeadModalProps {
   isOpen: boolean;
@@ -313,6 +314,13 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
 
       // 7. Show success message & trigger immediate view refresh
       setSuccessMessage('Lead atualizado');
+
+      if (contactPreference === 'sms' && lead.contact_preference !== 'sms') {
+        void notifySmsPreference({
+          leadId: lead.id,
+          leadName: `${trimmedFirst} ${trimmedLast}`.trim() || 'Lead',
+        }).catch(() => {});
+      }
 
       window.dispatchEvent(
         new CustomEvent('lead-updated', {

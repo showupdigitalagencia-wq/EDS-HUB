@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { createCrmTask } from '../services/work-queue-service';
+import { notifyTaskDue } from '../../notifications/services/push-notification-service';
 import type { TaskPriority, TaskType } from '../../../types/database';
 
 interface CreateTaskModalProps {
@@ -108,6 +109,13 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         courseSessionId: initialSessionId || undefined,
         postCourseEngagementId: initialEngagementId || undefined,
       });
+
+      // Supplementary non-blocking push notification (CRM is source of truth)
+      void notifyTaskDue({
+        taskId: targetLeadId,
+        taskTitle: title.trim(),
+        leadId: targetLeadId,
+      }).catch(() => {});
 
       (onTaskCreated || onCreated)?.();
       onClose();

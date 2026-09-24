@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/supabase';
 import type { Course, CourseSession } from '../../../types';
 import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
 import { X, UserPlus, AlertCircle, Loader2, Plus, Trash2 } from 'lucide-react';
+import { notifyNewLead } from '../../notifications/services/push-notification-service';
 
 interface NewLeadModalProps {
   isOpen: boolean;
@@ -154,6 +155,17 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
       if (rpcErr) throw rpcErr;
       if (!data?.success) {
         throw new Error(data?.error || 'Erro ao registrar lead manualmente');
+      }
+
+      // Supplementary non-blocking push notification (CRM is source of truth)
+      if (data?.lead_id) {
+        const leadIdStr = String(data.lead_id);
+        const selectedCourse = courses.find((c) => c.id === interests[0]?.courseId);
+        void notifyNewLead({
+          leadId: leadIdStr,
+          leadName: fullName.trim() || 'Novo lead',
+          courseName: selectedCourse?.name || 'curso de especialização',
+        }).catch(() => {});
       }
 
       onLeadCreated();

@@ -3,8 +3,13 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
 
+import { registerServiceWorker } from './registerServiceWorker'
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
   </StrictMode>,
 )
+
+// Initialize PWA Service Worker (non-blocking)
+registerServiceWorker();
