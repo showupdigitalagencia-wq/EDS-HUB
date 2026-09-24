@@ -4,6 +4,12 @@
 // Isolates Resend API calls so business logic doesn't depend on the SDK.
 // =============================================================================
 
+export interface SendEmailAttachment {
+  filename: string;
+  content: string; // base64 encoded string
+  contentType?: string;
+}
+
 interface SendEmailParams {
   from: string;
   to: string;
@@ -13,6 +19,7 @@ interface SendEmailParams {
   replyTo?: string;
   idempotencyKey: string;
   headers?: Record<string, string>;
+  attachments?: SendEmailAttachment[];
 }
 
 interface SendEmailResult {
@@ -51,6 +58,14 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
 
     if (params.headers && Object.keys(params.headers).length > 0) {
       payload.headers = params.headers;
+    }
+
+    if (params.attachments && params.attachments.length > 0) {
+      payload.attachments = params.attachments.map((att) => ({
+        filename: att.filename,
+        content: att.content,
+        content_type: att.contentType || 'application/pdf',
+      }));
     }
 
     const response = await fetch('https://api.resend.com/emails', {

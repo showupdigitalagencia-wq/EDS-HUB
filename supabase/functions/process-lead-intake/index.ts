@@ -850,16 +850,31 @@ async function handleEmailPreference(
     return { sent: 0, failed: 0, tasksCreated: 1, allSucceeded: false, errors: ['No valid email address'] };
   }
 
+  // Resolve course template key if specified
+  let templateKey = 'lead_intake_email';
+  if (payload.course_interest) {
+    const normalizedCourse = payload.course_interest.trim().toLowerCase();
+    if (normalizedCourse === 'zygomatic' || normalizedCourse === 'zit-01' || normalizedCourse.includes('zygomatic')) {
+      templateKey = 'zygomatic_course_details';
+    } else if (normalizedCourse === 'intensive' || normalizedCourse === 'idit-01' || normalizedCourse.includes('intensive')) {
+      templateKey = 'intensive_course_details';
+    } else if (normalizedCourse === 'endodontic' || normalizedCourse === 'et-01' || normalizedCourse.includes('endo')) {
+      templateKey = 'endodontic_course_details';
+    } else if (normalizedCourse === 'wisdom' || normalizedCourse === 'wtt-01' || normalizedCourse.includes('wisdom')) {
+      templateKey = 'wisdom_course_details';
+    }
+  }
+
   // Get email template
   const { data: template } = await db
     .from('transactional_templates')
     .select('subject_template, body_template')
-    .eq('key', 'lead_intake_email')
+    .eq('key', templateKey)
     .eq('is_active', true)
-    .single();
+    .maybeSingle();
 
   if (!template) {
-    return { sent: 0, failed: 0, tasksCreated: 0, allSucceeded: false, errors: ['Email template not found'] };
+    return { sent: 0, failed: 0, tasksCreated: 0, allSucceeded: false, errors: [`Email template not found: ${templateKey}`] };
   }
 
   // Get settings for from email
@@ -867,18 +882,81 @@ async function handleEmailPreference(
   const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
   const replyTo = 'info@expdentalsolutions.com';
 
-  const subject = renderTemplate(template.subject_template || '', {
+  const templateVars = {
     salutation,
-    first_name: payload.first_name || salutation,
-  });
-  const body = renderTemplate(template.body_template, {
-    salutation,
-    first_name: payload.first_name || salutation,
-  });
+    first_name: payload.first_name || salutation || 'Doctor',
+    course_name: payload.course_interest || (templateKey === 'zygomatic_course_details' ? 'Zygomatic Implant Training' : 'Intensive Dental Implant Training'),
+    course_date_range: 'November 7–10, 2026',
+    course_tuition: '$17,500',
+  };
+
+  const subject = renderTemplate(template.subject_template || '', templateVars);
+  const body = renderTemplate(template.body_template, templateVars);
   const escapedHtmlBody = renderTemplate(template.body_template, {
-    salutation: escapeHtml(salutation),
-    first_name: escapeHtml(payload.first_name || salutation),
+    ...templateVars,
+    salutation: escapeHtml(templateVars.salutation),
+    first_name: escapeHtml(templateVars.first_name),
   }).replace(/\n/g, '<br>');
+
+  // Attachment handling: Query template_attachments for this template
+  const attachmentsToSend: Array<{ filename: string; content: string; contentType?: string }> = [];
+  let attachmentMetadata = {
+    included: false,
+    filename: null as string | null,
+    materialId: null as string | null,
+  };
+
+  const { data: tmplAtt } = await db
+    .from('template_attachments')
+    .select('is_required, display_name, material_id')
+    .eq('template_key', templateKey)
+    .maybeSingle();
+
+  if (tmplAtt && tmplAtt.material_id) {
+    const { data: material } = await db
+      .from('course_materials')
+      .select('id, title, file_name, storage_bucket, storage_path, content_type, is_active')
+      .eq('id', tmplAtt.material_id)
+      .single();
+
+    if (material && material.is_active) {
+      const { data: fileData, error: downloadErr } = await db.storage
+        .from(material.storage_bucket)
+        .download(material.storage_path);
+
+      if (!downloadErr && fileData && fileData.size > 0) {
+        const arrayBuffer = await fileData.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize);
+          binary += String.fromCharCode.apply(null, chunk as any);
+        }
+        const base64Content = btoa(binary);
+
+        attachmentsToSend.push({
+          filename: material.file_name || 'Zygomatic Course Details.pdf',
+          content: base64Content,
+          contentType: 'application/pdf',
+        });
+
+        attachmentMetadata = {
+          included: true,
+          filename: material.file_name,
+          materialId: material.id,
+        };
+      } else if (tmplAtt.is_required || templateKey === 'zygomatic_course_details') {
+        return {
+          sent: 0,
+          failed: 1,
+          tasksCreated: 1,
+          allSucceeded: false,
+          errors: [`Required course attachment (${material?.file_name || 'PDF'}) could not be retrieved from storage`],
+        };
+      }
+    }
+  }
 
   // Ensure or resolve conversation for threading in Lead Profile -> Conversas
   let conversationId: string | null = null;
@@ -930,7 +1008,7 @@ async function handleEmailPreference(
         channel: 'email',
         provider: 'resend',
         recipient,
-        template_key: 'lead_intake_email',
+        template_key: templateKey,
         subject_snapshot: subject,
         body_snapshot: body,
         status: 'failed',
@@ -979,12 +1057,15 @@ async function handleEmailPreference(
           channel: 'email',
           provider: 'resend',
           recipient,
-          template_key: 'lead_intake_email',
+          template_key: templateKey,
           subject_snapshot: subject,
           body_snapshot: body,
           status: 'pending',
           idempotency_key: msgIdempotencyKey,
           attempt_count: 1,
+          attachment_included: attachmentMetadata.included,
+          attachment_filename: attachmentMetadata.filename,
+          attachment_material_id: attachmentMetadata.materialId,
         })
         .select('id')
         .single();
@@ -1000,6 +1081,7 @@ async function handleEmailPreference(
       text: body,
       replyTo,
       idempotencyKey: msgIdempotencyKey,
+      attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
     });
 
     if (result.success) {

@@ -54,6 +54,8 @@ export function ManualEmailComposerModal({
   // Template state
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState<string | null>(null);
+  const [attachment, setAttachment] = useState<{ displayName: string; canRemove: boolean } | null>(null);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
 
   // Suppression state
@@ -124,6 +126,8 @@ export function ManualEmailComposerModal({
       setSendSuccess(false);
       setIsSending(false);
       setSelectedTemplateId('');
+      setSelectedTemplateKey(null);
+      setAttachment(null);
       setSuppressionReason(null);
       setSuppressionWarning(null);
       idempotencyKeyRef.current = `manual_email:${lead.id}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
@@ -142,21 +146,45 @@ export function ManualEmailComposerModal({
   // Handle Template Selection: copies snapshot into composer with safe variable substitution
   const handleSelectTemplate = (templateId: string) => {
     setSelectedTemplateId(templateId);
-    if (!templateId) return;
+    if (!templateId) {
+      setSelectedTemplateKey(null);
+      setAttachment(null);
+      return;
+    }
 
     const tpl = templates.find((t) => t.id === templateId);
     if (!tpl) return;
 
-    // Resolve variables with lead data
+    // Check attachment configuration
+    const isZygomatic = tpl.template_key === 'zygomatic_course_details' || tpl.name.toLowerCase().includes('zygomatic');
+    const hasAtt = Boolean(tpl.has_attachment || (tpl.content_json as any)?.has_attachment || isZygomatic);
+    if (hasAtt) {
+      setAttachment({
+        displayName: tpl.attachment_name || (tpl.content_json as any)?.attachment_name || 'Zygomatic Course PDF',
+        canRemove: true,
+      });
+    } else {
+      setAttachment(null);
+    }
+    setSelectedTemplateKey(tpl.template_key || (isZygomatic ? 'zygomatic_course_details' : null));
+
+    // Resolve variables with lead data safely
     const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doc');
-    const firstName = lead.first_name ? lead.first_name.trim() : '';
+    const firstName = lead.first_name ? lead.first_name.trim() : (salutation || 'Doctor');
     const lastName = lead.last_name ? lead.last_name.trim() : '';
+    const courseName = lead.course_interest || (isZygomatic ? 'Zygomatic Implant Training' : 'Intensive Dental Implant Training');
+    const courseDateRange = 'November 7–10, 2026';
+    const courseTuition = '$17,500';
 
     const replaceVars = (text: string) =>
       text
         .replace(/\{\{\s*salutation\s*\}\}/gi, salutation || '')
         .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
-        .replace(/\{\{\s*last_name\s*\}\}/gi, lastName);
+        .replace(/\{\{\s*last_name\s*\}\}/gi, lastName)
+        .replace(/\{\{\s*course_name\s*\}\}/gi, courseName)
+        .replace(/\{\{\s*course_date_range\s*\}\}/gi, courseDateRange)
+        .replace(/\{\{\s*course_tuition\s*\}\}/gi, courseTuition)
+        .replace(/\{\{\s*[\w.]+\s*\}\}/g, ''); // Safe cleanup of any unmapped variables
 
     // Subject snapshot
     const templateSubject = getTemplateSubject(tpl) || tpl.name || '';
@@ -214,6 +242,8 @@ export function ManualEmailComposerModal({
           channel: 'email',
           subject: subject.trim(),
           body: body.trim(),
+          template_key: selectedTemplateKey || undefined,
+          include_attachment: Boolean(attachment),
           in_reply_to_provider_message_id: inReplyToProviderMessageId || undefined,
           idempotency_key: idempotencyKeyRef.current,
         },
@@ -433,6 +463,36 @@ export function ManualEmailComposerModal({
               className="w-full px-3.5 py-2.5 text-xs text-slate-800 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#449bd5] focus:border-[#449bd5] resize-y disabled:bg-slate-100 disabled:text-slate-400 leading-relaxed font-sans"
             />
           </div>
+
+          {/* Attachment Preview Section */}
+          {attachment && (
+            <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-3 flex items-center justify-between animate-in fade-in duration-150">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 font-bold text-[10px] flex items-center justify-center border border-rose-200 shrink-0">
+                  PDF
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-slate-800">{attachment.displayName}</span>
+                    <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                      Anexo Oficial
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">PDF • Documento oficial do curso incluído</p>
+                </div>
+              </div>
+              {attachment.canRemove && (
+                <button
+                  type="button"
+                  onClick={() => setAttachment(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/50 transition-colors cursor-pointer"
+                  title="Remover anexo deste envio"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer — Sticky with Actions & Mobile Safe Area */}

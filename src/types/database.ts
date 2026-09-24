@@ -381,6 +381,9 @@ export interface EmailTemplate {
   html_template: string;
   text_template: string;
   is_active: boolean;
+  template_key?: string | null;
+  has_attachment?: boolean;
+  attachment_name?: string | null;
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;

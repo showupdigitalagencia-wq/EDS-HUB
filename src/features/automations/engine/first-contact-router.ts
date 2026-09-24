@@ -163,7 +163,7 @@ export function resolveFirstContactTemplateForCourse(course?: string | null): Fi
       templateKey: 'zygomatic_course_details',
       templateName: 'Zygomatic Course Details',
       hasPdfAttachment: true,
-      pdfAttachmentName: 'Zygomatic_Implant_Course_Details_EDS.pdf',
+      pdfAttachmentName: 'Zygomatic Course (2).pdf',
     };
   }
 

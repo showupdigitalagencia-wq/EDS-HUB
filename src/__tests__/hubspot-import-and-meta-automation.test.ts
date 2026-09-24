@@ -207,7 +207,7 @@ describe('EDS HUB — HubSpot Import, Meta-Origin Automation & Course Mapping', 
       expect(res?.courseCode).toBe('ZIT-01');
       expect(res?.templateKey).toBe('zygomatic_course_details');
       expect(res?.hasPdfAttachment).toBe(true);
-      expect(res?.pdfAttachmentName).toBe('Zygomatic_Implant_Course_Details_EDS.pdf');
+      expect(res?.pdfAttachmentName).toBe('Zygomatic Course (2).pdf');
     });
 
     it('resolves Intensive to IDIT-01 and intensive_course_details', () => {

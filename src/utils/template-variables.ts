@@ -61,6 +61,21 @@ export const GLOBAL_TEMPLATE_VARIABLES: TemplateVariable[] = [
     label: 'Primeiro Nome',
     description: 'Primeiro nome cadastrado (ex: Maria)',
   },
+  {
+    key: '{{course_name}}',
+    label: 'Nome do Curso',
+    description: 'Nome do curso de interesse (ex: Zygomatic Implant Training)',
+  },
+  {
+    key: '{{course_date_range}}',
+    label: 'Datas do Curso',
+    description: 'Período da próxima turma (ex: November 7–10, 2026)',
+  },
+  {
+    key: '{{course_tuition}}',
+    label: 'Valor do Curso',
+    description: 'Investimento do curso (ex: $17,500)',
+  },
 ];
 
 /**
@@ -85,6 +100,9 @@ export const SAMPLE_PREVIEW_DATA = {
   sender_email: 'preview@exemplo.com',
   recipient_email: 'maria.silva@exemplo.com',
   recipient_phone: '+55 (11) 98765-4321',
+  course_name: 'Zygomatic Implant Training',
+  course_date_range: 'November 7–10, 2026',
+  course_tuition: '$17,500',
 };
 
 /**
@@ -102,7 +120,10 @@ export function renderTemplateWithSampleData(
 
   let output = text
     .replace(/\{\{\s*salutation\s*\}\}/gi, salutation)
-    .replace(/\{\{\s*first_name\s*\}\}/gi, SAMPLE_PREVIEW_DATA.first_name);
+    .replace(/\{\{\s*first_name\s*\}\}/gi, SAMPLE_PREVIEW_DATA.first_name)
+    .replace(/\{\{\s*course_name\s*\}\}/gi, SAMPLE_PREVIEW_DATA.course_name)
+    .replace(/\{\{\s*course_date_range\s*\}\}/gi, SAMPLE_PREVIEW_DATA.course_date_range)
+    .replace(/\{\{\s*course_tuition\s*\}\}/gi, SAMPLE_PREVIEW_DATA.course_tuition);
 
   if (context === 'campaign') {
     output = output.replace(/\{\{\s*last_name\s*\}\}/gi, SAMPLE_PREVIEW_DATA.last_name);

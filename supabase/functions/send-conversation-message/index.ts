@@ -22,6 +22,8 @@ interface SendMessagePayload {
   override_preference_confirmed?: boolean;
   in_reply_to_provider_message_id?: string | null;
   idempotency_key?: string | null;
+  template_key?: string | null;
+  include_attachment?: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -59,6 +61,8 @@ Deno.serve(async (req) => {
       override_preference_confirmed,
       in_reply_to_provider_message_id,
       idempotency_key,
+      template_key,
+      include_attachment,
     } = payload;
 
     if (!lead_id || !channel || !body) {
@@ -73,7 +77,7 @@ Deno.serve(async (req) => {
     // 2. Fetch Lead
     const { data: lead, error: leadErr } = await db
       .from('leads')
-      .select('id, first_name, last_name, email, phone_raw, phone_e164, contact_preference')
+      .select('id, first_name, last_name, email, phone_raw, phone_e164, contact_preference, pipeline_stage_id')
       .eq('id', lead_id)
       .single();
 
@@ -235,6 +239,119 @@ Deno.serve(async (req) => {
         headers['References'] = in_reply_to_provider_message_id;
       }
 
+      // Attachment handling and verification
+      const attachmentsToSend: Array<{ filename: string; content: string; contentType?: string }> = [];
+      let attachmentMetadata = {
+        included: false,
+        filename: null as string | null,
+        materialId: null as string | null,
+      };
+
+      const requestedTemplateKey = template_key || null;
+      const shouldIncludeAttachment = include_attachment !== false;
+
+      if (requestedTemplateKey && shouldIncludeAttachment) {
+        // Query template_attachments join course_materials
+        const { data: tmplAtt } = await db
+          .from('template_attachments')
+          .select('is_required, display_name, material_id')
+          .eq('template_key', requestedTemplateKey)
+          .maybeSingle();
+
+        if (tmplAtt && tmplAtt.material_id) {
+          const { data: material } = await db
+            .from('course_materials')
+            .select('id, title, file_name, storage_bucket, storage_path, content_type, is_active')
+            .eq('id', tmplAtt.material_id)
+            .single();
+
+          if (material && material.is_active) {
+            // Attempt to retrieve PDF binary from Supabase Storage
+            const { data: fileData, error: downloadErr } = await db.storage
+              .from(material.storage_bucket)
+              .download(material.storage_path);
+
+            if (downloadErr || !fileData) {
+              console.error('Attachment download failed:', downloadErr);
+              if (tmplAtt.is_required || requestedTemplateKey === 'zygomatic_course_details') {
+                return new Response(
+                  JSON.stringify({
+                    error: 'ATTACHMENT_REQUIRED_MISSING',
+                    message: `O arquivo PDF oficial do curso (${material.file_name}) é obrigatório para este modelo e não foi encontrado no armazenamento. O envio foi cancelado para garantir a integridade comercial.`,
+                  }),
+                  { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                );
+              }
+            } else {
+              // Validate MIME type
+              const mimeType = fileData.type || material.content_type || 'application/pdf';
+              if (mimeType !== 'application/pdf') {
+                return new Response(
+                  JSON.stringify({
+                    error: 'INVALID_ATTACHMENT_MIME',
+                    message: `O arquivo anexado deve ser do tipo application/pdf (encontrado: ${mimeType}).`,
+                  }),
+                  { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                );
+              }
+
+              // Validate non-empty
+              if (fileData.size === 0) {
+                return new Response(
+                  JSON.stringify({
+                    error: 'EMPTY_ATTACHMENT',
+                    message: 'O arquivo PDF anexado está vazio (0 bytes).',
+                  }),
+                  { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                );
+              }
+
+              // Validate size (max 40MB for Resend)
+              if (fileData.size > 40 * 1024 * 1024) {
+                return new Response(
+                  JSON.stringify({
+                    error: 'ATTACHMENT_TOO_LARGE',
+                    message: 'O arquivo PDF excede o limite de tamanho suportado (40MB).',
+                  }),
+                  { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                );
+              }
+
+              // Convert ArrayBuffer to base64
+              const arrayBuffer = await fileData.arrayBuffer();
+              const bytes = new Uint8Array(arrayBuffer);
+              let binary = '';
+              const chunkSize = 8192;
+              for (let i = 0; i < bytes.length; i += chunkSize) {
+                const chunk = bytes.subarray(i, i + chunkSize);
+                binary += String.fromCharCode.apply(null, chunk as any);
+              }
+              const base64Content = btoa(binary);
+
+              attachmentsToSend.push({
+                filename: material.file_name || 'Zygomatic Course Details.pdf',
+                content: base64Content,
+                contentType: 'application/pdf',
+              });
+
+              attachmentMetadata = {
+                included: true,
+                filename: material.file_name,
+                materialId: material.id,
+              };
+            }
+          }
+        } else if (requestedTemplateKey === 'zygomatic_course_details') {
+          return new Response(
+            JSON.stringify({
+              error: 'ATTACHMENT_REQUIRED_MISSING',
+              message: 'O anexo oficial do curso (PDF) é obrigatório para este modelo e não foi encontrado configurado no sistema.',
+            }),
+            { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+
       const sendRes = await sendEmail({
         from: sender,
         to: recipient,
@@ -243,6 +360,7 @@ Deno.serve(async (req) => {
         replyTo,
         idempotencyKey: effectiveIdempotencyKey,
         headers,
+        attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
       });
 
       if (!sendRes.success) {
@@ -275,7 +393,7 @@ Deno.serve(async (req) => {
       providerMessageId = sendRes.messageId;
     }
 
-    // 6. Record Outbound Message
+    // 6. Record Outbound Message with attachment metadata
     const { data: outboundMsg, error: outErr } = await db
       .from('outbound_messages')
       .insert({
@@ -284,7 +402,7 @@ Deno.serve(async (req) => {
         channel,
         provider: channel === 'email' ? 'resend' : 'twilio',
         recipient,
-        template_key: 'manual_crm_reply',
+        template_key: template_key || 'manual_crm_reply',
         subject_snapshot: channel === 'email' ? (subject || null) : null,
         body_snapshot: body,
         status: 'sent',
@@ -295,6 +413,15 @@ Deno.serve(async (req) => {
         is_manual_reply: true,
         actor_id: authResult.userId,
         in_reply_to_provider_message_id: in_reply_to_provider_message_id || null,
+        attachment_included: attachmentMetadata.included,
+        attachment_filename: attachmentMetadata.filename,
+        attachment_material_id: attachmentMetadata.materialId,
+        metadata: {
+          template_key: template_key || null,
+          attachment_included: attachmentMetadata.included,
+          attachment_filename: attachmentMetadata.filename,
+          attachment_material_id: attachmentMetadata.materialId,
+        },
       })
       .select('id')
       .single();
@@ -318,7 +445,52 @@ Deno.serve(async (req) => {
         .eq('id', targetConvId);
     }
 
-    // 8. Log Timeline Activity (actor_type = 'user')
+    // 8. Stage Advancement: If this email dispatch was to a Novo Lead (capture), advance to Respondido (qualification)
+    if (channel === 'email' && lead.pipeline_stage_id) {
+      const { data: captureStage } = await db
+        .from('pipeline_stages')
+        .select('id')
+        .eq('code', 'capture')
+        .maybeSingle();
+
+      const { data: qualificationStage } = await db
+        .from('pipeline_stages')
+        .select('id')
+        .eq('code', 'qualification')
+        .maybeSingle();
+
+      if (captureStage && qualificationStage && lead.pipeline_stage_id === captureStage.id) {
+        await db
+          .from('leads')
+          .update({
+            pipeline_stage_id: qualificationStage.id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', lead.id);
+
+        await db.from('lead_stage_history').insert({
+          lead_id: lead.id,
+          from_stage_id: captureStage.id,
+          to_stage_id: qualificationStage.id,
+          change_reason: 'manual_first_contact_email',
+        });
+
+        await db.from('lead_activities').insert({
+          lead_id: lead.id,
+          activity_type: 'stage_changed',
+          actor_type: 'user',
+          summary: 'Lead advanced from Novo Lead to Respondido after successful email dispatch',
+          metadata: {
+            from: 'capture',
+            to: 'qualification',
+            provider_message_id: providerMessageId,
+            template_key: template_key || null,
+          },
+        });
+      }
+    }
+
+    // 9. Log Timeline Activity (actor_type = 'user')
     await db.from('lead_activities').insert({
       lead_id: lead.id,
       activity_type: channel === 'email' ? 'email_dispatched' : 'sms_dispatched',
@@ -334,6 +506,10 @@ Deno.serve(async (req) => {
         preference_override: isChannelMismatch,
         preferred_channel: leadPref,
         actor_id: authResult.userId,
+        template_key: template_key || null,
+        attachment_included: attachmentMetadata.included,
+        attachment_filename: attachmentMetadata.filename,
+        attachment_material_id: attachmentMetadata.materialId,
       },
     });
 
