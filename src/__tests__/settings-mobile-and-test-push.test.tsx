@@ -265,7 +265,7 @@ describe('EDS HUB — Settings Mobile Layout & Test Push Notification', () => {
       });
 
       const testBtn = document.getElementById('btn-test-push')!;
-      expect(testBtn.textContent).toContain('Testar notificação');
+      expect(testBtn.textContent).toContain('Enviar notificação de teste');
 
       // Click test button while unsubscribed
       fireEvent.click(testBtn);
@@ -302,7 +302,7 @@ describe('EDS HUB — Settings Mobile Layout & Test Push Notification', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Testar notificação neste dispositivo')).not.toBeNull();
+        expect(screen.getByText('Enviar notificação de teste')).not.toBeNull();
       });
 
       const testBtn = document.getElementById('btn-test-push')!;
@@ -341,7 +341,7 @@ describe('EDS HUB — Settings Mobile Layout & Test Push Notification', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Testar notificação neste dispositivo')).not.toBeNull();
+        expect(screen.getByText('Enviar notificação de teste')).not.toBeNull();
       });
 
       const testBtn = document.getElementById('btn-test-push')!;
@@ -381,7 +381,7 @@ describe('EDS HUB — Settings Mobile Layout & Test Push Notification', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Testar notificação neste dispositivo')).not.toBeNull();
+        expect(screen.getByText('Enviar notificação de teste')).not.toBeNull();
       });
 
       const testBtn = document.getElementById('btn-test-push') as HTMLButtonElement;
@@ -426,7 +426,7 @@ describe('EDS HUB — Settings Mobile Layout & Test Push Notification', () => {
           body: expect.objectContaining({
             event_type: 'system_test',
             title: 'Teste de notificação — EDS HUB',
-            body: 'Se você recebeu este alerta, as notificações do sistema estão funcionando neste dispositivo.',
+            body: 'Se você recebeu este alerta, as notificações estão funcionando neste dispositivo.',
             target_subscription_ids: ['sub-device-123'],
           }),
         })

@@ -193,6 +193,8 @@ Deno.serve(async (req) => {
       body: sanitizedBody,
       icon: '/pwa-192x192.png',
       badge: '/favicon.png',
+      deep_link: deep_link,
+      url: deep_link,
       data: {
         url: deep_link,
         eventType: event_type,
@@ -204,6 +206,12 @@ Deno.serve(async (req) => {
     let dispatchedCount = 0;
     let skippedCount = 0;
     let revokedCount = 0;
+    const deliveryResults: Array<{
+      subscription_id: string;
+      status: number;
+      success: boolean;
+      error?: string;
+    }> = [];
 
     // 6. Deliver to each device with per-device idempotency
     for (const sub of subscriptions) {
@@ -217,6 +225,12 @@ Deno.serve(async (req) => {
 
       if (existingLog && existingLog.status === 'sent') {
         skippedCount++;
+        deliveryResults.push({
+          subscription_id: sub.id,
+          status: 200,
+          success: true,
+          error: 'Suppressed idempotent',
+        });
         continue;
       }
 
@@ -245,8 +259,15 @@ Deno.serve(async (req) => {
           body: encrypted.body,
         });
 
+        console.info(`[send-push-notification] Push delivery to sub ${sub.id} returned HTTP ${pushRes.status}`);
+
         if (pushRes.status === 201 || pushRes.status === 200) {
           dispatchedCount++;
+          deliveryResults.push({
+            subscription_id: sub.id,
+            status: pushRes.status,
+            success: true,
+          });
 
           // Update subscription last used timestamp
           await supabase
@@ -255,7 +276,7 @@ Deno.serve(async (req) => {
             .eq('id', sub.id);
 
           // Log delivery (matches CHECK constraint: status IN ('sent', 'failed', 'suppressed_preference', 'suppressed_idempotent'))
-          await supabase.from('push_notification_logs').upsert(
+          const { error: logErr } = await supabase.from('push_notification_logs').upsert(
             {
               user_id: sub.user_id,
               subscription_id: sub.id,
@@ -263,22 +284,33 @@ Deno.serve(async (req) => {
               event_id: event_id || null,
               idempotency_key,
               title: sanitizedTitle,
-              body_preview: sanitizedBody.slice(0, 100),
+              body: sanitizedBody,
               status: 'sent',
               deep_link,
               created_at: new Date().toISOString(),
             },
             { onConflict: 'subscription_id,idempotency_key' }
           );
+
+          if (logErr) {
+            console.error('[send-push-notification] Error logging sent push:', logErr);
+          }
         } else if (pushRes.status === 404 || pushRes.status === 410) {
           // Subscription is no longer valid on device / push service
           revokedCount++;
+          deliveryResults.push({
+            subscription_id: sub.id,
+            status: pushRes.status,
+            success: false,
+            error: `Push service returned ${pushRes.status} (Subscription Expired)`,
+          });
+
           await supabase
             .from('push_subscriptions')
             .update({ status: 'revoked', updated_at: new Date().toISOString() })
             .eq('id', sub.id);
 
-          await supabase.from('push_notification_logs').upsert(
+          const { error: logErr } = await supabase.from('push_notification_logs').upsert(
             {
               user_id: sub.user_id,
               subscription_id: sub.id,
@@ -286,7 +318,7 @@ Deno.serve(async (req) => {
               event_id: event_id || null,
               idempotency_key,
               title: sanitizedTitle,
-              body_preview: sanitizedBody.slice(0, 100),
+              body: sanitizedBody,
               status: 'failed',
               deep_link,
               error_message: `Push service returned ${pushRes.status} (Subscription Expired)`,
@@ -294,11 +326,21 @@ Deno.serve(async (req) => {
             },
             { onConflict: 'subscription_id,idempotency_key' }
           );
+
+          if (logErr) {
+            console.error('[send-push-notification] Error logging expired push:', logErr);
+          }
         } else {
           const errText = await pushRes.text().catch(() => '');
           console.warn(`[send-push-notification] Push failed for sub ${sub.id}: ${pushRes.status} ${errText}`);
+          deliveryResults.push({
+            subscription_id: sub.id,
+            status: pushRes.status,
+            success: false,
+            error: `Status ${pushRes.status}: ${errText.slice(0, 200)}`,
+          });
 
-          await supabase.from('push_notification_logs').upsert(
+          const { error: logErr } = await supabase.from('push_notification_logs').upsert(
             {
               user_id: sub.user_id,
               subscription_id: sub.id,
@@ -306,7 +348,7 @@ Deno.serve(async (req) => {
               event_id: event_id || null,
               idempotency_key,
               title: sanitizedTitle,
-              body_preview: sanitizedBody.slice(0, 100),
+              body: sanitizedBody,
               status: 'failed',
               deep_link,
               error_message: `Status ${pushRes.status}: ${errText.slice(0, 200)}`,
@@ -314,10 +356,22 @@ Deno.serve(async (req) => {
             },
             { onConflict: 'subscription_id,idempotency_key' }
           );
+
+          if (logErr) {
+            console.error('[send-push-notification] Error logging failed push:', logErr);
+          }
         }
       } catch (err) {
         console.error(`[send-push-notification] Exception for sub ${sub.id}:`, err);
-        await supabase.from('push_notification_logs').upsert(
+        const errMsg = err instanceof Error ? err.message : 'Unknown encryption/delivery error';
+        deliveryResults.push({
+          subscription_id: sub.id,
+          status: 500,
+          success: false,
+          error: errMsg,
+        });
+
+        const { error: logErr } = await supabase.from('push_notification_logs').upsert(
           {
             user_id: sub.user_id,
             subscription_id: sub.id,
@@ -325,14 +379,18 @@ Deno.serve(async (req) => {
             event_id: event_id || null,
             idempotency_key,
             title: sanitizedTitle,
-            body_preview: sanitizedBody.slice(0, 100),
+            body: sanitizedBody,
             status: 'failed',
             deep_link,
-            error_message: err instanceof Error ? err.message : 'Unknown encryption/delivery error',
+            error_message: errMsg,
             created_at: new Date().toISOString(),
           },
           { onConflict: 'subscription_id,idempotency_key' }
         );
+
+        if (logErr) {
+          console.error('[send-push-notification] Error logging exception push:', logErr);
+        }
       }
     }
 
@@ -345,6 +403,7 @@ Deno.serve(async (req) => {
         skipped_count: skippedCount,
         revoked_count: revokedCount,
         total_targets: subscriptions.length,
+        delivery_results: deliveryResults,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

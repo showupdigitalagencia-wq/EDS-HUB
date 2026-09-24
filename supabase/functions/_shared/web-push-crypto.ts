@@ -142,24 +142,27 @@ export async function encryptWebPushPayload(
     localPublicKeyRaw,
   ]);
 
-  const authSecretKey = await crypto.subtle.importKey(
+  // In WebCrypto deriveBits for HKDF:
+  // baseKey is the IKM (sharedSecret)
+  // salt is the HKDF salt (userAuthSecret)
+  // RFC 8291 Section 3.4: PRK = HKDF-Extract(salt = auth_secret, IKM = ecdh_secret)
+  // ikm = HKDF-Expand(PRK, info = ikmInfo, L = 32)
+  const ecdhKey = await crypto.subtle.importKey(
     'raw',
-    userAuthSecret,
+    sharedSecret,
     { name: 'HKDF' },
     false,
     ['deriveBits']
   );
 
-  // First HKDF: prk = HKDF-Extract(salt = userAuthSecret, ikm = sharedSecret)
-  // ikm = HKDF-Expand(prk, info = ikmInfo, L = 32)
   const ikmBuffer = await crypto.subtle.deriveBits(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: sharedSecret,
+      salt: userAuthSecret,
       info: ikmInfo,
     },
-    authSecretKey,
+    ecdhKey,
     256
   );
 

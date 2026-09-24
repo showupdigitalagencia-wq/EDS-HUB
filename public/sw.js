@@ -8,7 +8,7 @@
 // 4. Safe App Shell Management (Zero CRM Data Caching)
 // =============================================================================
 
-const CACHE_NAME = 'eds-hub-shell-v2';
+const CACHE_NAME = 'eds-hub-shell-v4';
 const SHELL_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -82,9 +82,11 @@ self.addEventListener('fetch', (event) => {
 
 // --- 3. Push Event Handling ---
 self.addEventListener('push', (event) => {
+  console.info('[SW] Web push event received at', new Date().toISOString());
+
   let payload = {
-    title: 'EDS HUB Alerta',
-    body: 'Você possui uma nova notificação operacional.',
+    title: 'Teste de notificação — EDS HUB',
+    body: 'Se você recebeu este alerta, as notificações estão funcionando neste dispositivo.',
     icon: '/pwa-192x192.png',
     badge: '/favicon.png',
     data: { url: '/' },
@@ -93,22 +95,29 @@ self.addEventListener('push', (event) => {
   if (event.data) {
     try {
       const data = event.data.json();
+      const targetDeepLink = data.deep_link || data.url || (data.data && (data.data.url || data.data.deep_link)) || '/';
+      const eventType = data.event_type || (data.data && data.data.eventType) || 'eds-crm-alert';
+      const eventId = data.event_id || (data.data && data.data.eventId) || null;
+
       payload = {
         title: data.title || payload.title,
         body: data.body || payload.body,
         icon: data.icon || '/pwa-192x192.png',
         badge: data.badge || '/favicon.png',
-        tag: data.event_type || 'eds-crm-alert',
+        tag: eventType,
         data: {
-          url: data.deep_link || data.url || '/',
-          event_type: data.event_type,
-          event_id: data.event_id,
+          url: targetDeepLink,
+          event_type: eventType,
+          event_id: eventId,
         },
       };
 
       // App Badge API support (e.g. unread count on mobile home screen)
-      if (typeof data.badge_count === 'number' && 'setAppBadge' in navigator) {
-        navigator.setAppBadge(data.badge_count).catch(() => {});
+      const badgeNum = typeof data.badge_count === 'number'
+        ? data.badge_count
+        : (data.data && typeof data.data.badgeCount === 'number' ? data.data.badgeCount : null);
+      if (badgeNum !== null && 'setAppBadge' in navigator) {
+        navigator.setAppBadge(badgeNum).catch(() => {});
       }
     } catch (err) {
       console.warn('[SW] Failed to parse push payload as JSON, using text fallback:', err);
@@ -116,19 +125,42 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const notificationOptions = {
+  // Notify any active foreground windows of the push event (for diagnostic UI)
+  self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+    for (const client of clients) {
+      client.postMessage({
+        type: 'PUSH_NOTIFICATION_RECEIVED',
+        title: payload.title,
+        body: payload.body,
+        data: payload.data,
+      });
+    }
+  }).catch(() => {});
+
+  // Construct options safely for iOS and cross-browser support
+  const fullOptions = {
     body: payload.body,
-    icon: payload.icon,
-    badge: payload.badge,
     data: payload.data,
-    tag: payload.tag,
-    vibrate: [100, 50, 100],
-    renotify: true,
   };
 
-  event.waitUntil(
-    self.registration.showNotification(payload.title, notificationOptions)
-  );
+  if (payload.icon) fullOptions.icon = payload.icon;
+  if (payload.badge) fullOptions.badge = payload.badge;
+  if (payload.tag) {
+    fullOptions.tag = payload.tag;
+    fullOptions.renotify = true;
+  }
+
+  // Critical for iOS Safari: Call showNotification within event.waitUntil with minimal fallback
+  const displayPromise = self.registration.showNotification(payload.title, fullOptions)
+    .catch((err) => {
+      console.warn('[SW] showNotification with full options failed, falling back to minimal options:', err);
+      return self.registration.showNotification(payload.title, {
+        body: payload.body,
+        data: payload.data,
+      });
+    });
+
+  event.waitUntil(displayPromise);
 });
 
 // --- 4. Notification Click & Deep Link Navigation ---

@@ -16,6 +16,8 @@ import {
   AlertOctagon,
   RefreshCw,
   Send,
+  Wrench,
+  Info,
 } from 'lucide-react';
 import {
   isPushSupported,
@@ -24,11 +26,15 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
   sendTestPushNotification,
+  reregisterCurrentDevice,
+  getDevicePushDiagnostics,
   fetchNotificationPreferences,
   updateNotificationPreferences,
   detectDeviceType,
   type PushNotificationPreferences,
+  type DevicePushDiagnostics,
 } from '../../notifications/services/push-notification-service';
+import { getIsStandalone, getIsIosDevice } from '../../../hooks/useIsStandalone';
 
 export function NotificationPreferencesView() {
   const [supported, setSupported] = useState(false);
@@ -36,9 +42,14 @@ export function NotificationPreferencesView() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [deviceType, setDeviceType] = useState<string>('desktop');
   const [preferences, setPreferences] = useState<PushNotificationPreferences | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DevicePushDiagnostics | null>(null);
+
+  const isIos = getIsIosDevice();
+  const isStandalone = getIsStandalone();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isReregistering, setIsReregistering] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
@@ -56,6 +67,9 @@ export function NotificationPreferencesView() {
 
         const subscribed = await isCurrentDeviceSubscribed();
         setIsSubscribed(subscribed);
+
+        const diag = await getDevicePushDiagnostics();
+        setDiagnostics(diag);
       }
 
       const prefs = await fetchNotificationPreferences();
@@ -71,6 +85,32 @@ export function NotificationPreferencesView() {
     loadStatus();
   }, [loadStatus]);
 
+  // Listen for real push events broadcast by Service Worker to foreground app
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      !navigator?.serviceWorker ||
+      typeof navigator.serviceWorker.addEventListener !== 'function'
+    ) {
+      return;
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'PUSH_NOTIFICATION_RECEIVED') {
+        setStatusMessage({
+          type: 'success',
+          text: `Notificação recebida no aparelho: "${event.data.title || 'EDS HUB'}"`,
+        });
+        getDevicePushDiagnostics().then(setDiagnostics);
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener?.('message', handleMessage);
+    };
+  }, []);
+
   const handleSubscribe = async () => {
     setIsSubscribing(true);
     setStatusMessage(null);
@@ -84,7 +124,8 @@ export function NotificationPreferencesView() {
         type: 'success',
         text: 'Notificações ativadas com sucesso neste dispositivo! Você receberá alertas operacionais em tempo real.',
       });
-      // Refresh preferences in state
+      const diag = await getDevicePushDiagnostics();
+      setDiagnostics(diag);
       const prefs = await fetchNotificationPreferences();
       setPreferences(prefs);
     } else {
@@ -96,6 +137,33 @@ export function NotificationPreferencesView() {
     }
 
     setIsSubscribing(false);
+  };
+
+  const handleReregister = async () => {
+    setIsReregistering(true);
+    setStatusMessage(null);
+
+    const result = await reregisterCurrentDevice();
+
+    if (result.success) {
+      setIsSubscribed(true);
+      setPermission('granted');
+      setStatusMessage({
+        type: 'success',
+        text: 'Dispositivo registrado novamente com sucesso com as credenciais atuais do servidor!',
+      });
+      const diag = await getDevicePushDiagnostics();
+      setDiagnostics(diag);
+      const prefs = await fetchNotificationPreferences();
+      setPreferences(prefs);
+    } else {
+      setStatusMessage({
+        type: 'error',
+        text: result.error || 'Não foi possível registrar novamente este dispositivo.',
+      });
+    }
+
+    setIsReregistering(false);
   };
 
   const handleUnsubscribe = async () => {
@@ -110,6 +178,8 @@ export function NotificationPreferencesView() {
         type: 'info',
         text: 'Notificações desativadas para este dispositivo. Seus registros no CRM permanecem inalterados.',
       });
+      const diag = await getDevicePushDiagnostics();
+      setDiagnostics(diag);
     } else {
       setStatusMessage({
         type: 'error',
@@ -146,6 +216,8 @@ export function NotificationPreferencesView() {
           text: result.error || 'Não foi possível enviar a notificação de teste.',
         });
       }
+      const diag = await getDevicePushDiagnostics();
+      setDiagnostics(diag);
     } catch {
       setStatusMessage({
         type: 'error',
@@ -240,6 +312,35 @@ export function NotificationPreferencesView() {
             </div>
           )}
 
+          {/* iOS Standalone Requirement Note */}
+          {deviceType === 'mobile' && !diagnostics?.isStandalone && (
+            <div className="p-4 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-xs space-y-2">
+              <div className="flex items-center gap-2 font-semibold">
+                <Info className="h-4 w-4 text-sky-600 shrink-0" />
+                <span>Instalação requerida para iPhone / iPad</span>
+              </div>
+              <p className="text-sky-800">
+                No iOS (Safari), as notificações push só funcionam quando o EDS HUB é instalado na Tela de Início.
+                Toque no botão <strong>Compartilhar</strong> no Safari e escolha <strong>Adicionar à Tela de Início</strong>.
+                Em seguida, abra o app pelo ícone na Tela de Início para ativar os alertas.
+              </p>
+            </div>
+          )}
+
+          {/* Permission Granted but Inactive Subscription */}
+          {permission === 'granted' && !isSubscribed && (
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">
+              <div className="flex items-center gap-2 font-semibold">
+                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                <span>Permissão concedida, mas inscrição pendente</span>
+              </div>
+              <p className="text-amber-800">
+                A permissão de notificações está autorizada no navegador, mas este aparelho ainda não possui uma inscrição ativa no sistema.
+                Toque em &quot;Registrar novamente este dispositivo&quot; para sincronizar com as chaves atuais.
+              </p>
+            </div>
+          )}
+
           {/* Browser / Environment Unsupported */}
           {!supported ? (
             <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-2">
@@ -288,18 +389,29 @@ export function NotificationPreferencesView() {
                       type="button"
                       id="btn-test-push"
                       onClick={handleTestNotification}
-                      disabled={isTesting || isSubscribing}
+                      disabled={isTesting || isSubscribing || isReregistering}
                       className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#08254f] hover:bg-[#0c356e] shadow-2xs transition-all disabled:opacity-50 cursor-pointer min-h-[40px]"
                     >
                       {isTesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                      <span>{isTesting ? 'Enviando notificação...' : 'Testar notificação neste dispositivo'}</span>
+                      <span>{isTesting ? 'Enviando notificação...' : 'Enviar notificação de teste'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      id="btn-reregister-push"
+                      onClick={handleReregister}
+                      disabled={isReregistering || isSubscribing || isTesting}
+                      className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 hover:bg-slate-200 transition-colors disabled:opacity-50 cursor-pointer min-h-[40px]"
+                    >
+                      {isReregistering ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      <span>Registrar novamente este dispositivo</span>
                     </button>
 
                     <button
                       type="button"
                       id="btn-unsubscribe-push"
                       onClick={handleUnsubscribe}
-                      disabled={isSubscribing || isTesting}
+                      disabled={isSubscribing || isTesting || isReregistering}
                       className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors disabled:opacity-50 cursor-pointer min-h-[40px]"
                     >
                       {isSubscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellOff className="h-3.5 w-3.5" />}
@@ -312,7 +424,8 @@ export function NotificationPreferencesView() {
                       type="button"
                       id="btn-subscribe-push"
                       onClick={handleSubscribe}
-                      disabled={isSubscribing}
+                      disabled={isSubscribing || isReregistering || (isIos && !isStandalone)}
+                      title={isIos && !isStandalone ? 'Adicione o EDS HUB à Tela de Início para habilitar notificações no iPhone' : undefined}
                       className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#08254f] hover:bg-[#0c356e] shadow-xs transition-all disabled:opacity-50 cursor-pointer min-h-[40px]"
                     >
                       {isSubscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
@@ -321,13 +434,26 @@ export function NotificationPreferencesView() {
 
                     <button
                       type="button"
+                      id="btn-reregister-push"
+                      onClick={handleReregister}
+                      disabled={isReregistering || isSubscribing || (isIos && !isStandalone)}
+                      title={isIos && !isStandalone ? 'Adicione o EDS HUB à Tela de Início para habilitar notificações no iPhone' : undefined}
+                      className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 hover:bg-slate-200 transition-colors disabled:opacity-50 cursor-pointer min-h-[40px]"
+                    >
+                      {isReregistering ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      <span>Registrar novamente este dispositivo</span>
+                    </button>
+
+                    <button
+                      type="button"
                       id="btn-test-push"
                       onClick={handleTestNotification}
-                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-200/80 hover:bg-slate-200 transition-colors cursor-pointer min-h-[40px]"
-                      title="Ative as notificações neste dispositivo para realizar o teste"
+                      disabled={isIos && !isStandalone}
+                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-200/80 hover:bg-slate-200 transition-colors cursor-pointer min-h-[40px] disabled:opacity-50"
+                      title={isIos && !isStandalone ? 'Adicione o EDS HUB à Tela de Início para realizar o teste no iPhone' : 'Ative as notificações neste dispositivo para realizar o teste'}
                     >
                       <Send className="h-3.5 w-3.5" />
-                      <span>Testar notificação neste dispositivo</span>
+                      <span>Enviar notificação de teste</span>
                     </button>
                   </div>
                 )}
@@ -345,6 +471,96 @@ export function NotificationPreferencesView() {
                 Nenhum dado médico, passaporte ou financeiro é transmitido via push. Caso uma notificação falhe na rede,
                 o registro permanente no CRM permanece 100% preservado.
               </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Compact Technical Diagnostic Section */}
+      <div className="card-executive">
+        <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+              <Wrench className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold font-heading text-[#08254f]">Diagnóstico do Dispositivo</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Estado técnico para verificação do envio de notificações em tempo real.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              const diag = await getDevicePushDiagnostics();
+              setDiagnostics(diag);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="h-3 w-3" />
+            <span>Atualizar</span>
+          </button>
+        </div>
+
+        <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+            <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Permissão do iPhone</div>
+            <div className="text-sm font-semibold flex items-center gap-2">
+              <span className={`inline-block h-2 w-2 rounded-full ${diagnostics?.permission === 'granted' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              <span className={diagnostics?.permission === 'granted' ? 'text-emerald-700' : 'text-slate-700'}>
+                {diagnostics?.permission === 'granted' ? 'Ativada' : 'Não ativada'}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+            <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Dispositivo registrado</div>
+            <div className="text-sm font-semibold flex items-center gap-2">
+              <span className={`inline-block h-2 w-2 rounded-full ${diagnostics?.isRegistered ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+              <span className={diagnostics?.isRegistered ? 'text-emerald-700' : 'text-slate-700'}>
+                {diagnostics?.isRegistered ? 'Sim' : 'Não'}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+            <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Service Worker</div>
+            <div className="text-sm font-semibold flex items-center gap-2">
+              <span className={`inline-block h-2 w-2 rounded-full ${diagnostics?.serviceWorkerStatus === 'active' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              <span className={diagnostics?.serviceWorkerStatus === 'active' ? 'text-emerald-700' : 'text-slate-700'}>
+                {diagnostics?.serviceWorkerStatus === 'active' ? 'Ativo' : 'Inativo'}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+            <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Modo de exibição</div>
+            <div className="text-sm font-semibold">
+              {isIos && !diagnostics?.isStandalone ? (
+                <span className="text-amber-700">Safari Web (Requer Tela de Início)</span>
+              ) : diagnostics?.isStandalone ? (
+                <span className="text-emerald-700">App Instalado (PWA)</span>
+              ) : (
+                <span className="text-slate-800">Navegador Web</span>
+              )}
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+            <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Último teste</div>
+            <div className="text-sm font-semibold flex items-center gap-2">
+              <span className={`inline-block h-2 w-2 rounded-full ${diagnostics?.lastTestStatus === 'sent' ? 'bg-emerald-500' : diagnostics?.lastTestStatus === 'failed' ? 'bg-rose-500' : 'bg-slate-400'}`} />
+              <span className={diagnostics?.lastTestStatus === 'sent' ? 'text-emerald-700' : diagnostics?.lastTestStatus === 'failed' ? 'text-rose-700' : 'text-slate-600'}>
+                {diagnostics?.lastTestStatus === 'sent' ? 'Enviado' : diagnostics?.lastTestStatus === 'failed' ? 'Falhou' : 'Aguardando'}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1 sm:col-span-2 lg:col-span-1">
+            <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Último erro</div>
+            <div className="text-xs text-slate-700 truncate" title={diagnostics?.lastErrorMessage || 'Nenhum erro registrado'}>
+              {diagnostics?.lastErrorMessage || 'Nenhum erro registrado'}
             </div>
           </div>
         </div>

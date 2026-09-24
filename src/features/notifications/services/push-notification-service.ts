@@ -76,6 +76,27 @@ export function urlBase64ToUint8Array(base64String: string): Uint8Array {
 }
 
 /**
+ * Compares an existing PushSubscription's applicationServerKey with expected VAPID public key.
+ */
+export function isApplicationServerKeyMatching(
+  serverKey: ArrayBuffer | ArrayBufferLike | null,
+  vapidB64: string
+): boolean {
+  if (!serverKey) return false;
+  try {
+    const expectedKey = urlBase64ToUint8Array(vapidB64);
+    const actualKey = new Uint8Array(serverKey);
+    if (actualKey.length !== expectedKey.length) return false;
+    for (let i = 0; i < actualKey.length; i++) {
+      if (actualKey[i] !== expectedKey[i]) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Subscribes the current device to Web Push notifications.
  * Strictly initiated via user interaction.
  */
@@ -103,6 +124,17 @@ export async function subscribeToPush(
 
     // Check existing subscription
     let subscription = await registration.pushManager.getSubscription();
+
+    // If subscription exists, verify it matches current VAPID key
+    if (subscription) {
+      const serverKey = subscription.options?.applicationServerKey;
+      const matches = isApplicationServerKeyMatching(serverKey, vapidPublicKey);
+      if (!matches) {
+        console.warn('[PushService] Existing browser subscription key does not match current VAPID key. Re-subscribing...');
+        await subscription.unsubscribe().catch(() => {});
+        subscription = null;
+      }
+    }
 
     if (!subscription) {
       const convertedKey = urlBase64ToUint8Array(vapidPublicKey);
@@ -229,6 +261,203 @@ export async function isCurrentDeviceSubscribed(): Promise<boolean> {
 }
 
 /**
+ * Checks if the application is running in installed standalone PWA mode.
+ * Required for Web Push on iOS (Safari Add to Home Screen).
+ */
+export function isStandalonePWA(): boolean {
+  if (typeof window === 'undefined') return false;
+  const nav = window.navigator as unknown as { standalone?: boolean };
+  return (
+    nav.standalone === true ||
+    (typeof window.matchMedia === 'function' &&
+      window.matchMedia('(display-mode: standalone)').matches)
+  );
+}
+
+/**
+ * Returns the operational state of the Service Worker controlling this client.
+ */
+export async function getServiceWorkerStatus(): Promise<'active' | 'inactive'> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    return 'inactive';
+  }
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    return reg && reg.active ? 'active' : 'inactive';
+  } catch {
+    return 'inactive';
+  }
+}
+
+export interface DevicePushDiagnostics {
+  permission: 'granted' | 'denied' | 'default';
+  isRegistered: boolean;
+  serviceWorkerStatus: 'active' | 'inactive';
+  isStandalone: boolean;
+  deviceType: 'mobile' | 'tablet' | 'desktop' | 'unknown';
+  lastTestStatus: 'sent' | 'failed' | 'waiting';
+  lastErrorMessage?: string;
+  subscriptionId?: string | null;
+}
+
+/**
+ * Queries local browser state and remote Supabase logs to produce safe diagnostic info.
+ */
+export async function getDevicePushDiagnostics(): Promise<DevicePushDiagnostics> {
+  const perm = getNotificationPermission();
+  const swStatus = await getServiceWorkerStatus();
+  const standalone = isStandalonePWA();
+  const devType = detectDeviceType();
+  const isRegistered = await isCurrentDeviceSubscribed();
+  const subId = await getCurrentDeviceSubscriptionId();
+
+  let lastTestStatus: 'sent' | 'failed' | 'waiting' = 'waiting';
+  let lastErrorMessage: string | undefined = undefined;
+
+  if (subId) {
+    try {
+      const { data } = await supabase
+        .from('push_notification_logs')
+        .select('status, error_message, created_at')
+        .eq('subscription_id', subId)
+        .eq('event_type', 'system_test')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        if (data.status === 'sent') {
+          lastTestStatus = 'sent';
+        } else if (data.status === 'failed') {
+          lastTestStatus = 'failed';
+          lastErrorMessage = data.error_message || 'Falha no envio pelo provedor';
+        }
+      }
+    } catch (err) {
+      console.debug('[PushService] Failed to load last test log:', err);
+    }
+  }
+
+  return {
+    permission: perm,
+    isRegistered,
+    serviceWorkerStatus: swStatus,
+    isStandalone: standalone,
+    deviceType: devType,
+    lastTestStatus,
+    lastErrorMessage,
+    subscriptionId: subId,
+  };
+}
+
+/**
+ * Re-registers the current device cleanly:
+ * 1. Unsubscribes old browser push subscription
+ * 2. Deactivates/revokes old database record
+ * 3. Registers new PushSubscription with the current rotated VAPID public key
+ * 4. Saves new subscription record in Supabase
+ */
+export async function reregisterCurrentDevice(
+  vapidPublicKey: string = DEFAULT_VAPID_PUBLIC_KEY
+): Promise<{ success: boolean; error?: string }> {
+  if (!isPushSupported()) {
+    return { success: false, error: 'Web Push não é suportado neste navegador.' };
+  }
+
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
+    return {
+      success: false,
+      error:
+        permission === 'denied'
+          ? 'Permissão de notificação negada no navegador. Habilite nas configurações do dispositivo.'
+          : 'Permissão não concedida.',
+    };
+  }
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const existingSubscription = await registration.pushManager.getSubscription();
+
+    if (existingSubscription) {
+      // 1. Mark existing subscription revoked in database
+      await supabase
+        .from('push_subscriptions')
+        .update({ status: 'revoked', updated_at: new Date().toISOString() })
+        .eq('endpoint', existingSubscription.endpoint);
+
+      // 2. Unsubscribe in the browser
+      await existingSubscription.unsubscribe().catch((err) => {
+        console.warn('[PushService] Unsubscribe old subscription non-fatal error:', err);
+      });
+    }
+
+    // 3. Subscribe with the current VAPID public key
+    const convertedKey = urlBase64ToUint8Array(vapidPublicKey);
+    const newSubscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: convertedKey as unknown as BufferSource,
+    });
+
+    // 4. Extract crypto keys
+    const rawKey = newSubscription.getKey ? newSubscription.getKey('p256dh') : null;
+    const rawAuth = newSubscription.getKey ? newSubscription.getKey('auth') : null;
+
+    if (!rawKey || !rawAuth) {
+      throw new Error('Falha ao obter chaves criptográficas da inscrição.');
+    }
+
+    const p256dh = btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(rawKey))))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    const authKey = btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(rawAuth))))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    // 5. Authenticated user ID
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData?.user?.id;
+    if (!userId) {
+      throw new Error('Usuário não autenticado.');
+    }
+
+    // 6. Save new active subscription to Supabase
+    const deviceType = detectDeviceType();
+    const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+
+    const { error: dbError } = await supabase.from('push_subscriptions').upsert(
+      {
+        user_id: userId,
+        endpoint: newSubscription.endpoint,
+        p256dh,
+        auth_key: authKey,
+        user_agent: userAgent,
+        device_type: deviceType,
+        status: 'active',
+        last_used_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'endpoint' }
+    );
+
+    if (dbError) throw dbError;
+
+    await ensureDefaultPreferences(userId);
+
+    return { success: true };
+  } catch (err) {
+    console.error('[PushService] Re-registration error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Falha ao registrar novamente o dispositivo.',
+    };
+  }
+}
+
+/**
  * Resolves the database UUID of the current device's active subscription.
  */
 export async function getCurrentDeviceSubscriptionId(): Promise<string | null> {
@@ -304,8 +533,8 @@ export async function sendTestPushNotification(targetSubscriptionId?: string): P
         event_id: 'test-device-verification',
         idempotency_key: idempotencyKey,
         title: 'Teste de notificação — EDS HUB',
-        body: 'Se você recebeu este alerta, as notificações do sistema estão funcionando neste dispositivo.',
-        deep_link: '/settings?tab=notifications',
+        body: 'Se você recebeu este alerta, as notificações estão funcionando neste dispositivo.',
+        deep_link: '/',
         target_user_ids: [userId],
         target_subscription_ids: [subId],
       },
@@ -315,20 +544,29 @@ export async function sendTestPushNotification(targetSubscriptionId?: string): P
       console.error('[PushService] Test notification invoke error:', error);
       return {
         success: false,
-        error: 'Não foi possível enviar a notificação de teste.',
+        error: 'Falha na comunicação com o servidor de notificações.',
       };
     }
+
+    const primaryResult = data?.delivery_results?.[0];
 
     if (data?.dispatched_count === 0 && data?.skipped_count === 0) {
       return {
         success: false,
-        error: data?.message || 'Não foi possível enviar a notificação de teste.',
+        error:
+          primaryResult?.error ||
+          data?.message ||
+          'Provedor rejeitou a entrega da notificação.',
       };
     }
 
+    const providerStatusMsg = primaryResult?.status
+      ? `(HTTP ${primaryResult.status})`
+      : '';
+
     return {
       success: true,
-      message: 'Notificação de teste enviada com sucesso.',
+      message: `Notificação aceita pelo provedor ${providerStatusMsg} e enviada ao dispositivo.`,
     };
   } catch (err) {
     console.error('[PushService] Test notification exception:', err);

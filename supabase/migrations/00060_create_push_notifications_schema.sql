@@ -73,10 +73,14 @@ COMMENT ON TABLE public.push_notification_logs IS
 CREATE INDEX IF NOT EXISTS idx_push_logs_user ON public.push_notification_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_push_logs_created ON public.push_notification_logs(created_at DESC);
 
--- Unique index to prevent duplicate push dispatch to the same device subscription for the same event
-CREATE UNIQUE INDEX IF NOT EXISTS idx_push_logs_device_idempotency
-  ON public.push_notification_logs(subscription_id, idempotency_key)
-  WHERE idempotency_key IS NOT NULL AND subscription_id IS NOT NULL;
+-- Unique constraint to prevent duplicate push dispatch to the same device subscription for the same event
+-- and enable PostgREST onConflict upsert logging
+ALTER TABLE public.push_notification_logs
+  DROP CONSTRAINT IF EXISTS uq_push_notification_logs_sub_idempotency;
+
+ALTER TABLE public.push_notification_logs
+  ADD CONSTRAINT uq_push_notification_logs_sub_idempotency
+  UNIQUE (subscription_id, idempotency_key);
 
 -- -----------------------------------------------------------------------------
 -- 4. Row Level Security (RLS)
