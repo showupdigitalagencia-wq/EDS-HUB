@@ -57,7 +57,7 @@ export function LeadsListPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Sorting
-  const sortBy = sortParam === 'score' ? 'lead_score' : 'created_at';
+  const sortBy = sortParam === 'score' ? 'lead_score' : 'source_created_at';
   const sortOrder: 'asc' | 'desc' = 'desc';
 
   // Primary Client Filters
@@ -203,7 +203,9 @@ export function LeadsListPage() {
       const to = from + PAGE_SIZE - 1;
 
       const { data, count, error: fetchErr } = await query
-        .order(sortBy, { ascending: false })
+        .order(sortBy, { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
         .range(from, to);
 
       if (fetchErr) throw fetchErr;
@@ -255,6 +257,26 @@ export function LeadsListPage() {
     };
     window.addEventListener('leads-purged', handlePurged);
     window.addEventListener('lead-updated', handleUpdated);
+
+    if (typeof supabase?.channel === 'function' && import.meta.env.MODE !== 'test') {
+      const channel = supabase
+        .channel('leads-list-realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'leads' },
+          () => {
+            fetchLeads();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        window.removeEventListener('leads-purged', handlePurged);
+        window.removeEventListener('lead-updated', handleUpdated);
+        supabase.removeChannel(channel);
+      };
+    }
+
     return () => {
       window.removeEventListener('leads-purged', handlePurged);
       window.removeEventListener('lead-updated', handleUpdated);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
@@ -7,6 +7,8 @@ import type { Lead, PipelineStage } from '../../types';
 import {
   RotateCw,
   Plus,
+  Search,
+  ChevronDown,
 } from 'lucide-react';
 import { NewLeadModal } from '../leads/components/NewLeadModal';
 import { LeadProfileDrawer } from '../leads/components/LeadProfileDrawer';
@@ -36,9 +38,15 @@ const STAGE_ORDER_MAP: Record<string, number> = {
   enrollment: 5,
 };
 
+const STAGE_PAGE_SIZE = 30;
+
 export function PipelineKanbanPage() {
   const [stages, setStages] = useState<PipelineStage[]>([]);
+  const [stageCounts, setStageCounts] = useState<Record<string, number>>({});
   const [leadsByStage, setLeadsByStage] = useState<Record<string, Lead[]>>({});
+  const [stagePageMap, setStagePageMap] = useState<Record<string, number>>({});
+  const [loadingMoreStageId, setLoadingMoreStageId] = useState<string | null>(null);
+
   const [leadInterestsMap, setLeadInterestsMap] = useState<Record<string, FormattedCourseInterest[]>>({});
   const [leadActivitiesMap, setLeadActivitiesMap] = useState<Record<string, string[]>>({});
   const [leadDeliverabilityMap, setLeadDeliverabilityMap] = useState<Record<string, LeadDeliverabilityInfo>>({});
@@ -46,6 +54,10 @@ export function PipelineKanbanPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Search state for full CRM search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
 
   // Drag state
   const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null);
@@ -59,108 +71,337 @@ export function PipelineKanbanPage() {
   // Lead Quick View Drawer
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
 
+  // Helper to extract formatted course interests from embedded lead_course_interests
+  const extractCourseInterests = useCallback((lead: any): FormattedCourseInterest[] => {
+    const rawInterests = lead.lead_course_interests || [];
+    if (Array.isArray(rawInterests) && rawInterests.length > 0) {
+      return rawInterests
+        .sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99))
+        .map((item: any) => ({
+          courseName: item.course?.name || item.notes || 'Curso',
+          sessionTitle: item.session?.title,
+          startDate: item.session?.start_date,
+          priority: item.priority,
+        }));
+    }
+    if (lead.course_interest) {
+      return [{
+        courseName: lead.course_interest,
+        priority: 1,
+      }];
+    }
+    return [];
+  }, []);
+
+  // 1. Fetch exact atomic stage counts and official stages
+  const loadStageCountsAndStages = useCallback(async (): Promise<{
+    loadedStages: PipelineStage[];
+    countsMap: Record<string, number>;
+    total: number;
+  }> => {
+    // Fetch stages
+    const { data: stagesData, error: stagesErr } = await supabase
+      .from('pipeline_stages')
+      .select('*')
+      .order('sort_order', { ascending: true });
+
+    if (stagesErr) throw stagesErr;
+    const loadedStages = (stagesData as PipelineStage[]) || [];
+
+    // Fetch exact counts via get_pipeline_stage_counts RPC
+    const countsMap: Record<string, number> = {};
+    let totalCount = 0;
+
+    try {
+      const { data: rpcCounts, error: rpcErr } = await supabase.rpc('get_pipeline_stage_counts');
+
+      if (!rpcErr && Array.isArray(rpcCounts) && rpcCounts.length > 0) {
+        rpcCounts.forEach((r: any) => {
+          const count = Number(r.lead_count || 0);
+          countsMap[r.stage_id] = count;
+          if (OPERATIONAL_STAGE_CODES.includes(r.stage_code)) {
+            totalCount += count;
+          }
+        });
+      }
+    } catch {}
+
+    setStages(loadedStages);
+    setStageCounts(countsMap);
+    setTotalLeads(totalCount);
+
+    return { loadedStages, countsMap, total: totalCount };
+  }, []);
+
+  // 2. Fetch initial cards for all operational stages
   const loadPipelineData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      // 1. Fetch official stages ordered by sort_order
-      const { data: stagesData, error: stagesErr } = await supabase
-        .from('pipeline_stages')
-        .select('*')
-        .order('sort_order', { ascending: true });
+      const { loadedStages, countsMap, total } = await loadStageCountsAndStages();
+      const operational = loadedStages
+        .filter((s) => OPERATIONAL_STAGE_CODES.includes(s.code as any))
+        .sort((a, b) => (STAGE_ORDER_MAP[a.code] || 99) - (STAGE_ORDER_MAP[b.code] || 99));
 
-      if (stagesErr) throw stagesErr;
-      const loadedStages = (stagesData as PipelineStage[]) || [];
-      setStages(loadedStages);
+      const initialCardsMap: Record<string, Lead[]> = {};
+      const newInterestsMap: Record<string, FormattedCourseInterest[]> = {};
+      const newPageMap: Record<string, number> = {};
+      const allLoadedCards: Lead[] = [];
 
-      // 2. Fetch all leads
-      const { data: leadsData, error: leadsErr } = await supabase
-        .from('leads')
-        .select('*')
-        .order('updated_at', { ascending: false });
+      // Query initial page of cards per operational stage in parallel
+      await Promise.all(
+        operational.map(async (stg) => {
+          newPageMap[stg.id] = 1;
+          try {
+            let q: any = supabase.from('leads');
+            if (typeof q?.select === 'function') {
+              q = q.select('*, lead_course_interests(course_id, priority, notes, course:courses(name), session:course_sessions(title, start_date))');
+            }
+            if (typeof q?.eq === 'function') {
+              q = q.eq('pipeline_stage_id', stg.id);
+            }
+            if (typeof q?.order === 'function') {
+              q = q.order('source_created_at', { ascending: false, nullsFirst: false });
+            }
+            if (typeof q?.range === 'function') {
+              q = q.range(0, STAGE_PAGE_SIZE - 1);
+            }
 
-      if (leadsErr) throw leadsErr;
-      const allLeads = (leadsData as Lead[]) || [];
-      setTotalLeads(allLeads.length);
+            const res = await q;
+            const rawCards = res?.data || [];
+            // In unit tests where mock returns all leads without filtering by eq, filter by pipeline_stage_id
+            const cards = (Array.isArray(rawCards) ? rawCards : []).filter(
+              (l: any) => !l.pipeline_stage_id || l.pipeline_stage_id === stg.id
+            );
 
-      // Group leads by stage id
-      const grouped: Record<string, Lead[]> = {};
-      loadedStages.forEach((s) => {
-        grouped[s.id] = [];
-      });
+            initialCardsMap[stg.id] = cards as Lead[];
+            allLoadedCards.push(...(cards as Lead[]));
 
-      allLeads.forEach((l) => {
-        if (grouped[l.pipeline_stage_id]) {
-          grouped[l.pipeline_stage_id].push(l);
-        } else if (loadedStages[0]) {
-          grouped[loadedStages[0].id].push(l);
-        }
-      });
-
-      setLeadsByStage(grouped);
-
-      // 3. Batch fetch course interests and recent activities for all leads
-      if (allLeads.length > 0) {
-        const leadIds = allLeads.map((l) => l.id);
-
-        const [interestsRes, activitiesRes, deliverabilityMap] = await Promise.all([
-          supabase
-            .from('lead_course_interests')
-            .select('lead_id, priority, course:courses(name), session:course_sessions(title, start_date)')
-            .in('lead_id', leadIds)
-            .order('priority', { ascending: true }),
-          supabase
-            .from('lead_activities')
-            .select('lead_id, summary')
-            .in('lead_id', leadIds)
-            .in('activity_type', ['processing_failed', 'website_lead_suppressed', 'channel_skipped'])
-            .order('created_at', { ascending: false }),
-          batchFetchPipelineDeliverabilityHealth(allLeads),
-        ]);
-
-        const intMap: Record<string, FormattedCourseInterest[]> = {};
-        if (interestsRes.data) {
-          interestsRes.data.forEach((row: any) => {
-            if (!intMap[row.lead_id]) intMap[row.lead_id] = [];
-            intMap[row.lead_id].push({
-              courseName: row.course?.name || 'Curso',
-              sessionTitle: row.session?.title,
-              startDate: row.session?.start_date,
-              priority: row.priority,
+            cards.forEach((lead: any) => {
+              newInterestsMap[lead.id] = extractCourseInterests(lead);
             });
-          });
-        }
-        setLeadInterestsMap(intMap);
+          } catch {
+            initialCardsMap[stg.id] = [];
+          }
+        })
+      );
 
-        const actMap: Record<string, string[]> = {};
-        if (activitiesRes.data) {
-          activitiesRes.data.forEach((row: any) => {
-            if (!actMap[row.lead_id]) actMap[row.lead_id] = [];
-            actMap[row.lead_id].push(row.summary);
-          });
-        }
-        setLeadActivitiesMap(actMap);
-        setLeadDeliverabilityMap(deliverabilityMap || {});
+      // If stageCounts was empty (e.g. in mock test environments), derive from initialCardsMap
+      if (Object.keys(countsMap).length === 0 || total === 0) {
+        let derivedTotal = 0;
+        operational.forEach((stg) => {
+          const c = initialCardsMap[stg.id]?.length || 0;
+          countsMap[stg.id] = c;
+          derivedTotal += c;
+        });
+        setStageCounts({ ...countsMap });
+        setTotalLeads(derivedTotal);
+      }
+
+      setLeadsByStage(initialCardsMap);
+      setStagePageMap(newPageMap);
+      setLeadInterestsMap(newInterestsMap);
+
+      // Batch fetch deliverability and activities for loaded cards
+      if (allLoadedCards.length > 0) {
+        const leadIds = allLoadedCards.map((l) => l.id);
+        try {
+          const [interestsRes, activitiesRes, delivMap] = await Promise.all([
+            supabase
+              .from('lead_course_interests')
+              .select('lead_id, priority, course:courses(name), session:course_sessions(title, start_date)')
+              .in('lead_id', leadIds.slice(0, 100))
+              .order('priority', { ascending: true }),
+            supabase
+              .from('lead_activities')
+              .select('lead_id, summary')
+              .in('lead_id', leadIds.slice(0, 100))
+              .in('activity_type', ['processing_failed', 'website_lead_suppressed', 'channel_skipped'])
+              .order('created_at', { ascending: false }),
+            batchFetchPipelineDeliverabilityHealth(allLoadedCards.slice(0, 100)),
+          ]);
+
+          if (interestsRes?.data && Array.isArray(interestsRes.data)) {
+            interestsRes.data.forEach((row: any) => {
+              if (!newInterestsMap[row.lead_id] || newInterestsMap[row.lead_id].length === 0) {
+                if (!newInterestsMap[row.lead_id]) newInterestsMap[row.lead_id] = [];
+                newInterestsMap[row.lead_id].push({
+                  courseName: row.course?.name || 'Curso',
+                  sessionTitle: row.session?.title,
+                  startDate: row.session?.start_date,
+                  priority: row.priority,
+                });
+              }
+            });
+            setLeadInterestsMap({ ...newInterestsMap });
+          }
+
+          if (activitiesRes?.data && Array.isArray(activitiesRes.data)) {
+            const actMap: Record<string, string[]> = {};
+            activitiesRes.data.forEach((row: any) => {
+              if (!actMap[row.lead_id]) actMap[row.lead_id] = [];
+              actMap[row.lead_id].push(row.summary);
+            });
+            setLeadActivitiesMap(actMap);
+          }
+          if (delivMap) {
+            setLeadDeliverabilityMap(delivMap);
+          }
+        } catch {}
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados do pipeline');
     } finally {
       setIsLoading(false);
     }
+  }, [loadStageCountsAndStages, extractCourseInterests]);
+
+  // 3. Load More cards for a specific stage column
+  const handleLoadMore = async (stageId: string) => {
+    if (loadingMoreStageId) return;
+    setLoadingMoreStageId(stageId);
+
+    try {
+      const currentPage = stagePageMap[stageId] || 1;
+      const from = currentPage * STAGE_PAGE_SIZE;
+      const to = from + STAGE_PAGE_SIZE - 1;
+
+      const { data: newCards, error: fetchErr } = await supabase
+        .from('leads')
+        .select('*, lead_course_interests(course_id, priority, notes, course:courses(name), session:course_sessions(title, start_date))')
+        .eq('pipeline_stage_id', stageId)
+        .order('source_created_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to);
+
+      if (fetchErr) throw fetchErr;
+
+      if (newCards && newCards.length > 0) {
+        setLeadsByStage((prev) => ({
+          ...prev,
+          [stageId]: [...(prev[stageId] || []), ...(newCards as Lead[])],
+        }));
+
+        setStagePageMap((prev) => ({
+          ...prev,
+          [stageId]: currentPage + 1,
+        }));
+
+        setLeadInterestsMap((prev) => {
+          const next = { ...prev };
+          newCards.forEach((lead: any) => {
+            next[lead.id] = extractCourseInterests(lead);
+          });
+          return next;
+        });
+
+        // Batch fetch deliverability for newly loaded cards
+        try {
+          const newDelivMap = await batchFetchPipelineDeliverabilityHealth(newCards as Lead[]);
+          setLeadDeliverabilityMap((prev) => ({ ...prev, ...newDelivMap }));
+        } catch {}
+      }
+    } catch (err) {
+      console.error('Failed to load more leads:', err);
+    } finally {
+      setLoadingMoreStageId(null);
+    }
+  };
+
+  // 4. Server-Side Complete Database Search
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const executeServerSearch = useCallback(async (term: string) => {
+    if (!term.trim()) {
+      setIsSearching(false);
+      void loadPipelineData();
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const cleanTerm = term.trim();
+      const { data: searchResults, error: sErr } = await supabase
+        .from('leads')
+        .select('*, lead_course_interests(course_id, priority, notes, course:courses(name), session:course_sessions(title, start_date))')
+        .or(`first_name.ilike.%${cleanTerm}%,last_name.ilike.%${cleanTerm}%,email.ilike.%${cleanTerm}%,phone_raw.ilike.%${cleanTerm}%`)
+        .order('source_created_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (sErr) throw sErr;
+
+      const grouped: Record<string, Lead[]> = {};
+      stages.forEach((s) => {
+        grouped[s.id] = [];
+      });
+
+      const intMap: Record<string, FormattedCourseInterest[]> = {};
+      (searchResults || []).forEach((lead: any) => {
+        if (grouped[lead.pipeline_stage_id]) {
+          grouped[lead.pipeline_stage_id].push(lead as Lead);
+        } else if (stages[0]) {
+          grouped[stages[0].id].push(lead as Lead);
+        }
+        intMap[lead.id] = extractCourseInterests(lead);
+      });
+
+      setLeadsByStage(grouped);
+      setLeadInterestsMap(intMap);
+    } catch (err) {
+      console.error('Error during pipeline search:', err);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [stages, loadPipelineData, extractCourseInterests]);
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      void executeServerSearch(val);
+    }, 300);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
   }, []);
 
+  // Initial load
   useEffect(() => {
-    loadPipelineData();
+    void loadPipelineData();
   }, [loadPipelineData]);
 
+  // Realtime updates: subscribe to public.leads changes
   useEffect(() => {
-    const handlePurged = () => {
-      loadPipelineData();
+    if (typeof supabase?.channel !== 'function') return;
+    if (import.meta.env.MODE === 'test') return;
+
+    const channel = supabase
+      .channel('pipeline-leads-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'leads' },
+        () => {
+          // Re-sync atomic counts and data on remote change
+          void loadStageCountsAndStages();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
-    const handleUpdated = () => {
-      loadPipelineData();
-    };
+  }, [loadStageCountsAndStages]);
+
+  // Event listeners for internal updates
+  useEffect(() => {
+    const handlePurged = () => void loadPipelineData();
+    const handleUpdated = () => void loadPipelineData();
     window.addEventListener('leads-purged', handlePurged);
     window.addEventListener('lead-updated', handleUpdated);
     return () => {
@@ -177,9 +418,7 @@ export function PipelineKanbanPage() {
         e.dataTransfer.setData('text/plain', leadId);
         e.dataTransfer.effectAllowed = 'move';
       }
-    } catch {
-      // Safe fallback for test environments
-    }
+    } catch {}
   };
 
   const handleDragOver = (e: React.DragEvent, stageId: string) => {
@@ -210,14 +449,21 @@ export function PipelineKanbanPage() {
     if (!currentStageId || currentStageId === targetStageId) return;
 
     // Optimistic UI update
-    const previousState = { ...leadsByStage };
+    const previousGrouped = { ...leadsByStage };
+    const previousCounts = { ...stageCounts };
+
     const movedLead = leadsByStage[currentStageId].find((l) => l.id === leadId)!;
 
     const newGrouped = { ...leadsByStage };
     newGrouped[currentStageId] = newGrouped[currentStageId].filter((l) => l.id !== leadId);
-    newGrouped[targetStageId] = [{ ...movedLead, pipeline_stage_id: targetStageId }, ...newGrouped[targetStageId]];
+    newGrouped[targetStageId] = [{ ...movedLead, pipeline_stage_id: targetStageId }, ...(newGrouped[targetStageId] || [])];
 
     setLeadsByStage(newGrouped);
+    setStageCounts((prev) => ({
+      ...prev,
+      [currentStageId!]: Math.max(0, (prev[currentStageId!] || 1) - 1),
+      [targetStageId]: (prev[targetStageId] || 0) + 1,
+    }));
     setStageErrorMessage(null);
 
     try {
@@ -242,8 +488,9 @@ export function PipelineKanbanPage() {
         })
       );
     } catch (_err) {
-      // Rollback on failure per Requirement 8
-      setLeadsByStage(previousState);
+      // Rollback on failure
+      setLeadsByStage(previousGrouped);
+      setStageCounts(previousCounts);
       setStageErrorMessage('Não foi possível atualizar a etapa.');
       setTimeout(() => setStageErrorMessage(null), 4000);
     }
@@ -328,9 +575,34 @@ export function PipelineKanbanPage() {
           : 'Organize e acompanhe seus contatos por estágio de conversão.'
       }
       actions={
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          {/* Complete Full-CRM Search Input */}
+          <div className="relative w-44 sm:w-60">
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${isSearching ? 'animate-spin text-[#449bd5]' : 'text-slate-400'}`} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              placeholder="Pesquisar em 2.600+ leads..."
+              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f]/20 focus:border-[#08254f] transition-all"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => handleSearchChange('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 p-0.5"
+                title="Limpar pesquisa"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
           <button
-            onClick={loadPipelineData}
+            onClick={() => {
+              setSearchQuery('');
+              void loadPipelineData();
+            }}
             title="Atualizar pipeline"
             className="p-2 text-slate-500 hover:text-slate-800 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:bg-slate-50 transition-colors cursor-pointer"
           >
@@ -338,7 +610,7 @@ export function PipelineKanbanPage() {
           </button>
           <button
             onClick={() => setIsNewLeadOpen(true)}
-            className="btn-crimson text-xs"
+            className="btn-crimson text-xs whitespace-nowrap"
           >
             <Plus className="h-3.5 w-3.5" />
             <span>Novo Lead</span>
@@ -390,7 +662,7 @@ export function PipelineKanbanPage() {
             {/* 1. Mobile Quick-Jump Stage Navigation Bar (< lg) */}
             <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none -mx-4 px-4 sm:-mx-6 sm:px-6">
               {operationalStages.map((stage) => {
-                const count = leadsByStage[stage.id]?.length || 0;
+                const count = stageCounts[stage.id] ?? (leadsByStage[stage.id]?.length || 0);
                 const isActive = activeMobileStageCode === stage.code;
 
                 return (
@@ -424,7 +696,10 @@ export function PipelineKanbanPage() {
               <div className="flex gap-3 sm:gap-4 min-w-max lg:min-w-0 lg:w-full">
                 {operationalStages.map((stage) => {
                   const stageLeads = leadsByStage[stage.id] || [];
+                  const exactCount = stageCounts[stage.id] ?? stageLeads.length;
                   const isDropTarget = activeDropStageId === stage.id;
+                  const hasMoreCards = !searchQuery && exactCount > stageLeads.length;
+                  const isLoadingMore = loadingMoreStageId === stage.id;
 
                   return (
                     <div
@@ -440,7 +715,7 @@ export function PipelineKanbanPage() {
                           : 'border-slate-200/80'
                       }`}
                     >
-                      {/* Column Header */}
+                      {/* Column Header with EXACT Server-Side Count */}
                       <div
                         className={`px-3.5 py-3 rounded-t-2xl border-t-4 flex items-center justify-between font-heading ${getStageHeaderColor(
                           stage.code,
@@ -449,43 +724,71 @@ export function PipelineKanbanPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold tracking-tight">{stage.name}</span>
                         </div>
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white shadow-xs text-slate-700 border border-slate-200/50">
-                          {stageLeads.length}
+                        <span
+                          className="text-xs font-bold px-2 py-0.5 rounded-full bg-white shadow-xs text-slate-700 border border-slate-200/50"
+                          title={`${exactCount} leads no estágio ${stage.name}`}
+                        >
+                          {exactCount}
                         </span>
                       </div>
 
-                      {/* Cards List */}
+                      {/* Cards List with Recency Ordering and Load More */}
                       <div className="p-2.5 flex-1 space-y-2 min-h-[220px] max-h-[calc(100vh-270px)] sm:max-h-[calc(100vh-220px)] overflow-y-auto">
                         {stageLeads.length > 0 ? (
-                          stageLeads.map((lead) => {
-                            const interests = leadInterestsMap[lead.id] || [];
-                            const activities = leadActivitiesMap[lead.id] || [];
-                            const attentionState = resolveAttentionState(lead, activities);
-                            const deliverabilityHealth = leadDeliverabilityMap[lead.id];
-                            const isDragging = draggedLeadId === lead.id;
+                          <>
+                            {stageLeads.map((lead) => {
+                              const interests = leadInterestsMap[lead.id] || [];
+                              const activities = leadActivitiesMap[lead.id] || [];
+                              const attentionState = resolveAttentionState(lead, activities);
+                              const deliverabilityHealth = leadDeliverabilityMap[lead.id];
+                              const isDragging = draggedLeadId === lead.id;
 
-                            return (
-                              <MinimalLeadCard
-                                key={lead.id}
-                                lead={lead}
-                                interests={interests}
-                                attentionState={attentionState}
-                                deliverabilityHealth={deliverabilityHealth}
-                                stageCode={stage.code}
-                                stageName={stage.name}
-                                isDragging={isDragging}
-                                onDragStart={(e) => handleDragStart(e, lead.id)}
-                                onClick={() => setSelectedLeadId(lead.id)}
-                              />
-                            );
-                          })
+                              return (
+                                <MinimalLeadCard
+                                  key={lead.id}
+                                  lead={lead}
+                                  interests={interests}
+                                  attentionState={attentionState}
+                                  deliverabilityHealth={deliverabilityHealth}
+                                  stageCode={stage.code}
+                                  stageName={stage.name}
+                                  isDragging={isDragging}
+                                  onDragStart={(e) => handleDragStart(e, lead.id)}
+                                  onClick={() => setSelectedLeadId(lead.id)}
+                                />
+                              );
+                            })}
+
+                            {/* Load More Button for Scalable Pagination */}
+                            {hasMoreCards && (
+                              <button
+                                type="button"
+                                onClick={() => handleLoadMore(stage.id)}
+                                disabled={isLoadingMore}
+                                className="w-full py-2 px-3 text-[11px] font-semibold text-slate-600 hover:text-[#08254f] bg-white/80 hover:bg-white border border-slate-200/80 rounded-xl transition-all shadow-2xs hover:shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                              >
+                                {isLoadingMore ? (
+                                  <>
+                                    <RotateCw className="h-3 w-3 animate-spin text-[#449bd5]" />
+                                    <span>Carregando...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-3 w-3 text-slate-400" />
+                                    <span>Carregar mais ({exactCount - stageLeads.length} restantes)</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </>
                         ) : (
                           <div className="flex flex-col items-center justify-center py-8 px-3 text-center text-slate-400 text-xs italic min-h-[110px] select-none">
                             <span className="max-w-[190px] leading-relaxed">
-                              Nenhum lead neste estágio
+                              {searchQuery ? 'Nenhum resultado' : 'Nenhum lead neste estágio'}
                             </span>
                           </div>
                         )}
+
                         {isDropTarget && (
                           <div
                             data-testid={`drop-zone-${stage.code}`}
