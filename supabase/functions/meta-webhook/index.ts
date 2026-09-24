@@ -359,17 +359,17 @@ Deno.serve(async (req) => {
     // Check 7.1: By source + external_lead_id
     const { data: leadByExternalId } = await db
       .from('leads')
-      .select('id, pipeline_stage_id, email, phone_e164')
+      .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source')
       .eq('source', 'meta')
       .eq('external_lead_id', leadgenId)
       .maybeSingle();
 
     // Check 7.2: By normalized email
-    let leadByEmail: { id: string; pipeline_stage_id: string; email: string; phone_e164: string | null } | null = null;
+    let leadByEmail: { id: string; pipeline_stage_id: string; email: string; phone_e164: string | null; external_lead_id: string | null; source: string } | null = null;
     if (cleanEmail) {
       const { data } = await db
         .from('leads')
-        .select('id, pipeline_stage_id, email, phone_e164')
+        .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source')
         .eq('email', cleanEmail)
         .order('created_at', { ascending: true })
         .limit(1)
@@ -378,11 +378,11 @@ Deno.serve(async (req) => {
     }
 
     // Check 7.3: By normalized E164 phone
-    let leadByPhone: { id: string; pipeline_stage_id: string; email: string; phone_e164: string | null } | null = null;
+    let leadByPhone: { id: string; pipeline_stage_id: string; email: string; phone_e164: string | null; external_lead_id: string | null; source: string } | null = null;
     if (phoneE164) {
       const { data } = await db
         .from('leads')
-        .select('id, pipeline_stage_id, email, phone_e164')
+        .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source')
         .eq('phone_e164', phoneE164)
         .order('created_at', { ascending: true })
         .limit(1)
@@ -509,15 +509,25 @@ Deno.serve(async (req) => {
 
       // If form was present but could not be safely mapped to a course:
       if (formId && !resolvedCourse) {
-        await db.from('tasks').insert({
-          lead_id: targetLeadId,
-          intake_event_id: intakeEventId,
-          task_type: 'data_review',
-          title: 'Review Unmapped Meta Lead Form',
-          description: `Lead submitted via Meta Form ID "${formId}". No course mapping configured. Please confirm course interest manually.`,
-          status: 'pending',
-          created_by: 'system',
-        });
+        const { data: existingTask } = await db
+          .from('tasks')
+          .select('id')
+          .eq('lead_id', targetLeadId)
+          .eq('task_type', 'data_review')
+          .eq('status', 'pending')
+          .maybeSingle();
+
+        if (!existingTask) {
+          await db.from('tasks').insert({
+            lead_id: targetLeadId,
+            intake_event_id: intakeEventId,
+            task_type: 'data_review',
+            title: 'Review Unmapped Meta Lead Form',
+            description: `Lead submitted via Meta Form ID "${formId}". No course mapping configured. Please confirm course interest manually.`,
+            status: 'pending',
+            created_by: 'system',
+          });
+        }
       }
     } else {
       // Existing lead — non-destructive update
@@ -531,10 +541,36 @@ Deno.serve(async (req) => {
         updateData.phone_e164 = phoneE164;
       }
 
+      // Attach Meta external_lead_id if not already present on existing lead
+      if (!matchedLead.external_lead_id && leadgenId) {
+        updateData.external_lead_id = leadgenId;
+      }
+
       await db
         .from('leads')
         .update(updateData)
         .eq('id', targetLeadId);
+
+      // Attach normalized course interest if mapped and not already linked
+      if (resolvedCourse?.courseId) {
+        const { data: existingInterest } = await db
+          .from('lead_course_interests')
+          .select('id')
+          .eq('lead_id', targetLeadId)
+          .eq('course_id', resolvedCourse.courseId)
+          .maybeSingle();
+
+        if (!existingInterest) {
+          await db.from('lead_course_interests').insert({
+            lead_id: targetLeadId,
+            course_id: resolvedCourse.courseId,
+            course_session_id: resolvedCourse.courseSessionId || null,
+            priority: 1,
+            source: 'form',
+            status: 'active',
+          });
+        }
+      }
 
       await db.from('lead_activities').insert({
         lead_id: targetLeadId,
