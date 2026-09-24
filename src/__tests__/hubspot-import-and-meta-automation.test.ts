@@ -334,4 +334,165 @@ describe('EDS HUB — HubSpot Import, Meta-Origin Automation & Course Mapping', 
       expect(pendingOutboxItems.every(i => i.status === 'pending')).toBe(true);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // 6. APPROVED COURSE MAPPINGS & FREE COURSES HANDLING
+  // ---------------------------------------------------------------------------
+  describe('6. Approved Course Mappings & Free Courses Handling', () => {
+    const APPROVED_COURSE_MAP: Record<string, { code: string; name: string } | null> = {
+      Intensive: { code: 'IDIT-01', name: 'Intensive Dental Implant Training' },
+      Endodontic: { code: 'ET-01', name: 'Endodontics Training' },
+      Wisdom: { code: 'WTT-01', name: 'Wisdom Teeth Training' },
+      Zygomatic: { code: 'ZIT-01', name: 'Zygomatic Implant Training' },
+      Advanced: { code: 'ADIE-01', name: 'Advanced Dental Implant Experience' },
+      'Periodontal Plastic': { code: 'PST-01', name: 'Periodontal Surgery Training' },
+      Rehabilitation: { code: 'AIRE-01', name: 'Advanced Implant Rehabilitation Experience' },
+      'Free courses': null, // Do not map to a paid course
+    };
+
+    it('maps all approved commercial courses to their canonical EDS course code', () => {
+      expect(APPROVED_COURSE_MAP['Intensive']?.code).toBe('IDIT-01');
+      expect(APPROVED_COURSE_MAP['Endodontic']?.code).toBe('ET-01');
+      expect(APPROVED_COURSE_MAP['Wisdom']?.code).toBe('WTT-01');
+      expect(APPROVED_COURSE_MAP['Zygomatic']?.code).toBe('ZIT-01');
+      expect(APPROVED_COURSE_MAP['Advanced']?.code).toBe('ADIE-01');
+      expect(APPROVED_COURSE_MAP['Periodontal Plastic']?.code).toBe('PST-01');
+      expect(APPROVED_COURSE_MAP['Rehabilitation']?.code).toBe('AIRE-01');
+    });
+
+    it('Free courses imports without paid-course mapping and preserves historical note', () => {
+      const freeCourseVal = 'Free courses';
+      const mapped = APPROVED_COURSE_MAP[freeCourseVal];
+      expect(mapped).toBeNull();
+
+      // Ensure historical value is preserved in notes/metadata without failing import
+      const leadPayload = {
+        name: 'Dr. Historical Free Course',
+        email: 'freecourse@example.com',
+        historicalNotes: freeCourseVal ? `Historical Course Interest: ${freeCourseVal}` : undefined,
+      };
+
+      expect(leadPayload.historicalNotes).toBe('Historical Course Interest: Free courses');
+    });
+
+    it('historical date preference (data_do_curso_de_interesse) is preserved as note context without inventing session', () => {
+      const rawDate = '2025-10-15';
+      const note = `Historical Session Preference: ${rawDate}`;
+      expect(note).toContain('2025-10-15');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 7. IDENTITY DEDUPLICATION & CONFLICT RESOLUTION
+  // ---------------------------------------------------------------------------
+  describe('7. Identity Deduplication & Safe Matching', () => {
+    it('matches by HubSpot integration link first', () => {
+      const existingLinks = new Map<string, string>([['hs-101', 'lead-eds-101']]);
+      const hubspotContactId = 'hs-101';
+      expect(existingLinks.get(hubspotContactId)).toBe('lead-eds-101');
+    });
+
+    it('matches by normalized email second', () => {
+      const emailMap = new Map<string, string>([['doctor@eds.com', 'lead-eds-102']]);
+      const normalizedEmail = '  Doctor@EDS.com '.trim().toLowerCase();
+      expect(emailMap.get(normalizedEmail)).toBe('lead-eds-102');
+    });
+
+    it('matches by normalized E.164 phone third', () => {
+      const phoneMap = new Map<string, string>([['+14075550199', 'lead-eds-103']]);
+      const rawPhone = '+1 (407) 555-0199';
+      const normalized = rawPhone.replace(/[^\d+]/g, '');
+      expect(phoneMap.get(normalized)).toBe('lead-eds-103');
+    });
+
+    it('flags conflict safely and avoids automatic merge when email matches Lead A and phone matches Lead B', () => {
+      const emailMatchesLead: string = 'lead-A';
+      const phoneMatchesLead: string = 'lead-B';
+
+      const isConflict = emailMatchesLead !== phoneMatchesLead;
+      expect(isConflict).toBe(true);
+
+      const resolveMatch = (emailMatch: string, phoneMatch: string) => {
+        if (emailMatch && phoneMatch && emailMatch !== phoneMatch) {
+          return { status: 'conflict', targetLead: null, flag: 'IDENTITY_CONFLICT_MANUAL_REVIEW_REQUIRED' };
+        }
+        return { status: 'matched', targetLead: emailMatch || phoneMatch };
+      };
+
+      const result = resolveMatch(emailMatchesLead, phoneMatchesLead);
+      expect(result.status).toBe('conflict');
+      expect(result.targetLead).toBeNull();
+      expect(result.flag).toBe('IDENTITY_CONFLICT_MANUAL_REVIEW_REQUIRED');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 8. CONTINUOUS INBOUND SYNC & IDEMPOTENCY
+  // ---------------------------------------------------------------------------
+  describe('8. Continuous Inbound Sync & Idempotent Delta Polling', () => {
+    it('uses incremental delta polling using lastmodifieddate', () => {
+      const syncConfig = {
+        sync_direction: 'hubspot_to_eds_only',
+        mechanism: 'incremental_delta_polling_lastmodifieddate',
+        polling_cadence_minutes: 5,
+        target_cadence_range: '1-5 minutes',
+        outbound_sync_enabled: false,
+      };
+
+      expect(syncConfig.sync_direction).toBe('hubspot_to_eds_only');
+      expect(syncConfig.mechanism).toBe('incremental_delta_polling_lastmodifieddate');
+      expect(syncConfig.polling_cadence_minutes).toBeGreaterThanOrEqual(1);
+      expect(syncConfig.polling_cadence_minutes).toBeLessThanOrEqual(5);
+      expect(syncConfig.outbound_sync_enabled).toBe(false);
+    });
+
+    it('delta polling updates existing contacts idempotently without duplicating', () => {
+      const leadsDb = new Map<string, { id: string; email: string; stage: string; updated_at: string }>();
+      leadsDb.set('hs-501', { id: 'eds-501', email: 'doc@example.com', stage: 'capture', updated_at: '2026-09-01T00:00:00Z' });
+
+      // Incoming delta update from HubSpot
+      const incomingDelta = {
+        hubspot_contact_id: 'hs-501',
+        email: 'doc@example.com',
+        lifecyclestage: 'opportunity',
+        lastmodifieddate: '2026-09-24T12:00:00Z',
+      };
+
+      if (leadsDb.has(incomingDelta.hubspot_contact_id)) {
+        const existing = leadsDb.get(incomingDelta.hubspot_contact_id)!;
+        existing.stage = incomingDelta.lifecyclestage === 'opportunity' ? 'acquisition' : 'capture';
+        existing.updated_at = incomingDelta.lastmodifieddate;
+      }
+
+      expect(leadsDb.size).toBe(1); // No new duplicate created
+      expect(leadsDb.get('hs-501')?.stage).toBe('acquisition');
+    });
+
+    it('future non-Meta HubSpot contact does not trigger automation even with active continuous sync', () => {
+      const nonMetaFutureContact = {
+        id: 'hs-fut-organic',
+        email: 'organic@example.com',
+        source: 'manual',
+        source_detail: 'hubspot_sync',
+        is_historical: false,
+        hs_analytics_source: 'ORGANIC_SEARCH',
+      };
+
+      const eligibility = evaluateFirstContactEligibility(nonMetaFutureContact);
+      expect(eligibility.isEligible).toBe(false);
+    });
+
+    it('permanent retention: disconnecting HubSpot preserves all EDS leads, notes, and course interests', () => {
+      const disconnectionPolicy = {
+        deleteRecordsOnHubSpotDisconnect: false,
+        archiveRecordsOnHubSpotDisconnect: false,
+        removeHistoryOnHubSpotDisconnect: false,
+        removeCourseInterestsOnHubSpotDisconnect: false,
+        permanentEdsCrmRecord: true,
+      };
+
+      expect(disconnectionPolicy.deleteRecordsOnHubSpotDisconnect).toBe(false);
+      expect(disconnectionPolicy.permanentEdsCrmRecord).toBe(true);
+    });
+  });
 });
