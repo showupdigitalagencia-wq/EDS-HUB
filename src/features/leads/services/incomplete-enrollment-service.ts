@@ -92,3 +92,67 @@ export async function dismissIncompleteEnrollment(
     };
   }
 }
+
+export interface PendingIncompleteEnrollmentItem {
+  id: string;
+  lead_id: string;
+  course_id?: string | null;
+  course_session_id?: string | null;
+  source_page?: string | null;
+  created_at: string;
+  lead?: {
+    id: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+    phone_e164?: string | null;
+  } | null;
+  course?: {
+    id: string;
+    name: string;
+    code: string;
+  } | null;
+  course_session?: {
+    id: string;
+    title: string;
+    start_date: string;
+  } | null;
+}
+
+/**
+ * Fetches active unresolved incomplete enrollments for operational dashboard review.
+ */
+export async function fetchPendingIncompleteEnrollments(
+  limit = 10,
+  client = supabase
+): Promise<PendingIncompleteEnrollmentItem[]> {
+  try {
+    const { data, error } = await client
+      .from('incomplete_enrollments')
+      .select(`
+        id,
+        lead_id,
+        course_id,
+        course_session_id,
+        source_page,
+        created_at,
+        lead:leads(id, first_name, last_name, email, phone_e164),
+        course:courses(id, name, code),
+        course_session:course_sessions(id, title, start_date)
+      `)
+      .eq('status', 'needs_followup')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('[incomplete-enrollment-service] Error fetching pending incomplete enrollments:', error);
+      return [];
+    }
+
+    return (data as unknown as PendingIncompleteEnrollmentItem[]) || [];
+  } catch (err) {
+    console.error('[incomplete-enrollment-service] Unexpected error in fetchPendingIncompleteEnrollments:', err);
+    return [];
+  }
+}
+

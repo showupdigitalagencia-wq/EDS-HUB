@@ -71,7 +71,7 @@ export const NeedsAttentionWidget: React.FC<NeedsAttentionWidgetProps> = ({
             <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
             <p className="text-sm font-semibold text-slate-700">Tudo em dia!</p>
             <p className="text-xs text-slate-400 mt-1">
-              Nenhum lead com tarefas atrasadas, falhas ou ações pendentes.
+              Nenhum lead precisa de atenção. Tarefas e comunicações em dia.
             </p>
           </div>
         ) : (

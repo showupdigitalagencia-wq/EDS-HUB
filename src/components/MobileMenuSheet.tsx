@@ -4,17 +4,7 @@ import { useAuth } from '../features/auth/AuthProvider';
 import {
   LayoutDashboard,
   Inbox,
-  GraduationCap,
-  Award,
-  Mail,
-  Workflow,
-  GitFork,
-  ClipboardList,
-  BarChart3,
-  DollarSign,
   FileText,
-  Target,
-  Activity,
   Settings,
   LogOut,
   X,
@@ -37,42 +27,17 @@ interface SecondaryNavGroup {
 
 const secondaryGroups: SecondaryNavGroup[] = [
   {
-    label: 'VISÃO GERAL',
+    label: 'OPERACIONAL',
     items: [
       { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-      { name: 'Inbox', href: '/inbox', icon: Inbox },
+      { name: 'Conversas', href: '/inbox', icon: Inbox },
     ],
   },
   {
-    label: 'CURSOS & FORMAÇÃO',
-    items: [
-      { name: 'Course Operations', href: '/courses/operations', icon: GraduationCap },
-      { name: 'Post-Course & Alumni', href: '/courses/post-course', icon: Award },
-    ],
-  },
-  {
-    label: 'MARKETING & ENGAJAMENTO',
-    items: [
-      { name: 'Campaigns', href: '/campaigns', icon: Mail },
-      { name: 'Automations', href: '/automations', icon: Workflow },
-      { name: 'Sequences', href: '/sequences', icon: GitFork },
-      { name: 'Forms', href: '/forms', icon: ClipboardList },
-    ],
-  },
-  {
-    label: 'GESTÃO & RELATÓRIOS',
-    items: [
-      { name: 'Reports', href: '/reports', icon: BarChart3 },
-      { name: 'Revenue', href: '/dashboard/revenue', icon: DollarSign },
-    ],
-  },
-  {
-    label: 'SISTEMA & CONFIGURAÇÕES',
+    label: 'SISTEMA',
     items: [
       { name: 'Templates', href: '/templates', icon: FileText },
-      { name: 'Lead Scoring', href: '/scoring', icon: Target },
-      { name: 'Foundation Status', href: '/foundation', icon: Activity },
-      { name: 'Settings', href: '/settings', icon: Settings },
+      { name: 'Configurações', href: '/settings', icon: Settings },
     ],
   },
 ];
@@ -209,7 +174,7 @@ export function MobileMenuSheet({ isOpen, onClose }: MobileMenuSheetProps) {
             className="flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-[#8a1c1c]/20 hover:text-white transition-colors cursor-pointer"
           >
             <LogOut className="h-3.5 w-3.5 text-slate-400" />
-            <span>Sign out</span>
+            <span>Sair</span>
           </button>
         </div>
       </div>

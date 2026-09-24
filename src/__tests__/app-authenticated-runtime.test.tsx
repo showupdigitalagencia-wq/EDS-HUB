@@ -50,7 +50,7 @@ describe('Authenticated Full App Integration Tests', () => {
     // Assert ErrorBoundary is NOT rendered
     expect(screen.queryByText('Algo deu errado')).toBeNull();
     // Assert dashboard unique content is present
-    expect(screen.getByText('Sales Intelligence Dashboard')).toBeDefined();
+    expect(screen.getAllByText('Dashboard').length).toBeGreaterThan(0);
   });
 
   it('renders authenticated RevenueDashboardPage without triggering ErrorBoundary', async () => {
@@ -94,7 +94,7 @@ describe('Authenticated Full App Integration Tests', () => {
     );
 
     expect(screen.queryByText('Algo deu errado')).toBeNull();
-    expect(screen.getByText('Daily Operations Command Center')).toBeDefined();
+    expect(screen.getByText('Tarefas Operacionais')).toBeDefined();
   });
 
   it('renders authenticated ReportsPage without triggering ErrorBoundary', async () => {

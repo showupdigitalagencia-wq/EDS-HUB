@@ -198,7 +198,7 @@ export function SystemSetupPage() {
 
   if (error && !settings) {
     return (
-      <Layout title="System Setup">
+      <Layout title="Configurações">
         <ErrorState message={error} onRetry={fetchSettings} />
       </Layout>
     );
@@ -223,7 +223,7 @@ export function SystemSetupPage() {
             }`}
           >
             <Sliders className="h-4 w-4" />
-            General Settings
+            Configurações Gerais
           </button>
           <button
             type="button"
@@ -235,7 +235,7 @@ export function SystemSetupPage() {
             }`}
           >
             <BookOpen className="h-4 w-4" />
-            Course Catalog
+            Catálogo de Cursos
           </button>
           <button
             type="button"
@@ -247,7 +247,7 @@ export function SystemSetupPage() {
             }`}
           >
             <Database className="h-4 w-4" />
-            Data Management
+            Gestão de Dados
           </button>
           <button
             type="button"
@@ -259,7 +259,7 @@ export function SystemSetupPage() {
             }`}
           >
             <Share2 className="h-4 w-4" />
-            Integrations
+            Integrações
           </button>
         </div>
 
@@ -269,8 +269,8 @@ export function SystemSetupPage() {
         {activeTab === 'general' && (
           <div className="card-executive">
             <div className="px-6 py-5 border-b border-slate-100">
-              <h2 className="text-base font-bold font-heading text-[#08254f]">General Settings</h2>
-              <p className="text-xs text-slate-500 mt-1">Configure your EDS HUB instance parameters.</p>
+              <h2 className="text-base font-bold font-heading text-[#08254f]">Configurações Gerais</h2>
+              <p className="text-xs text-slate-500 mt-1">Configure os parâmetros da sua instância EDS HUB.</p>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
@@ -424,12 +424,12 @@ export function SystemSetupPage() {
                   {isSaving ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Saving…
+                      Salvando…
                     </>
                   ) : (
                     <>
                       <Save className="h-4 w-4" />
-                      Save Settings
+                      Salvar Configurações
                     </>
                   )}
                 </button>
@@ -437,7 +437,7 @@ export function SystemSetupPage() {
                 {saveSuccess && (
                   <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
                     <CheckCircle2 className="h-4 w-4" />
-                    Saved successfully
+                    Configurações salvas com sucesso
                   </span>
                 )}
               </div>

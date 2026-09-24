@@ -153,7 +153,7 @@ export const WorkDashboardPage: React.FC = () => {
   return (
     <Layout
       eyebrow="CRM COMERCIAL"
-      title="Daily Operations Command Center"
+      title="Tarefas Operacionais"
       subtitle="Fila de trabalho operacional diária, prazos e prioridades da equipe"
       actions={
         <div className="flex items-center gap-2.5">
@@ -164,7 +164,7 @@ export const WorkDashboardPage: React.FC = () => {
             }}
             disabled={loadingItems}
             className="p-2 text-slate-600 hover:text-[#08254f] hover:bg-slate-100 rounded-xl transition-colors border border-slate-200"
-            title="Refresh Workspace"
+            title="Atualizar tarefas"
           >
             <RefreshCw className={`w-4 h-4 ${loadingItems ? 'animate-spin' : ''}`} />
           </button>
@@ -175,7 +175,7 @@ export const WorkDashboardPage: React.FC = () => {
             className="px-3 py-2 text-xs font-semibold text-slate-700 hover:text-[#08254f] bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5 disabled:opacity-40"
           >
             <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Export CSV</span>
+            <span className="hidden sm:inline">Exportar CSV</span>
           </button>
 
           <button
@@ -186,7 +186,7 @@ export const WorkDashboardPage: React.FC = () => {
             className="btn-crimson text-xs px-4 py-2 flex items-center gap-1.5 shadow-sm"
           >
             <Plus className="w-4 h-4" />
-            <span>New Task</span>
+            <span>Nova Tarefa</span>
           </button>
         </div>
       }

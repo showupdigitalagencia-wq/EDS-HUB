@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Filter, ArrowRight, Info, HelpCircle } from 'lucide-react';
 import type { DashboardPipelineMetrics, DashboardQualificationMetrics } from '../../../types/database';
 import { formatRate } from '../services/dashboard-service';
@@ -212,6 +213,13 @@ export const SalesFunnelWidget: React.FC<SalesFunnelWidgetProps> = ({
             <HelpCircle className="w-3.5 h-3.5 text-slate-400" />
             Independentes do período filtrado
           </span>
+          <Link
+            to="/pipeline"
+            className="inline-flex items-center gap-1 font-semibold text-[#08254f] hover:text-[#449bd5] transition-colors"
+          >
+            <span>Ver Pipeline</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
       </div>
     </div>

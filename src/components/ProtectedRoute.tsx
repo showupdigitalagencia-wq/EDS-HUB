@@ -19,7 +19,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex items-center justify-center bg-surface-50">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-brand-500 mx-auto" />
-          <p className="text-sm text-gray-500 mt-3">Loading...</p>
+          <p className="text-sm text-gray-500 mt-3">Carregando...</p>
         </div>
       </div>
     );
@@ -38,17 +38,17 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-red-50 mb-4">
             <ShieldAlert className="h-7 w-7 text-red-500" />
           </div>
-          <h1 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h1>
+          <h1 className="text-xl font-semibold text-gray-900 mb-2">Acesso Negado</h1>
           <p className="text-sm text-gray-500 mb-6">
-            Your account is not authorized to access EDS HUB. 
-            Please contact the administrator.
+            Sua conta não possui autorização para acessar o EDS HUB. 
+            Por favor, entre em contato com o administrador.
           </p>
           <button
             id="unauthorized-logout"
             onClick={signOut}
             className="rounded-[var(--radius-button)] bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 cursor-pointer"
           >
-            Sign out
+            Sair
           </button>
         </div>
       </div>

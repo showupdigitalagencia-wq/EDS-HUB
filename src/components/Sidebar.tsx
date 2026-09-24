@@ -7,17 +7,7 @@ import {
   CheckSquare,
   LayoutDashboard,
   Inbox,
-  GraduationCap,
-  Award,
-  Mail,
-  Workflow,
-  GitFork,
-  ClipboardList,
-  BarChart3,
-  DollarSign,
   FileText,
-  Target,
-  Activity,
   Settings,
   LogOut,
   X,
@@ -37,51 +27,21 @@ interface NavGroup {
 
 const navigationGroups: NavGroup[] = [
   {
-    label: 'COMERCIAL',
+    label: 'OPERACIONAL',
     isPrimary: true,
     items: [
-      { name: 'Pipeline', href: '/pipeline', icon: Kanban, testId: 'nav-pipeline' },
-      { name: 'Contatos', href: '/leads', icon: Users, testId: 'nav-leads' },
-      { name: 'Tarefas', href: '/work', icon: CheckSquare, testId: 'nav-work' },
-    ],
-  },
-  {
-    label: 'VISÃO GERAL',
-    items: [
       { name: 'Dashboard', href: '/', icon: LayoutDashboard, testId: 'nav-home' },
-      { name: 'Inbox', href: '/inbox', icon: Inbox, testId: 'nav-inbox' },
-    ],
-  },
-  {
-    label: 'CURSOS',
-    items: [
-      { name: 'Course Operations', href: '/courses/operations', icon: GraduationCap, testId: 'nav-courses-operations' },
-      { name: 'Post-Course & Alumni', href: '/courses/post-course', icon: Award, testId: 'nav-courses-post-course' },
-    ],
-  },
-  {
-    label: 'MARKETING',
-    items: [
-      { name: 'Campaigns', href: '/campaigns', icon: Mail, testId: 'nav-campaigns' },
-      { name: 'Automations', href: '/automations', icon: Workflow, testId: 'nav-automations' },
-      { name: 'Sequences', href: '/sequences', icon: GitFork, testId: 'nav-sequences' },
-      { name: 'Forms', href: '/forms', icon: ClipboardList, testId: 'nav-forms' },
-    ],
-  },
-  {
-    label: 'GESTÃO',
-    items: [
-      { name: 'Reports', href: '/reports', icon: BarChart3, testId: 'nav-reports' },
-      { name: 'Revenue', href: '/dashboard/revenue', icon: DollarSign, testId: 'nav-dashboard-revenue' },
+      { name: 'Contatos', href: '/leads', icon: Users, testId: 'nav-leads' },
+      { name: 'Pipeline', href: '/pipeline', icon: Kanban, testId: 'nav-pipeline' },
+      { name: 'Tarefas', href: '/work', icon: CheckSquare, testId: 'nav-work' },
+      { name: 'Conversas', href: '/inbox', icon: Inbox, testId: 'nav-inbox' },
     ],
   },
   {
     label: 'SISTEMA',
     items: [
       { name: 'Templates', href: '/templates', icon: FileText, testId: 'nav-templates' },
-      { name: 'Lead Scoring', href: '/scoring', icon: Target, testId: 'nav-scoring' },
-      { name: 'Foundation Status', href: '/foundation', icon: Activity, testId: 'nav-foundation' },
-      { name: 'Settings', href: '/settings', icon: Settings, testId: 'nav-settings' },
+      { name: 'Configurações', href: '/settings', icon: Settings, testId: 'nav-settings' },
     ],
   },
 ];
@@ -237,7 +197,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
           className="flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-[#8a1c1c]/20 hover:text-white transition-colors cursor-pointer"
         >
           <LogOut className="h-3.5 w-3.5 text-slate-400 group-hover:text-white" />
-          <span>Sign out</span>
+          <span>Sair</span>
         </button>
       </div>
     </>

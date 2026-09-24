@@ -4,40 +4,36 @@ import {
   Calendar,
   AlertCircle,
   Clock,
-  DollarSign,
-  ArrowRight,
-  BarChart3,
+  AlertOctagon,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { Layout } from '../../components/Layout';
 import { KpiCardsSection } from './components/KpiCardsSection';
 import { SalesFunnelWidget } from './components/SalesFunnelWidget';
-import { PriorityLeadsWidget } from './components/PriorityLeadsWidget';
 import { NeedsAttentionWidget } from './components/NeedsAttentionWidget';
-import { ActivityTrendWidget } from './components/ActivityTrendWidget';
-import { ScoreAndInterestWidget } from './components/ScoreAndInterestWidget';
-import { SourceAndChannelWidget } from './components/SourceAndChannelWidget';
-import { AutomationVelocityWidget } from './components/AutomationVelocityWidget';
 import { TasksAndConversationsWidget } from './components/TasksAndConversationsWidget';
+import { EmailHealthCard } from './components/EmailHealthCard';
+import { IncompleteEnrollmentsWidget } from './components/IncompleteEnrollmentsWidget';
+import { ActivityTrendWidget } from './components/ActivityTrendWidget';
 import {
   fetchSalesDashboardMetrics,
   getDateRangeBoundaries,
 } from './services/dashboard-service';
 import {
-  exportPriorityLeadsToCsv,
+  fetchDeliverabilityHealth,
+  type DeliverabilityHealthSummary,
+} from './services/deliverability-health-service';
+import {
+  fetchPendingIncompleteEnrollments,
+  type PendingIncompleteEnrollmentItem,
+} from '../leads/services/incomplete-enrollment-service';
+import {
   exportNeedsAttentionToCsv,
   exportPipelineSummaryToCsv,
 } from './utils/dashboard-export';
 import type {
   SalesDashboardMetrics,
   DashboardPeriodFilter,
-  RevenueDashboardMetrics,
 } from '../../types/database';
-import {
-  fetchRevenueDashboardMetrics,
-  formatCurrency,
-  formatTicket,
-} from '../revenue/services/revenue-service';
 
 export const SalesDashboardPage: React.FC = () => {
   const [periodFilter, setPeriodFilter] = useState<DashboardPeriodFilter>('30d');
@@ -51,7 +47,8 @@ export const SalesDashboardPage: React.FC = () => {
   });
 
   const [metrics, setMetrics] = useState<SalesDashboardMetrics | null>(null);
-  const [revMetrics, setRevMetrics] = useState<RevenueDashboardMetrics | null>(null);
+  const [deliverabilityHealth, setDeliverabilityHealth] = useState<DeliverabilityHealthSummary | null>(null);
+  const [incompleteEnrollments, setIncompleteEnrollments] = useState<PendingIncompleteEnrollmentItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
@@ -66,15 +63,21 @@ export const SalesDashboardPage: React.FC = () => {
         customStart,
         customEnd
       );
-      const [salesData, revenueData] = await Promise.all([
+      const [salesData, healthData, incompleteData] = await Promise.all([
         fetchSalesDashboardMetrics(boundaries.startDate, boundaries.endDate),
-        fetchRevenueDashboardMetrics(boundaries.startDate, boundaries.endDate).catch((e) => {
-          console.warn('Revenue metrics non-fatal error:', e);
+        fetchDeliverabilityHealth().catch((e) => {
+          console.warn('Deliverability health non-fatal error:', e);
           return null;
         }),
+        fetchPendingIncompleteEnrollments(5).catch((e) => {
+          console.warn('Incomplete enrollments non-fatal error:', e);
+          return [];
+        }),
       ]);
+
       setMetrics(salesData);
-      setRevMetrics(revenueData);
+      setDeliverabilityHealth(healthData);
+      setIncompleteEnrollments(incompleteData || []);
       setLastUpdated(new Date().toLocaleTimeString('pt-BR'));
     } catch (err: unknown) {
       console.error('Failed to load dashboard:', err);
@@ -90,12 +93,13 @@ export const SalesDashboardPage: React.FC = () => {
   }, [loadData]);
 
   const boundaries = getDateRangeBoundaries(periodFilter, customStart, customEnd);
+  const hasSpamComplaint = (deliverabilityHealth?.metrics?.complaints ?? 0) > 0;
 
   return (
     <Layout
-      eyebrow="VISÃO GERAL OPERACIONAL"
-      title="Sales Intelligence Dashboard"
-      subtitle="Métricas comerciais executivas, funil de conversão e saúde da operação"
+      eyebrow="PAINEL OPERACIONAL"
+      title="Dashboard"
+      subtitle="Acompanhamento diário de leads, pipeline, tarefas e entregabilidade"
       actions={
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Period Filter Buttons */}
@@ -145,16 +149,6 @@ export const SalesDashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* View Full Reports Button */}
-          <Link
-            to="/reports"
-            id="view-full-reports-btn"
-            className="flex items-center gap-1.5 px-3 py-2 bg-[#08254f] hover:bg-[#061e40] text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            <BarChart3 className="w-3.5 h-3.5" />
-            <span>Relatórios</span>
-          </Link>
-
           {/* Refresh Button */}
           <button
             type="button"
@@ -171,154 +165,120 @@ export const SalesDashboardPage: React.FC = () => {
           {lastUpdated && (
             <div className="hidden sm:flex items-center gap-1 text-[11px] text-slate-400 pl-1">
               <Clock className="w-3 h-3" />
-              <span>{lastUpdated}</span>
+              <span>Atualizado às {lastUpdated}</span>
             </div>
           )}
         </div>
       }
     >
       <div className="space-y-6 sm:space-y-8">
-
-          {/* Error Message */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-              <div className="flex-1 text-xs text-red-800 font-medium">
-                {error}
-              </div>
-              <button
-                type="button"
-                onClick={loadData}
-                className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Tentar novamente
-              </button>
+        {/* High-Priority Spam Alert Banner (Domain Reputation Protection) */}
+        {hasSpamComplaint && (
+          <div
+            id="high-priority-spam-banner"
+            className="bg-rose-50 border-2 border-rose-400 rounded-2xl p-4.5 flex items-start gap-3.5 shadow-xs"
+          >
+            <AlertOctagon className="w-5 h-5 text-[#8a1c1c] shrink-0 mt-0.5" />
+            <div className="flex-1 text-xs">
+              <strong className="text-sm font-bold text-[#8a1c1c] font-heading block">
+                Alerta: uma reclamação de spam foi registrada.
+              </strong>
+              <p className="mt-1 text-rose-800 leading-relaxed">
+                O provedor destinatário reportou um evento de reclamação. O contato correspondente foi suprimido automaticamente para proteger a reputação do domínio EDS HUB. Revise a lista de supressões antes de novos disparos.
+              </p>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Loading Skeleton */}
-          {loading && !metrics && (
-            <div className="space-y-6 animate-pulse">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                {[...Array(6)].map((_, i) => (
-                  <div key={i} className="h-28 bg-gray-200 rounded-xl" />
-                ))}
-              </div>
-              <div className="h-72 bg-gray-200 rounded-xl" />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="h-80 bg-gray-200 rounded-xl" />
-                <div className="h-80 bg-gray-200 rounded-xl" />
-              </div>
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+            <div className="flex-1 text-xs text-red-800 font-medium">
+              {error}
             </div>
-          )}
+            <button
+              type="button"
+              onClick={loadData}
+              className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
 
-          {/* Loaded Dashboard Content */}
-          {metrics && (
-            <div className="space-y-8">
-              {/* Row 1: Primary Funnel KPI Cards */}
-              <KpiCardsSection metrics={metrics} />
+        {/* Loading Skeleton */}
+        {loading && !metrics && (
+          <div className="space-y-6 animate-pulse">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="h-28 bg-gray-200 rounded-xl" />
+              ))}
+            </div>
+            <div className="h-72 bg-gray-200 rounded-xl" />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="h-80 bg-gray-200 rounded-xl" />
+              <div className="h-80 bg-gray-200 rounded-xl" />
+            </div>
+          </div>
+        )}
 
-              {/* Row 2: Sales Funnel & Current Stage Distribution */}
-              <SalesFunnelWidget
-                pipeline={metrics.pipeline}
-                qualification={metrics.qualification}
-                onExportPipeline={() =>
-                  exportPipelineSummaryToCsv(metrics.pipeline, boundaries.label)
+        {/* Loaded Dashboard Content */}
+        {metrics && (
+          <div className="space-y-6 sm:space-y-8">
+            {/* 1. Primary Operational KPI Cards */}
+            <KpiCardsSection
+              metrics={metrics}
+              incompleteCount={incompleteEnrollments.length}
+            />
+
+            {/* 2. Tasks & Conversations Status */}
+            <TasksAndConversationsWidget
+              tasks={metrics.tasks}
+              snapshot={metrics.snapshot}
+            />
+
+            {/* 3. Pipeline Funnel & Stage Distribution (Canonical 5 Stages) */}
+            <SalesFunnelWidget
+              pipeline={metrics.pipeline}
+              qualification={metrics.qualification}
+              onExportPipeline={() =>
+                exportPipelineSummaryToCsv(metrics.pipeline, boundaries.label)
+              }
+            />
+
+            {/* 4. Deliverability Health Card (Reputation Protection) */}
+            <EmailHealthCard
+              summary={deliverabilityHealth}
+              loading={loading}
+            />
+
+            {/* 5. Operational Bottlenecks: Needs Attention & Incomplete Registrations */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <NeedsAttentionWidget
+                items={metrics.needs_attention || []}
+                onExportCsv={() =>
+                  exportNeedsAttentionToCsv(metrics.needs_attention || [], boundaries.label)
                 }
               />
-
-              {/* Row 3: Priority Leads & Needs Attention */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <PriorityLeadsWidget
-                  leads={metrics.priority_leads || []}
-                  onExportCsv={() =>
-                    exportPriorityLeadsToCsv(metrics.priority_leads || [], boundaries.label)
-                  }
-                />
-                <NeedsAttentionWidget
-                  items={metrics.needs_attention || []}
-                  onExportCsv={() =>
-                    exportNeedsAttentionToCsv(metrics.needs_attention || [], boundaries.label)
-                  }
-                />
-              </div>
-
-              {/* Row 4: Tasks & Conversations Status */}
-              <TasksAndConversationsWidget
-                tasks={metrics.tasks}
-                snapshot={metrics.snapshot}
+              <IncompleteEnrollmentsWidget
+                items={incompleteEnrollments}
+                loading={loading}
               />
-
-              {/* Row 5: Course Interest & Demographics */}
-              <ScoreAndInterestWidget
-                scoring={metrics.scoring}
-                demographics={metrics.demographics}
-              />
-
-              {/* Row 6: Canonical Sources & Contact Preferences */}
-              <SourceAndChannelWidget demographics={metrics.demographics} />
-
-              {/* Row 7: Automation Velocity & Activity Trend */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <AutomationVelocityWidget automation={metrics.automation} />
-                <ActivityTrendWidget
-                  trend={metrics.activity?.trend || []}
-                  periodLabel={boundaries.label}
-                />
-              </div>
-
-              {/* Row 8: Commercial & Revenue Highlights Bar (Secondary Operational Closure) */}
-              {revMetrics && revMetrics.kpis && (
-                <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-700 shadow-2xs">
-                      <DollarSign className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Receita & Fechamento Comercial ({boundaries.label})
-                      </span>
-                      <div className="flex flex-wrap items-center gap-4 sm:gap-6 mt-1 text-xs">
-                        <div>
-                          <span className="text-slate-400">Net Revenue:</span>{' '}
-                          <strong className="text-emerald-700 font-extrabold text-sm">
-                            {formatCurrency(revMetrics.kpis?.net_revenue ?? 0, revMetrics.goals?.default_currency || 'USD')}
-                          </strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400">Matrículas:</span>{' '}
-                          <strong className="text-[#08254f] font-extrabold text-sm">
-                            {revMetrics.kpis?.confirmed_enrollments_count ?? 0}
-                          </strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400">Ticket Médio:</span>{' '}
-                          <strong className="text-slate-800 font-bold">
-                            {formatTicket(revMetrics.kpis?.average_ticket ?? 0, revMetrics.goals?.default_currency || 'USD')}
-                          </strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400">Approved Not Enrolled:</span>{' '}
-                          <strong className="text-amber-700 font-bold">
-                            {revMetrics.approved_not_enrolled?.length ?? 0}
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <Link
-                    to="/dashboard/revenue"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-[#125e95] bg-[#e1f0fb] hover:bg-[#125e95] hover:text-white transition-all shrink-0"
-                  >
-                    Ver Inteligência Completa
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </Link>
-                </div>
-              )}
             </div>
-          )}
-        </div>
-      </Layout>
-    );
-  };
-  export default SalesDashboardPage;
+
+            {/* 6. Recent Operational Activity Trend */}
+            {metrics.activity?.trend && metrics.activity.trend.length > 0 && (
+              <ActivityTrendWidget
+                trend={metrics.activity.trend}
+                periodLabel={boundaries.label}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    </Layout>
+  );
+};
+
+export default SalesDashboardPage;

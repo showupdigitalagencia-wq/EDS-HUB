@@ -72,13 +72,13 @@ export const TasksAndConversationsWidget: React.FC<TasksAndConversationsWidgetPr
 
         <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
           <span className="text-[11px] text-slate-400">
-            Pending, due today, overdue
+            Tarefas hoje, atrasadas e pendentes
           </span>
           <Link
             to="/work"
             className="font-semibold text-[#08254f] hover:text-[#449bd5] flex items-center gap-1 transition-colors"
           >
-            <span>Ver Work Queue</span>
+            <span>Ver Fila de Tarefas</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </Link>
         </div>

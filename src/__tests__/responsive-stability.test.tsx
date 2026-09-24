@@ -121,24 +121,24 @@ describe('Batch 4.2 — Premium Global UI System & Responsive Suite', () => {
       expect(screen.getAllByText('Expert Dental Solutions').length).toBeGreaterThanOrEqual(1);
     });
 
-    it('renders primary operational items: Pipeline, Contatos, Tarefas', () => {
+    it('renders primary operational items: Pipeline, Contatos, Tarefas, Dashboard', () => {
       render(
         <MemoryRouter>
           <Sidebar />
         </MemoryRouter>
       );
 
-      // Primary operational items in COMERCIAL group
-      expect(screen.getByText('COMERCIAL')).toBeInTheDocument();
+      // Primary operational items in OPERACIONAL group
+      expect(screen.getByText('OPERACIONAL')).toBeInTheDocument();
       expect(screen.getByText('Pipeline')).toBeInTheDocument();
       expect(screen.getByText('Contatos')).toBeInTheDocument();
       expect(screen.getByText('Tarefas')).toBeInTheDocument();
-
-      // Secondary groups
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
-      expect(screen.getByText('Course Operations')).toBeInTheDocument();
-      expect(screen.getByText('Reports')).toBeInTheDocument();
-      expect(screen.getByText('Settings')).toBeInTheDocument();
+      expect(screen.getByText('Conversas')).toBeInTheDocument();
+
+      // System group
+      expect(screen.getByText('Templates')).toBeInTheDocument();
+      expect(screen.getByText('Configurações')).toBeInTheDocument();
     });
   });
 
@@ -224,18 +224,15 @@ describe('Batch 4.2 — Premium Global UI System & Responsive Suite', () => {
       const drawer = document.getElementById('mobile-menu-drawer');
       expect(drawer).toBeInTheDocument();
 
-      // Secondary areas must exist
+      // Secondary operational areas in drawer
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
-      expect(screen.getByText('Inbox')).toBeInTheDocument();
-      expect(screen.getByText('Course Operations')).toBeInTheDocument();
-      expect(screen.getByText('Campaigns')).toBeInTheDocument();
-      expect(screen.getByText('Automations')).toBeInTheDocument();
+      expect(screen.getByText('Conversas')).toBeInTheDocument();
       expect(screen.getByText('Templates')).toBeInTheDocument();
-      expect(screen.getByText('Reports')).toBeInTheDocument();
-      expect(screen.getByText('Settings')).toBeInTheDocument();
+      expect(screen.getByText('Configurações')).toBeInTheDocument();
 
       // Does not contain duplicate Contatos or Pipeline in the secondary navigation
       expect(screen.queryByText('Contatos')).not.toBeInTheDocument();
+      expect(screen.queryByText('Pipeline')).not.toBeInTheDocument();
     });
 
     it('closes when close button or backdrop is clicked', () => {
