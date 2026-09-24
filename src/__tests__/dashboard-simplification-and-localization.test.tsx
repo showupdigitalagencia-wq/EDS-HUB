@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
+import { MobileBottomNav } from '../components/MobileBottomNav';
 import { MobileMenuSheet } from '../components/MobileMenuSheet';
 import { SalesDashboardPage } from '../features/dashboard/SalesDashboardPage';
 import { EmailHealthCard } from '../features/dashboard/components/EmailHealthCard';
@@ -232,19 +233,22 @@ describe('EDS HUB — Dashboard Simplification + Portuguese UI + Deliverability 
   // 1. NAVIGATION TESTS
   // ===========================================================================
   describe('1. Navigation Streamlining & Visibility', () => {
-    it('renders the 7 canonical operational items in primary Sidebar navigation', () => {
+    it('renders the 10 canonical operational and growth items in primary Sidebar navigation', () => {
       render(
         <MemoryRouter>
           <Sidebar />
         </MemoryRouter>
       );
 
-      // Core operational items must be visible
+      // Core operational & growth items must be visible
       expect(screen.getByText('Dashboard')).toBeDefined();
       expect(screen.getByText('Contatos')).toBeDefined();
       expect(screen.getByText('Pipeline')).toBeDefined();
       expect(screen.getByText('Tarefas')).toBeDefined();
       expect(screen.getByText('Conversas')).toBeDefined();
+      expect(screen.getByText('Formulários')).toBeDefined();
+      expect(screen.getByText('Automações')).toBeDefined();
+      expect(screen.getByText('Cursos')).toBeDefined();
       expect(screen.getByText('Templates')).toBeDefined();
       expect(screen.getByText('Configurações')).toBeDefined();
     });
@@ -266,24 +270,66 @@ describe('EDS HUB — Dashboard Simplification + Portuguese UI + Deliverability 
       expect(screen.queryByText('Financial Records')).toBeNull();
       // Lead Scoring hidden
       expect(screen.queryByText('Lead Scoring')).toBeNull();
-      // Reports, Course Operations & Alumni hidden from primary menu
+      // Reports, Post-Course & Alumni hidden from primary menu
       expect(screen.queryByText('Reports')).toBeNull();
-      expect(screen.queryByText('Course Operations')).toBeNull();
       expect(screen.queryByText('Post-Course & Alumni')).toBeNull();
+      expect(screen.queryByText('Student Portal')).toBeNull();
+      expect(screen.queryByText('Certificates')).toBeNull();
+      expect(screen.queryByText('CE Credits')).toBeNull();
     });
 
-    it('aligns MobileMenuSheet with the 7 operational items and hides technical/financial items', () => {
+    it('renders canonical 5-item mobile bottom navigation bar with Início opening Dashboard', () => {
+      render(
+        <MemoryRouter initialEntries={['/']}>
+          <MobileBottomNav onOpenMenu={vi.fn()} />
+        </MemoryRouter>
+      );
+
+      const navEl = document.getElementById('mobile-bottom-nav');
+      expect(navEl).toBeInTheDocument();
+
+      const homeBtn = document.getElementById('mobile-nav-home');
+      const contactsBtn = document.getElementById('mobile-nav-contacts');
+      const pipelineBtn = document.getElementById('mobile-nav-pipeline');
+      const tasksBtn = document.getElementById('mobile-nav-tasks');
+      const menuBtn = document.getElementById('mobile-nav-menu');
+
+      expect(homeBtn).toBeInTheDocument();
+      expect(contactsBtn).toBeInTheDocument();
+      expect(pipelineBtn).toBeInTheDocument();
+      expect(tasksBtn).toBeInTheDocument();
+      expect(menuBtn).toBeInTheDocument();
+
+      // Check text labels
+      expect(homeBtn).toHaveTextContent('Início');
+      expect(contactsBtn).toHaveTextContent('Contatos');
+      expect(pipelineBtn).toHaveTextContent('Pipeline');
+      expect(tasksBtn).toHaveTextContent('Tarefas');
+      expect(menuBtn).toHaveTextContent('Menu');
+
+      // Início points to Dashboard (/)
+      expect(homeBtn?.getAttribute('href')).toBe('/');
+    });
+
+    it('aligns MobileMenuSheet with secondary modules without duplicating bottom bar items', () => {
       render(
         <MemoryRouter>
           <MobileMenuSheet isOpen={true} onClose={vi.fn()} />
         </MemoryRouter>
       );
 
-      // Visible items in mobile drawer
-      expect(screen.getByText('Dashboard')).toBeDefined();
+      // Visible secondary modules in mobile drawer: Conversas, Formulários, Automações, Cursos, Templates, Configurações
       expect(screen.getByText('Conversas')).toBeDefined();
+      expect(screen.getByText('Formulários')).toBeDefined();
+      expect(screen.getByText('Automações')).toBeDefined();
+      expect(screen.getByText('Cursos')).toBeDefined();
       expect(screen.getByText('Templates')).toBeDefined();
       expect(screen.getByText('Configurações')).toBeDefined();
+
+      // Does not duplicate bottom bar items
+      expect(screen.queryByText('Contatos')).toBeNull();
+      expect(screen.queryByText('Pipeline')).toBeNull();
+      expect(screen.queryByText('Tarefas')).toBeNull();
 
       // Hidden items
       expect(screen.queryByText('Foundation Status')).toBeNull();

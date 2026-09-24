@@ -156,17 +156,20 @@ describe('Batch 4.2 — Premium Global UI System & Responsive Suite', () => {
       const navEl = document.getElementById('mobile-bottom-nav');
       expect(navEl).toBeInTheDocument();
 
+      const homeBtn = document.getElementById('mobile-nav-home');
       const contactsBtn = document.getElementById('mobile-nav-contacts');
       const pipelineBtn = document.getElementById('mobile-nav-pipeline');
       const tasksBtn = document.getElementById('mobile-nav-tasks');
       const menuBtn = document.getElementById('mobile-nav-menu');
 
+      expect(homeBtn).toBeInTheDocument();
       expect(contactsBtn).toBeInTheDocument();
       expect(pipelineBtn).toBeInTheDocument();
       expect(tasksBtn).toBeInTheDocument();
       expect(menuBtn).toBeInTheDocument();
 
       // Check text labels
+      expect(homeBtn).toHaveTextContent('Início');
       expect(contactsBtn).toHaveTextContent('Contatos');
       expect(pipelineBtn).toHaveTextContent('Pipeline');
       expect(tasksBtn).toHaveTextContent('Tarefas');
@@ -175,25 +178,25 @@ describe('Batch 4.2 — Premium Global UI System & Responsive Suite', () => {
 
     it('highlights active item based on current route', () => {
       const { unmount } = render(
+        <MemoryRouter initialEntries={['/']}>
+          <MobileBottomNav onOpenMenu={vi.fn()} />
+        </MemoryRouter>
+      );
+
+      // When on /, Início nav has active styling
+      const homeBtn = document.getElementById('mobile-nav-home');
+      expect(homeBtn?.className).toContain('text-[#08254f]');
+      unmount();
+
+      // When on /pipeline, pipeline nav has active styling
+      render(
         <MemoryRouter initialEntries={['/pipeline']}>
           <MobileBottomNav onOpenMenu={vi.fn()} />
         </MemoryRouter>
       );
 
-      // When on /pipeline, pipeline nav has active styling
       const pipelineBtn = document.getElementById('mobile-nav-pipeline');
       expect(pipelineBtn?.className).toContain('text-[#08254f]');
-      unmount();
-
-      // When on /leads, contacts nav has active styling
-      render(
-        <MemoryRouter initialEntries={['/leads']}>
-          <MobileBottomNav onOpenMenu={vi.fn()} />
-        </MemoryRouter>
-      );
-
-      const contactsBtn = document.getElementById('mobile-nav-contacts');
-      expect(contactsBtn?.className).toContain('text-[#08254f]');
     });
 
     it('invokes onOpenMenu callback when Menu button is clicked', () => {
@@ -224,15 +227,18 @@ describe('Batch 4.2 — Premium Global UI System & Responsive Suite', () => {
       const drawer = document.getElementById('mobile-menu-drawer');
       expect(drawer).toBeInTheDocument();
 
-      // Secondary operational areas in drawer
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      // Secondary modules in drawer: Conversas, Formulários, Automações, Cursos, Templates, Configurações
       expect(screen.getByText('Conversas')).toBeInTheDocument();
+      expect(screen.getByText('Formulários')).toBeInTheDocument();
+      expect(screen.getByText('Automações')).toBeInTheDocument();
+      expect(screen.getByText('Cursos')).toBeInTheDocument();
       expect(screen.getByText('Templates')).toBeInTheDocument();
       expect(screen.getByText('Configurações')).toBeInTheDocument();
 
-      // Does not contain duplicate Contatos or Pipeline in the secondary navigation
+      // Does not contain duplicate bottom bar items in secondary navigation
       expect(screen.queryByText('Contatos')).not.toBeInTheDocument();
       expect(screen.queryByText('Pipeline')).not.toBeInTheDocument();
+      expect(screen.queryByText('Tarefas')).not.toBeInTheDocument();
     });
 
     it('closes when close button or backdrop is clicked', () => {

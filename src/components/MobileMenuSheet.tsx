@@ -2,8 +2,10 @@ import { useEffect, useCallback } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../features/auth/AuthProvider';
 import {
-  LayoutDashboard,
   Inbox,
+  ClipboardList,
+  Workflow,
+  GraduationCap,
   FileText,
   Settings,
   LogOut,
@@ -27,10 +29,12 @@ interface SecondaryNavGroup {
 
 const secondaryGroups: SecondaryNavGroup[] = [
   {
-    label: 'OPERACIONAL',
+    label: 'COMUNICAÇÃO & CRESCIMENTO',
     items: [
-      { name: 'Dashboard', href: '/', icon: LayoutDashboard },
       { name: 'Conversas', href: '/inbox', icon: Inbox },
+      { name: 'Formulários', href: '/forms', icon: ClipboardList },
+      { name: 'Automações', href: '/automations', icon: Workflow },
+      { name: 'Cursos', href: '/courses/operations', icon: GraduationCap },
     ],
   },
   {

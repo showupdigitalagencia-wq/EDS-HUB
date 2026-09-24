@@ -7,6 +7,9 @@ import {
   CheckSquare,
   LayoutDashboard,
   Inbox,
+  ClipboardList,
+  Workflow,
+  GraduationCap,
   FileText,
   Settings,
   LogOut,
@@ -35,6 +38,14 @@ const navigationGroups: NavGroup[] = [
       { name: 'Pipeline', href: '/pipeline', icon: Kanban, testId: 'nav-pipeline' },
       { name: 'Tarefas', href: '/work', icon: CheckSquare, testId: 'nav-work' },
       { name: 'Conversas', href: '/inbox', icon: Inbox, testId: 'nav-inbox' },
+    ],
+  },
+  {
+    label: 'CRESCIMENTO',
+    items: [
+      { name: 'Formulários', href: '/forms', icon: ClipboardList, testId: 'nav-forms' },
+      { name: 'Automações', href: '/automations', icon: Workflow, testId: 'nav-automations' },
+      { name: 'Cursos', href: '/courses/operations', icon: GraduationCap, testId: 'nav-courses' },
     ],
   },
   {
