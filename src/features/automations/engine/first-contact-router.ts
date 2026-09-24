@@ -36,6 +36,17 @@ export interface FirstContactLeadInput {
   phone_raw?: string | null;
   phone_e164?: string | null;
   contact_preference?: string | null;
+  course_interest?: string | null;
+  is_historical?: boolean;
+  hs_analytics_source?: string | null;
+  hs_analytics_source_data_1?: string | null;
+  hs_facebook_ad_clicked?: boolean | string | null;
+  hs_facebook_click_id?: string | null;
+  hs_facebookid?: string | null;
+  lead_ad_prop0?: string | null;
+  lead_ad_prop1?: string | null;
+  lead_ad_prop2?: string | null;
+  utm_source?: string | null;
 }
 
 export interface FirstContactEligibility {
@@ -45,6 +56,7 @@ export interface FirstContactEligibility {
   suppressedReason?: string;
   hasValidEmail: boolean;
   hasValidPhone: boolean;
+  resolvedTemplate?: FirstContactTemplateResolution | null;
 }
 
 export interface FirstContactOutcomeInput {
@@ -68,6 +80,15 @@ export interface FirstContactRouterOptions {
   emailOnlyPhase?: boolean;
 }
 
+export interface FirstContactTemplateResolution {
+  courseCode: string;
+  courseName: string;
+  templateKey: string;
+  templateName: string;
+  hasPdfAttachment: boolean;
+  pdfAttachmentName?: string;
+}
+
 /**
  * Validates whether an email string is structurally valid for outreach.
  */
@@ -84,6 +105,117 @@ export function isValidPhone(phone?: string | null): boolean {
   if (!phone) return false;
   const digits = phone.replace(/\D/g, '');
   return digits.length >= 8;
+}
+
+/**
+ * Evaluates whether a lead arriving through HubSpot or other channels
+ * factually originates from Meta Lead Ads (Facebook / Instagram).
+ */
+export function isFactualMetaOrigin(data?: Record<string, any> | null): boolean {
+  if (!data) return false;
+  const source = String(data.source || '').toLowerCase();
+  const sourceDetail = String(data.source_detail || '').toLowerCase();
+  const analyticsSource = String(data.hs_analytics_source || '').toUpperCase();
+  const drillDown1 = String(data.hs_analytics_source_data_1 || '').toLowerCase();
+  const utmSource = String(data.utm_source || '').toLowerCase();
+
+  // Direct Meta sources
+  if (['meta', 'facebook', 'instagram', 'fb', 'ig'].includes(source)) return true;
+  if (['meta', 'facebook', 'instagram', 'meta_ad', 'instagram_ad', 'hubspot_meta_lead_ad'].includes(sourceDetail)) return true;
+
+  // Real HubSpot properties identifying Meta Lead Ads origin:
+  if (analyticsSource === 'PAID_SOCIAL' && (drillDown1.includes('facebook') || drillDown1.includes('instagram'))) return true;
+  if (data.hs_facebook_ad_clicked === true || data.hs_facebook_ad_clicked === 'true') return true;
+  if (Boolean(data.hs_facebook_click_id || data.hs_facebookid)) return true;
+  if (Boolean(data.lead_ad_prop0 || data.lead_ad_prop1 || data.lead_ad_prop2)) return true;
+  if (['meta', 'facebook', 'instagram', 'fb', 'ig'].includes(utmSource)) return true;
+
+  return false;
+}
+
+/**
+ * Resolves the appropriate transactional email template for a given course interest.
+ * Returns null if the course is unmapped or requires human review, which halts automated dispatch safely.
+ */
+export function resolveFirstContactTemplateForCourse(course?: string | null): FirstContactTemplateResolution | null {
+  if (!course) {
+    // Default generic intake template if no course specified
+    return {
+      courseCode: 'GENERIC',
+      courseName: 'General Inquiry',
+      templateKey: 'lead_intake_email',
+      templateName: 'Lead Intake Email',
+      hasPdfAttachment: false,
+    };
+  }
+
+  const normalized = course.trim().toLowerCase();
+
+  // 1. Zygomatic -> ZIT-01 -> Zygomatic Course Details with PDF attachment
+  if (
+    normalized === 'zygomatic' ||
+    normalized === 'zit-01' ||
+    normalized.includes('zygomatic')
+  ) {
+    return {
+      courseCode: 'ZIT-01',
+      courseName: 'Zygomatic Implant Training',
+      templateKey: 'zygomatic_course_details',
+      templateName: 'Zygomatic Course Details',
+      hasPdfAttachment: true,
+      pdfAttachmentName: 'Zygomatic_Implant_Course_Details_EDS.pdf',
+    };
+  }
+
+  // 2. Intensive -> IDIT-01 -> Intensive Course Details
+  if (
+    normalized === 'intensive' ||
+    normalized === 'idit-01' ||
+    normalized.includes('intensive')
+  ) {
+    return {
+      courseCode: 'IDIT-01',
+      courseName: 'Intensive Dental Implant Training',
+      templateKey: 'intensive_course_details',
+      templateName: 'Intensive Course Details',
+      hasPdfAttachment: false,
+    };
+  }
+
+  // 3. Endodontic -> ET-01 -> Endodontic Course Details
+  if (
+    normalized === 'endodontic' ||
+    normalized === 'et-01' ||
+    normalized.includes('endodontic') ||
+    normalized.includes('endo')
+  ) {
+    return {
+      courseCode: 'ET-01',
+      courseName: 'Endodontics Training',
+      templateKey: 'endodontic_course_details',
+      templateName: 'Endodontic Course Details',
+      hasPdfAttachment: false,
+    };
+  }
+
+  // 4. Wisdom -> WTT-01 -> Wisdom Course Details
+  if (
+    normalized === 'wisdom' ||
+    normalized === 'wtt-01' ||
+    normalized.includes('wisdom')
+  ) {
+    return {
+      courseCode: 'WTT-01',
+      courseName: 'Wisdom Teeth Training',
+      templateKey: 'wisdom_course_details',
+      templateName: 'Wisdom Course Details',
+      hasPdfAttachment: false,
+    };
+  }
+
+  // 5. Unmapped / Uncertain values: Advanced, Periodontal Plastic, Rehabilitation, Free courses
+  // MUST NOT BE GUESSED - Returns null to block automated dispatch until human approval
+  return null;
 }
 
 /**
@@ -119,11 +251,17 @@ export function evaluateFirstContactEligibility(
 
   // 2. Historical imports: HubSpot batch sync, CSV imports, legacy migrations
   const isHistorical =
-    ['hubspot', 'csv_import', 'legacy_import', 'historical_migration'].includes(lead.source || '') ||
-    Boolean(
-      lead.source_detail &&
-      ['hubspot_sync', 'hubspot_historical', 'hubspot_reconcile', 'csv_import', 'legacy_import', 'historical_migration'].includes(lead.source_detail)
-    );
+    lead.is_historical === true ||
+    lead.source === 'hubspot' ||
+    lead.source === 'hubspot_historical' ||
+    lead.source_detail === 'hubspot_historical' ||
+    (lead.source_detail === 'hubspot_sync' && !isFactualMetaOrigin(lead)) ||
+    lead.source === 'csv_import' ||
+    lead.source_detail === 'csv_import' ||
+    lead.source === 'legacy_import' ||
+    lead.source_detail === 'legacy_import' ||
+    lead.source === 'historical_migration' ||
+    lead.source_detail === 'historical_migration';
 
   if (isHistorical) {
     return {
@@ -148,86 +286,106 @@ export function evaluateFirstContactEligibility(
     };
   }
 
-  // 4. Meta / Instagram advertising leads
-  const isMeta =
+  // 4. Meta origin evaluation (Direct Meta Lead Ads OR Future HubSpot lead with factual Meta origin)
+  const isDirectMeta =
     lead.source === 'meta' ||
     ['meta', 'facebook', 'instagram', 'fb', 'ig'].includes((lead.source || '').toLowerCase()) ||
     ['meta', 'facebook', 'instagram', 'fb', 'ig', 'meta_ad', 'instagram_ad'].includes((lead.source_detail || '').toLowerCase());
 
-  if (isMeta) {
-    if (options?.emailOnlyPhase) {
-      // Batch 7.5 Email-Only Safe Activation: SMS is completely inactive
-      if (hasValidEmailAddr) {
-        return {
-          isEligible: true,
-          eligibleChannels: ['email'],
-          preservedPreference,
-          hasValidEmail: true,
-          hasValidPhone: hasValidPhoneNum,
-        };
-      }
+  const isMetaViaHubspot =
+    (lead.source === 'hubspot' || lead.source_detail === 'hubspot_sync' || lead.source_detail === 'hubspot_meta_lead_ad') &&
+    isFactualMetaOrigin(lead);
 
-      if (hasValidPhoneNum) {
-        return {
-          isEligible: false,
-          eligibleChannels: [],
-          preservedPreference,
-          suppressedReason: 'Meta lead has phone only; automated SMS is inactive in email-only phase.',
-          hasValidEmail: false,
-          hasValidPhone: true,
-        };
-      }
+  const isMeta = isDirectMeta || isMetaViaHubspot;
 
-      return {
-        isEligible: false,
-        eligibleChannels: [],
-        preservedPreference,
-        suppressedReason: 'Meta lead has neither valid email nor valid phone number for initial outreach.',
-        hasValidEmail: false,
-        hasValidPhone: false,
-      };
-    }
-
-    // Default multi-channel evaluation (for historical compatibility)
-    const eligibleChannels: ('email' | 'sms')[] = [];
-    if (hasValidEmailAddr) eligibleChannels.push('email');
-    if (hasValidPhoneNum) eligibleChannels.push('sms');
-
-    if (eligibleChannels.length === 0) {
-      return {
-        isEligible: false,
-        eligibleChannels: [],
-        preservedPreference,
-        suppressedReason: 'Meta lead has neither valid email nor valid phone number for initial outreach.',
-        hasValidEmail: false,
-        hasValidPhone: false,
-      };
-    }
-
+  if (!isMeta) {
     return {
-      isEligible: true,
-      eligibleChannels,
+      isEligible: false,
+      eligibleChannels: [],
       preservedPreference,
+      suppressedReason: 'Manual, email-origin, and non-Meta leads are excluded from automated first contact.',
       hasValidEmail: hasValidEmailAddr,
       hasValidPhone: hasValidPhoneNum,
     };
   }
 
-  // 5. Other sources (manual, google, etc.) default to preferred channel if valid
+  // 5. Course Template Resolution: If course interest is provided, ensure it can be resolved
+  let resolvedTemplate: FirstContactTemplateResolution | null = null;
+  if (lead.course_interest) {
+    resolvedTemplate = resolveFirstContactTemplateForCourse(lead.course_interest);
+    if (!resolvedTemplate) {
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        suppressedReason: `Unmapped or uncertain course interest "${lead.course_interest}" prevents automated outreach until approved.`,
+        hasValidEmail: hasValidEmailAddr,
+        hasValidPhone: hasValidPhoneNum,
+      };
+    }
+  }
+
+  // 6. Channel evaluation for eligible Meta leads
+  if (options?.emailOnlyPhase) {
+    // Batch 7.5 Email-Only Safe Activation: SMS is completely inactive
+    if (hasValidEmailAddr) {
+      return {
+        isEligible: true,
+        eligibleChannels: ['email'],
+        preservedPreference,
+        hasValidEmail: true,
+        hasValidPhone: hasValidPhoneNum,
+        resolvedTemplate,
+      };
+    }
+
+    if (hasValidPhoneNum) {
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        suppressedReason: 'Meta lead has phone only; automated SMS is inactive in email-only phase.',
+        hasValidEmail: false,
+        hasValidPhone: true,
+        resolvedTemplate,
+      };
+    }
+
+    return {
+      isEligible: false,
+      eligibleChannels: [],
+      preservedPreference,
+      suppressedReason: 'Meta lead has neither valid email nor valid phone number for initial outreach.',
+      hasValidEmail: false,
+      hasValidPhone: false,
+      resolvedTemplate,
+    };
+  }
+
+  // Default multi-channel evaluation (for historical compatibility)
   const eligibleChannels: ('email' | 'sms')[] = [];
-  if (preservedPreference === 'email' && hasValidEmailAddr) {
-    eligibleChannels.push('email');
-  } else if (preservedPreference === 'sms' && hasValidPhoneNum) {
-    eligibleChannels.push('sms');
+  if (hasValidEmailAddr) eligibleChannels.push('email');
+  if (hasValidPhoneNum) eligibleChannels.push('sms');
+
+  if (eligibleChannels.length === 0) {
+    return {
+      isEligible: false,
+      eligibleChannels: [],
+      preservedPreference,
+      suppressedReason: 'Meta lead has neither valid email nor valid phone number for initial outreach.',
+      hasValidEmail: false,
+      hasValidPhone: false,
+      resolvedTemplate,
+    };
   }
 
   return {
-    isEligible: eligibleChannels.length > 0,
+    isEligible: true,
     eligibleChannels,
     preservedPreference,
-    suppressedReason: eligibleChannels.length === 0 ? 'No valid channel available matching contact preference.' : undefined,
     hasValidEmail: hasValidEmailAddr,
     hasValidPhone: hasValidPhoneNum,
+    resolvedTemplate,
   };
 }
 
