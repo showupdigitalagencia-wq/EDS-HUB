@@ -17,10 +17,17 @@ export function resolveSafeFirstName(
 ): string {
   if (!firstName || typeof firstName !== 'string') return fallback;
   const trimmed = firstName.trim();
-  if (!trimmed) return fallback;
+  if (!trimmed || trimmed.length < 2) return fallback;
+
+  // Reject strings with digits or technical characters
+  if (/[0-9_@#$%^&*()+=<>{}[\]|\\/~`!?]/.test(trimmed)) {
+    return fallback;
+  }
 
   const lower = trimmed.toLowerCase();
-  const placeholders = [
+
+  // 1. Placeholder & Role Blacklist
+  const placeholders = new Set([
     'doutor(a)',
     'doutora',
     'doutor',
@@ -30,14 +37,80 @@ export function resolveSafeFirstName(
     'dra.',
     'dr',
     'dra',
+    'doctor',
     'undefined',
     'null',
     'n/a',
     'none',
-  ];
+    'teste',
+    'test',
+    'lead',
+    'contato',
+    'contact',
+    'user',
+    'usuario',
+    'admin',
+    'cliente',
+    'aluno',
+    'paciente',
+    'info',
+    'sac',
+    'crm',
+    'dev',
+    'api',
+    'bot',
+  ]);
 
-  if (placeholders.includes(lower)) {
+  if (placeholders.has(lower)) {
     return fallback;
+  }
+
+  // 2. Calendar / Day-of-week abbreviations (English & Portuguese)
+  const calendarAbbreviations = new Set([
+    'mon',
+    'tue',
+    'wed',
+    'thu',
+    'fri',
+    'sat',
+    'sun',
+    'seg',
+    'ter',
+    'qua',
+    'qui',
+    'sex',
+    'sab',
+    'dom',
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ]);
+
+  if (calendarAbbreviations.has(lower)) {
+    return fallback;
+  }
+
+  // 3. Technical Acronyms: All-caps short words without lower case that are not standard names
+  const isAllCaps = trimmed === trimmed.toUpperCase() && trimmed.length <= 4;
+  if (isAllCaps) {
+    const commonAllCapsNames = new Set(['ANA', 'MAX', 'LEO', 'EVA', 'ROY', 'GUY', 'IAN']);
+    if (!commonAllCapsNames.has(trimmed)) {
+      return fallback;
+    }
+  }
+
+  // 4. Must contain at least one vowel
+  if (!/[aeiouyáàâãéèêíïóôõöúü]/i.test(trimmed)) {
+    return fallback;
+  }
+
+  // Normalize casing if all uppercase (e.g. "ANA" -> "Ana")
+  if (trimmed === trimmed.toUpperCase()) {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
   }
 
   return trimmed;

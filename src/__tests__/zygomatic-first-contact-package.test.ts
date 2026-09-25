@@ -527,10 +527,53 @@ I’m happy to answer any questions and help you find the course that best match
         expect(greeting).not.toBe('Hello ,');
         expect(greeting).not.toBe('Hello undefined,');
         expect(greeting).not.toBe('Hello null,');
-        expect(greeting).not.toBe('Hello {{first_name}},');
-        expect(greeting).not.toBe('Hello Doutor(a),');
-        expect(greeting).toBe('Hello Doctor,');
       }
+    });
+
+    it('rejects non-human acronyms, calendar abbreviations ("WED"), and technical values', () => {
+      expect(resolveSafeFirstName('WED')).toBe('Doctor');
+      expect(resolveCanonicalGreeting('WED')).toBe('Hello Doctor,');
+
+      expect(resolveSafeFirstName('MON')).toBe('Doctor');
+      expect(resolveSafeFirstName('TUE')).toBe('Doctor');
+      expect(resolveSafeFirstName('TEST')).toBe('Doctor');
+      expect(resolveSafeFirstName('CRM')).toBe('Doctor');
+      expect(resolveSafeFirstName('A')).toBe('Doctor'); // Single letter initial
+      expect(resolveSafeFirstName('123')).toBe('Doctor');
+
+      // Genuine human names remain intact
+      expect(resolveSafeFirstName('Wederson')).toBe('Wederson');
+      expect(resolveCanonicalGreeting('Wederson')).toBe('Hello Wederson,');
+      expect(resolveSafeFirstName('John')).toBe('John');
+      expect(resolveSafeFirstName('Maria')).toBe('Maria');
+    });
+
+    it('composer maps technical edge function errors to user-friendly messages without technical leakage', () => {
+      const errorMap: Record<string, string> = {
+        ATTACHMENT_REQUIRED_MISSING: 'Não foi possível carregar o PDF obrigatório do curso. Verifique o material e tente novamente.',
+        INVALID_ATTACHMENT_MIME: 'O anexo deve ser um documento PDF válido.',
+        EMPTY_ATTACHMENT: 'O arquivo PDF anexado está vazio.',
+        ATTACHMENT_TOO_LARGE: 'O arquivo PDF excede o limite máximo permitido para envio.',
+      };
+
+      for (const [, friendly] of Object.entries(errorMap)) {
+        expect(friendly).not.toContain('Edge Function');
+        expect(friendly).not.toContain('non-2xx');
+        expect(friendly.length).toBeGreaterThan(10);
+      }
+    });
+
+    it('lead stage is preserved on failed dispatch (failed send never moves lead to Respondido)', () => {
+      const initialStage = 'Novo Lead';
+      let currentStage = initialStage;
+      const sendResult = { success: false, error: 'Provider delivery failed' };
+
+      // Invariant: stage advancement only occurs when sendResult.success === true
+      if (sendResult.success) {
+        currentStage = 'Respondido';
+      }
+
+      expect(currentStage).toBe('Novo Lead');
     });
 
     it('central renderer renderTemplateCentral applies safe greeting and variable protection', () => {

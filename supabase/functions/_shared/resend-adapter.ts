@@ -64,6 +64,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
       payload.attachments = params.attachments.map((att) => ({
         filename: att.filename,
         content: att.content,
+        contentType: att.contentType || 'application/pdf',
         content_type: att.contentType || 'application/pdf',
       }));
     }

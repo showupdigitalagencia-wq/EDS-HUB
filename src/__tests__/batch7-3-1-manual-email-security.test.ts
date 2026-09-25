@@ -192,7 +192,7 @@ describe('EDS HUB — BATCH 7.3.1: Manual Email Security Check', () => {
 
     it('verifies --no-verify-jwt is safe because custom auth verifies JWT and app_user explicitly', () => {
       expect(authCode).toContain('createUserClient(authHeader)');
-      expect(authCode).toContain('userClient.auth.getUser()');
+      expect(authCode).toContain('userClient.auth.getUser');
       expect(authCode).toContain("from('app_user')");
       expect(authCode).toContain('!appUser.is_active');
       expect(handlerCode).toContain('verifyAuth(authHeader)');

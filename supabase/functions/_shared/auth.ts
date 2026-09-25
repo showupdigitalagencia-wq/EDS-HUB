@@ -22,8 +22,9 @@ export async function verifyAuth(authHeader: string | null): Promise<AuthResult>
 
   try {
     // Verify the JWT and get user
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
     const userClient = createUserClient(authHeader);
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    const { data: { user }, error: authError } = await userClient.auth.getUser(token);
 
     if (authError || !user) {
       return { isAuthorized: false, userId: null, error: 'Invalid or expired token', statusCode: 401 };

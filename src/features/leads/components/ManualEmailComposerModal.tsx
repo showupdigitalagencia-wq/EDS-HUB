@@ -259,7 +259,38 @@ export function ManualEmailComposerModal({
       });
 
       if (invokeErr) {
-        throw invokeErr;
+        let friendlyMessage = 'Não foi possível enviar o e-mail. Tente novamente.';
+        if (typeof invokeErr === 'object' && invokeErr !== null) {
+          const anyErr = invokeErr as any;
+          if (anyErr.context && typeof anyErr.context.json === 'function') {
+            try {
+              const errBody = await anyErr.context.json();
+              if (errBody) {
+                if (errBody.error === 'EMAIL_SUPPRESSED') {
+                  setSuppressionWarning(errBody.message);
+                  friendlyMessage = errBody.message;
+                } else if (errBody.error === 'ATTACHMENT_REQUIRED_MISSING') {
+                  friendlyMessage = 'Não foi possível carregar o PDF obrigatório do curso. Verifique o material e tente novamente.';
+                } else if (errBody.error === 'INVALID_ATTACHMENT_MIME') {
+                  friendlyMessage = 'O anexo deve ser um documento PDF válido.';
+                } else if (errBody.error === 'EMPTY_ATTACHMENT') {
+                  friendlyMessage = 'O arquivo PDF anexado está vazio.';
+                } else if (errBody.error === 'ATTACHMENT_TOO_LARGE') {
+                  friendlyMessage = 'O arquivo PDF excede o limite máximo permitido para envio.';
+                } else if (errBody.error === 'CONTACT_PREFERENCE_MISMATCH') {
+                  friendlyMessage = errBody.message || 'O canal de envio selecionado difere da preferência do lead.';
+                } else if (errBody.message && !errBody.message.includes('Edge Function')) {
+                  friendlyMessage = errBody.message;
+                } else if (errBody.error && typeof errBody.error === 'string' && !errBody.error.includes('Edge Function')) {
+                  friendlyMessage = errBody.error;
+                }
+              }
+            } catch {
+              // Could not parse body, keep friendly fallback
+            }
+          }
+        }
+        throw new Error(friendlyMessage);
       }
 
       if (data?.error) {
@@ -278,7 +309,15 @@ export function ManualEmailComposerModal({
       }, 1100);
     } catch (err: any) {
       console.error('Failed to send manual email:', err);
-      setError(err.message || 'Falha ao enviar e-mail. Verifique a conexão e tente novamente.');
+      let userMsg = err.message || 'Não foi possível enviar o e-mail. Tente novamente.';
+      if (
+        userMsg.includes('Edge Function returned a non-2xx') ||
+        userMsg.includes('FunctionsHttpError') ||
+        userMsg.includes('Failed to send')
+      ) {
+        userMsg = 'Não foi possível enviar o e-mail no momento. Tente novamente em instantes.';
+      }
+      setError(userMsg);
     } finally {
       setIsSending(false);
     }
