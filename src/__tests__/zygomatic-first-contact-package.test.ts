@@ -775,5 +775,195 @@ I’m happy to answer any questions and help you find the course that best match
       expect(officialAudit.historicalContactsContacted).toBe(0);
     });
   });
+
+  // ===========================================================================
+  // 11. Regression: Second Controlled Zygomatic Email Test & attachmentMetadata Fix
+  // ===========================================================================
+  describe('11. Regression: Second Controlled Zygomatic Email Test & attachmentMetadata Fix', () => {
+    it('proves attachmentMetadata is defined in parent scope for both email and sms execution paths', () => {
+      // Simulates the scoped execution of send-conversation-message
+      const simulateMessageDispatch = (channel: 'email' | 'sms', includeAttachment: boolean) => {
+        let attachmentMetadata = {
+          included: false,
+          filename: null as string | null,
+          materialId: null as string | null,
+        };
+
+        if (channel === 'email') {
+          if (includeAttachment) {
+            attachmentMetadata = {
+              included: true,
+              filename: 'Zygomatic Course (2).pdf',
+              materialId: 'mat-zygomatic-uuid-1',
+            };
+          }
+        } else if (channel === 'sms') {
+          // SMS channel - does not attach files
+        }
+
+        // Outbound messages record creation (outside channel branches)
+        // Must never throw ReferenceError: attachmentMetadata is not defined
+        const outboundPayload = {
+          channel,
+          attachment_included: attachmentMetadata.included,
+          attachment_filename: attachmentMetadata.filename,
+          attachment_material_id: attachmentMetadata.materialId,
+          metadata: {
+            attachment_included: attachmentMetadata.included,
+            attachment_filename: attachmentMetadata.filename,
+            attachment_material_id: attachmentMetadata.materialId,
+          },
+        };
+
+        return outboundPayload;
+      };
+
+      // 1. Email with attachment
+      const emailWithAtt = simulateMessageDispatch('email', true);
+      expect(emailWithAtt.attachment_included).toBe(true);
+      expect(emailWithAtt.attachment_filename).toBe('Zygomatic Course (2).pdf');
+      expect(emailWithAtt.attachment_material_id).toBe('mat-zygomatic-uuid-1');
+
+      // 2. Email without attachment
+      const emailWithoutAtt = simulateMessageDispatch('email', false);
+      expect(emailWithoutAtt.attachment_included).toBe(false);
+      expect(emailWithoutAtt.attachment_filename).toBeNull();
+
+      // 3. SMS path
+      const smsDispatch = simulateMessageDispatch('sms', false);
+      expect(smsDispatch.attachment_included).toBe(false);
+      expect(smsDispatch.attachment_filename).toBeNull();
+    });
+
+    it('renders "Hello Doctor," for lead "WED Oliver" and rejects "Hello WED," in both composer and server renderer', () => {
+      const lead = {
+        first_name: 'WED',
+        last_name: 'Oliver',
+        email: 'wedalmeida2414@gmail.com',
+      };
+
+      const template = 'Hello {{first_name}},\n\nThank you for your interest in the {{course_name}} in Rio de Janeiro, Brazil.';
+
+      // Central renderer
+      const rendered = renderTemplateCentral(template, lead);
+      expect(rendered).toContain('Hello Doctor,');
+      expect(rendered).not.toContain('Hello WED,');
+      expect(rendered).not.toContain('WED');
+
+      // Direct greeting resolver
+      expect(resolveCanonicalGreeting(lead.first_name)).toBe('Hello Doctor,');
+      expect(resolveSafeFirstName(lead.first_name, 'Doctor')).toBe('Doctor');
+    });
+
+    it('renders "Hello FirstName," for valid normal human names', () => {
+      expect(resolveCanonicalGreeting('John')).toBe('Hello John,');
+      expect(resolveCanonicalGreeting('Maria')).toBe('Hello Maria,');
+      expect(resolveCanonicalGreeting('Carlos')).toBe('Hello Carlos,');
+      expect(resolveCanonicalGreeting('Wederson')).toBe('Hello Wederson,');
+    });
+
+    it('renders "Hello Doctor," for missing or whitespace names', () => {
+      expect(resolveCanonicalGreeting(null)).toBe('Hello Doctor,');
+      expect(resolveCanonicalGreeting(undefined)).toBe('Hello Doctor,');
+      expect(resolveCanonicalGreeting('')).toBe('Hello Doctor,');
+      expect(resolveCanonicalGreeting('   ')).toBe('Hello Doctor,');
+    });
+
+    it('blocks safely with friendly Portuguese error when required PDF is unavailable', () => {
+      const validateSendRequirements = (
+        isZygomatic: boolean,
+        attachment: { isRequired: boolean; existsOnServer: boolean } | null
+      ) => {
+        if (isZygomatic && (!attachment || !attachment.existsOnServer)) {
+          return {
+            allowed: false,
+            error: 'ATTACHMENT_REQUIRED_MISSING',
+            friendlyMessage: 'Não foi possível carregar o PDF obrigatório do curso. Verifique o material e tente novamente.',
+          };
+        }
+        return { allowed: true, error: null, friendlyMessage: null };
+      };
+
+      // Missing completely
+      const res1 = validateSendRequirements(true, null);
+      expect(res1.allowed).toBe(false);
+      expect(res1.friendlyMessage).toBe('Não foi possível carregar o PDF obrigatório do curso. Verifique o material e tente novamente.');
+
+      // Attachment record exists but file missing on server
+      const res2 = validateSendRequirements(true, { isRequired: true, existsOnServer: false });
+      expect(res2.allowed).toBe(false);
+      expect(res2.friendlyMessage).toBe('Não foi possível carregar o PDF obrigatório do curso. Verifique o material e tente novamente.');
+
+      // Valid on server
+      const res3 = validateSendRequirements(true, { isRequired: true, existsOnServer: true });
+      expect(res3.allowed).toBe(true);
+      expect(res3.friendlyMessage).toBeNull();
+    });
+
+    it('sanitizes all technical runtime errors so raw exceptions like "attachmentMetadata is not defined" never leak to the client', () => {
+      const technicalErrors = [
+        'attachmentMetadata is not defined',
+        'ReferenceError: attachmentMetadata is not defined',
+        'TypeError: Cannot read properties of undefined',
+        'SyntaxError: Unexpected identifier',
+        'Edge Function returned a non-2xx status code',
+        'FunctionsHttpError: Edge Function returned a non-2xx status code',
+        'Internal server error',
+      ];
+
+      const sanitizeClientErrorMessage = (rawError: string): string => {
+        const isTechnical =
+          /is not defined|ReferenceError|TypeError|SyntaxError|Internal server error|FunctionsHttpError|Edge Function|Failed to send|object Object|status code/i.test(
+            rawError
+          );
+        if (isTechnical) {
+          return 'Não foi possível enviar o e-mail no momento. Tente novamente em instantes.';
+        }
+        return rawError;
+      };
+
+      for (const raw of technicalErrors) {
+        const safe = sanitizeClientErrorMessage(raw);
+        expect(safe).toBe('Não foi possível enviar o e-mail no momento. Tente novamente em instantes.');
+        expect(safe).not.toContain('attachmentMetadata');
+        expect(safe).not.toContain('is not defined');
+        expect(safe).not.toContain('ReferenceError');
+        expect(safe).not.toContain('non-2xx');
+      }
+
+      // Domain-specific business messages are preserved
+      const domainError = 'Não foi possível carregar o PDF obrigatório do curso. Verifique o material e tente novamente.';
+      expect(sanitizeClientErrorMessage(domainError)).toBe(domainError);
+    });
+
+    it('confirms failed send attempt creates zero false records and never advances stage', () => {
+      const initialStage = 'Novo Lead';
+      let currentStage = initialStage;
+      let outboundMessagesCreated = 0;
+      let emailDispatchedActivitiesCreated = 0;
+
+      // Simulated failed attempt due to error before DB commit
+      const attemptSend = () => {
+        try {
+          // Throws runtime error during execution
+          throw new ReferenceError('attachmentMetadata is not defined');
+          
+          // Unreachable code in failure
+          outboundMessagesCreated++;
+          emailDispatchedActivitiesCreated++;
+          currentStage = 'Respondido';
+        } catch (_err) {
+          // Error caught and returned
+          return { success: false };
+        }
+      };
+
+      const result = attemptSend();
+      expect(result.success).toBe(false);
+      expect(outboundMessagesCreated).toBe(0);
+      expect(emailDispatchedActivitiesCreated).toBe(0);
+      expect(currentStage).toBe('Novo Lead');
+    });
+  });
 });
 

@@ -111,6 +111,7 @@ export function ManualEmailComposerModal({
       setTemplates((tpls || []) as EmailTemplate[]);
     } catch (err) {
       console.error('Failed to load email templates:', err);
+      setError('Não foi possível preparar o e-mail. Tente novamente.');
     } finally {
       setIsLoadingTemplates(false);
     }
@@ -145,68 +146,73 @@ export function ManualEmailComposerModal({
 
   // Handle Template Selection: copies snapshot into composer with safe variable substitution
   const handleSelectTemplate = (templateId: string) => {
-    setSelectedTemplateId(templateId);
-    if (!templateId) {
-      setSelectedTemplateKey(null);
-      setAttachment(null);
-      return;
-    }
-
-    const tpl = templates.find((t) => t.id === templateId);
-    if (!tpl) return;
-
-    // Check attachment configuration
-    const isZygomatic = tpl.template_key === 'zygomatic_course_details' || tpl.name.toLowerCase().includes('zygomatic');
-    const hasAtt = Boolean(tpl.has_attachment || (tpl.content_json as any)?.has_attachment || isZygomatic);
-    if (hasAtt) {
-      const isRequired = isZygomatic || Boolean((tpl as any).is_attachment_required || (tpl.content_json as any)?.is_attachment_required);
-      setAttachment({
-        displayName: isZygomatic ? 'Zygomatic Course (2).pdf' : (tpl.attachment_name || (tpl.content_json as any)?.attachment_name || 'Documento PDF'),
-        canRemove: !isRequired,
-        isRequired,
-      });
-    } else {
-      setAttachment(null);
-    }
-    setSelectedTemplateKey(tpl.template_key || (isZygomatic ? 'zygomatic_course_details' : null));
-
-    // Resolve variables with lead data safely using canonical rule
-    const firstName = resolveSafeFirstName(lead.first_name, 'Doctor');
-    const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doctor');
-    const lastName = lead.last_name ? lead.last_name.trim() : '';
-    const courseName = lead.course_interest || (isZygomatic ? 'Zygomatic Implant Training' : 'Intensive Dental Implant Training');
-    const courseDateRange = 'November 7–10, 2026';
-    const courseTuition = '$17,500';
-
-    const replaceVars = (text: string) =>
-      text
-        .replace(/\{\{\s*salutation\s*\}\}/gi, salutation || 'Doctor')
-        .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
-        .replace(/\{\{\s*last_name\s*\}\}/gi, lastName)
-        .replace(/\{\{\s*course_name\s*\}\}/gi, courseName)
-        .replace(/\{\{\s*course_date_range\s*\}\}/gi, courseDateRange)
-        .replace(/\{\{\s*course_tuition\s*\}\}/gi, courseTuition)
-        .replace(/\{\{\s*[\w.]+\s*\}\}/g, ''); // Safe cleanup of any unmapped variables
-
-    // Subject snapshot
-    const templateSubject = getTemplateSubject(tpl) || tpl.name || '';
-    setSubject(replaceVars(templateSubject));
-
-    // Body snapshot: prefer text_template, fallback to clean text from blocks
-    let rawBody = tpl.text_template || '';
-    if (!rawBody && tpl.content_json) {
-      if (Array.isArray(tpl.content_json)) {
-        rawBody = tpl.content_json
-          .map((b: any) => b.content?.text || b.content?.body || '')
-          .filter(Boolean)
-          .join('\n\n');
-      } else if (typeof tpl.content_json === 'object') {
-        const cj = tpl.content_json as any;
-        rawBody = cj.body || cj.text || '';
+    try {
+      setSelectedTemplateId(templateId);
+      if (!templateId) {
+        setSelectedTemplateKey(null);
+        setAttachment(null);
+        return;
       }
-    }
 
-    setBody(replaceVars(rawBody));
+      const tpl = templates.find((t) => t.id === templateId);
+      if (!tpl) return;
+
+      // Check attachment configuration
+      const isZygomatic = tpl.template_key === 'zygomatic_course_details' || tpl.name.toLowerCase().includes('zygomatic');
+      const hasAtt = Boolean(tpl.has_attachment || (tpl.content_json as any)?.has_attachment || isZygomatic);
+      if (hasAtt) {
+        const isRequired = isZygomatic || Boolean((tpl as any).is_attachment_required || (tpl.content_json as any)?.is_attachment_required);
+        setAttachment({
+          displayName: isZygomatic ? 'Zygomatic Course (2).pdf' : (tpl.attachment_name || (tpl.content_json as any)?.attachment_name || 'Documento PDF'),
+          canRemove: !isRequired,
+          isRequired,
+        });
+      } else {
+        setAttachment(null);
+      }
+      setSelectedTemplateKey(tpl.template_key || (isZygomatic ? 'zygomatic_course_details' : null));
+
+      // Resolve variables with lead data safely using canonical rule
+      const firstName = resolveSafeFirstName(lead.first_name, 'Doctor');
+      const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doctor');
+      const lastName = lead.last_name ? lead.last_name.trim() : '';
+      const courseName = lead.course_interest || (isZygomatic ? 'Zygomatic Implant Training' : 'Intensive Dental Implant Training');
+      const courseDateRange = 'November 7–10, 2026';
+      const courseTuition = '$17,500';
+
+      const replaceVars = (text: string) =>
+        text
+          .replace(/\{\{\s*salutation\s*\}\}/gi, salutation || 'Doctor')
+          .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
+          .replace(/\{\{\s*last_name\s*\}\}/gi, lastName)
+          .replace(/\{\{\s*course_name\s*\}\}/gi, courseName)
+          .replace(/\{\{\s*course_date_range\s*\}\}/gi, courseDateRange)
+          .replace(/\{\{\s*course_tuition\s*\}\}/gi, courseTuition)
+          .replace(/\{\{\s*[\w.]+\s*\}\}/g, ''); // Safe cleanup of any unmapped variables
+
+      // Subject snapshot
+      const templateSubject = getTemplateSubject(tpl) || tpl.name || '';
+      setSubject(replaceVars(templateSubject));
+
+      // Body snapshot: prefer text_template, fallback to clean text from blocks
+      let rawBody = tpl.text_template || '';
+      if (!rawBody && tpl.content_json) {
+        if (Array.isArray(tpl.content_json)) {
+          rawBody = tpl.content_json
+            .map((b: any) => b.content?.text || b.content?.body || '')
+            .filter(Boolean)
+            .join('\n\n');
+        } else if (typeof tpl.content_json === 'object') {
+          const cj = tpl.content_json as any;
+          rawBody = cj.body || cj.text || '';
+        }
+      }
+
+      setBody(replaceVars(rawBody));
+    } catch (err) {
+      console.error('Failed to prepare template in composer:', err);
+      setError('Não foi possível preparar o e-mail. Tente novamente.');
+    }
   };
 
   // Handle Send Email
@@ -279,9 +285,16 @@ export function ManualEmailComposerModal({
                   friendlyMessage = 'O arquivo PDF excede o limite máximo permitido para envio.';
                 } else if (errBody.error === 'CONTACT_PREFERENCE_MISMATCH') {
                   friendlyMessage = errBody.message || 'O canal de envio selecionado difere da preferência do lead.';
-                } else if (errBody.message && !errBody.message.includes('Edge Function')) {
+                } else if (
+                  errBody.message &&
+                  !/is not defined|ReferenceError|TypeError|SyntaxError|Edge Function|Internal server error|status code/i.test(errBody.message)
+                ) {
                   friendlyMessage = errBody.message;
-                } else if (errBody.error && typeof errBody.error === 'string' && !errBody.error.includes('Edge Function')) {
+                } else if (
+                  errBody.error &&
+                  typeof errBody.error === 'string' &&
+                  !/is not defined|ReferenceError|TypeError|SyntaxError|Edge Function|Internal server error|status code/i.test(errBody.error)
+                ) {
                   friendlyMessage = errBody.error;
                 }
               }
@@ -310,11 +323,11 @@ export function ManualEmailComposerModal({
     } catch (err: any) {
       console.error('Failed to send manual email:', err);
       let userMsg = err.message || 'Não foi possível enviar o e-mail. Tente novamente.';
-      if (
-        userMsg.includes('Edge Function returned a non-2xx') ||
-        userMsg.includes('FunctionsHttpError') ||
-        userMsg.includes('Failed to send')
-      ) {
+      const isTechnical =
+        /is not defined|ReferenceError|TypeError|SyntaxError|Internal server error|FunctionsHttpError|Edge Function|Failed to send|object Object|status code/i.test(
+          userMsg
+        );
+      if (isTechnical) {
         userMsg = 'Não foi possível enviar o e-mail no momento. Tente novamente em instantes.';
       }
       setError(userMsg);

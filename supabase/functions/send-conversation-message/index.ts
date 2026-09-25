@@ -12,6 +12,7 @@ import { verifyAuth } from '../_shared/auth.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
 import { sendSms } from '../_shared/twilio-adapter.ts';
+import { resolveSafeFirstName, resolveSalutation } from '../_shared/salutation.ts';
 
 interface SendMessagePayload {
   lead_id: string;
@@ -77,7 +78,7 @@ Deno.serve(async (req) => {
     // 2. Fetch Lead
     const { data: lead, error: leadErr } = await db
       .from('leads')
-      .select('id, first_name, last_name, email, phone_raw, phone_e164, contact_preference, pipeline_stage_id')
+      .select('id, first_name, last_name, email, phone_raw, phone_e164, contact_preference, pipeline_stage_id, course_interest')
       .eq('id', lead_id)
       .single();
 
@@ -87,6 +88,27 @@ Deno.serve(async (req) => {
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Ensure template variables and greetings are safely resolved server-side
+    const safeFirstName = resolveSafeFirstName(lead.first_name, 'Doctor');
+    const safeSalutation = resolveSalutation(lead.last_name, lead.first_name, 'Doctor');
+    const safeLastName = lead.last_name ? lead.last_name.trim() : '';
+    const isZygomaticTpl = template_key === 'zygomatic_course_details';
+    const safeCourseName = isZygomaticTpl
+      ? 'Zygomatic Implant Training'
+      : ((lead as any).course_interest || 'Intensive Dental Implant Training');
+
+    const renderVariables = (text: string) => text
+      .replace(/\{\{\s*salutation\s*\}\}/gi, safeSalutation || 'Doctor')
+      .replace(/\{\{\s*first_name\s*\}\}/gi, safeFirstName)
+      .replace(/\{\{\s*last_name\s*\}\}/gi, safeLastName)
+      .replace(/\{\{\s*course_name\s*\}\}/gi, safeCourseName)
+      .replace(/\{\{\s*course_date_range\s*\}\}/gi, 'November 7–10, 2026')
+      .replace(/\{\{\s*course_tuition\s*\}\}/gi, '$17,500')
+      .replace(/\{\{\s*[\w.]+\s*\}\}/g, '');
+
+    const effectiveBody = renderVariables(body.trim());
+    const effectiveSubject = renderVariables(subject || (channel === 'email' ? 'Update from Expert Dental Solutions' : ''));
 
     // 3. Contact Preference Guard with Explicit User Confirmation Override
     const leadPref = (lead.contact_preference || 'email').toLowerCase();
@@ -126,7 +148,7 @@ Deno.serve(async (req) => {
               channel: 'sms',
               status: 'open',
               last_message_at: new Date().toISOString(),
-              last_message_preview: body.slice(0, 120),
+              last_message_preview: effectiveBody.slice(0, 120),
               last_message_direction: 'outbound',
             })
             .select('id')
@@ -151,9 +173,9 @@ Deno.serve(async (req) => {
               lead_id: lead.id,
               channel: 'email',
               status: 'open',
-              subject: subject || 'Message from Expert Dental Solutions',
+              subject: effectiveSubject || 'Message from Expert Dental Solutions',
               last_message_at: new Date().toISOString(),
-              last_message_preview: body.slice(0, 120),
+              last_message_preview: effectiveBody.slice(0, 120),
               last_message_direction: 'outbound',
             })
             .select('id')
@@ -190,6 +212,13 @@ Deno.serve(async (req) => {
         );
       }
     }
+
+    // Attachment tracking across all channels (declared in outer function scope)
+    let attachmentMetadata = {
+      included: false,
+      filename: null as string | null,
+      materialId: null as string | null,
+    };
 
     if (channel === 'email') {
       recipient = lead.email ? lead.email.trim().toLowerCase() : '';
@@ -230,8 +259,8 @@ Deno.serve(async (req) => {
       const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
       const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
       const replyTo = 'info@expdentalsolutions.com';
-      const finalSubject = subject || 'Update from Expert Dental Solutions';
-      const htmlBody = body.includes('<p>') ? body : `<p>${body.replace(/\n/g, '<br/>')}</p>`;
+      const finalSubject = effectiveSubject;
+      const htmlBody = effectiveBody.includes('<p>') ? effectiveBody : `<p>${effectiveBody.replace(/\n/g, '<br/>')}</p>`;
 
       const headers: Record<string, string> = {};
       if (in_reply_to_provider_message_id) {
@@ -241,11 +270,6 @@ Deno.serve(async (req) => {
 
       // Attachment handling and verification
       const attachmentsToSend: Array<{ filename: string; content: string; contentType?: string }> = [];
-      let attachmentMetadata = {
-        included: false,
-        filename: null as string | null,
-        materialId: null as string | null,
-      };
 
       const requestedTemplateKey = template_key || null;
       const shouldIncludeAttachment = include_attachment !== false;
@@ -381,7 +405,7 @@ Deno.serve(async (req) => {
 
       const sendRes = await sendSms({
         to: recipient,
-        body,
+        body: effectiveBody,
       });
 
       if (!sendRes.success) {
@@ -403,8 +427,8 @@ Deno.serve(async (req) => {
         provider: channel === 'email' ? 'resend' : 'twilio',
         recipient,
         template_key: template_key || 'manual_crm_reply',
-        subject_snapshot: channel === 'email' ? (subject || null) : null,
-        body_snapshot: body,
+        subject_snapshot: channel === 'email' ? (effectiveSubject || null) : null,
+        body_snapshot: effectiveBody,
         status: 'sent',
         provider_message_id: providerMessageId,
         idempotency_key: effectiveIdempotencyKey,
@@ -438,7 +462,7 @@ Deno.serve(async (req) => {
           status: 'open',
           closed_at: null,
           last_message_at: new Date().toISOString(),
-          last_message_preview: body.slice(0, 120),
+          last_message_preview: effectiveBody.slice(0, 120),
           last_message_direction: 'outbound',
           updated_at: new Date().toISOString(),
         })
@@ -525,7 +549,10 @@ Deno.serve(async (req) => {
   } catch (err: any) {
     console.error('Unexpected error sending conversation message:', err);
     return new Response(
-      JSON.stringify({ error: 'Internal server error', message: err.message }),
+      JSON.stringify({
+        error: 'INTERNAL_ERROR',
+        message: 'Não foi possível enviar a mensagem. Tente novamente em instantes.',
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
