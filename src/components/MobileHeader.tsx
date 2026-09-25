@@ -5,6 +5,8 @@ import { useSafeBackNavigation } from '../hooks/useSafeBackNavigation';
 import { useAuth } from '../features/auth/AuthProvider';
 import edsLogo from '../assets/eds-logo.png';
 
+import { NotificationBell } from './NotificationBell';
+
 export interface MobileHeaderProps {
   title?: string;
   subtitle?: string;
@@ -82,8 +84,9 @@ export function MobileHeader({
         )}
       </div>
 
-      {/* Right side: Actions (on secondary screens with Back) or User avatar */}
-      <div className="flex items-center gap-2 shrink-0">
+      {/* Right side: Notification Bell + Actions (on secondary screens with Back) or User avatar */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <NotificationBell />
         {hasBack && actions}
         {!hasBack && (
           <div className="w-7 h-7 rounded-full bg-[#08254f] text-white flex items-center justify-center text-xs font-bold shadow-xs">

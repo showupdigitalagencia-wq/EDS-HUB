@@ -9,6 +9,7 @@ import {
   Inbox,
   ClipboardList,
   Workflow,
+  Megaphone,
   GraduationCap,
   FileText,
   Settings,
@@ -45,6 +46,7 @@ const navigationGroups: NavGroup[] = [
     items: [
       { name: 'Formulários', href: '/forms', icon: ClipboardList, testId: 'nav-forms' },
       { name: 'Automações', href: '/automations', icon: Workflow, testId: 'nav-automations' },
+      { name: 'Campanhas', href: '/campaigns', icon: Megaphone, testId: 'nav-campaigns' },
       { name: 'Cursos', href: '/courses/operations', icon: GraduationCap, testId: 'nav-courses' },
     ],
   },
@@ -150,6 +152,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
                     key={item.href}
                     to={item.href}
                     id={item.testId}
+                    data-testid={item.testId}
                     onClick={handleNavClick}
                     className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all duration-150 ${
                       isActive

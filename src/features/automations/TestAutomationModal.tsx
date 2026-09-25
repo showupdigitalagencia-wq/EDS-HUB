@@ -157,7 +157,7 @@ export function TestAutomationModal({
             {isLoadingLeads ? (
               <div className="py-4 text-center text-xs text-gray-400">Loading leads...</div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1 border border-gray-100 rounded-xl bg-gray-50/50">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1 border border-gray-100 rounded-xl bg-gray-50/50">
                 {filteredLeads.map((lead) => {
                   const isSelected = selectedLead?.id === lead.id;
                   return (

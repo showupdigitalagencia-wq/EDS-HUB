@@ -8,6 +8,8 @@ import { useAuth } from '../features/auth/AuthProvider';
 import { useSafeBackNavigation } from '../hooks/useSafeBackNavigation';
 import { IosInstallPrompt } from './IosInstallPrompt';
 
+import { NotificationBell } from './NotificationBell';
+
 interface LayoutProps {
   children: ReactNode;
   title: string;
@@ -92,8 +94,9 @@ export function Layout({
             )}
           </div>
 
-          {/* User Profile Pill */}
+          {/* User Profile Pill & Notification Bell */}
           <div className="flex items-center gap-3">
+            <NotificationBell />
             <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">
               <div className="w-7 h-7 rounded-full bg-[#08254f] text-white flex items-center justify-center text-xs font-bold shadow-xs">
                 {appUser?.display_name?.charAt(0)?.toUpperCase() || 'U'}

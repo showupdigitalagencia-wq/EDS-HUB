@@ -100,16 +100,27 @@ Deno.serve(async (req) => {
     if (target_user_ids && target_user_ids.length > 0) {
       candidateUserIds = target_user_ids;
     } else {
-      // Default: All active app users
+      // Default: All active app users (app_user uses is_active boolean)
       const { data: users, error: userError } = await supabase
         .from('app_user')
         .select('user_id')
-        .eq('status', 'active');
+        .eq('is_active', true);
 
       if (userError) {
         console.error('[send-push-notification] Failed to query app_user:', userError);
       }
       candidateUserIds = (users || []).map((u: { user_id: string }) => u.user_id);
+
+      // Defensive fallback: If app_user query returns empty, query active push subscriptions
+      if (candidateUserIds.length === 0) {
+        const { data: activeSubs } = await supabase
+          .from('push_subscriptions')
+          .select('user_id')
+          .eq('status', 'active');
+        if (activeSubs && activeSubs.length > 0) {
+          candidateUserIds = Array.from(new Set(activeSubs.map((s: { user_id: string }) => s.user_id)));
+        }
+      }
     }
 
     if (candidateUserIds.length === 0) {
@@ -155,6 +166,10 @@ Deno.serve(async (req) => {
       );
     }
 
+    // 5. Sanitize Notification Content (No sensitive medical/financial data)
+    const sanitizedTitle = title.slice(0, 100);
+    const sanitizedBody = body.slice(0, 240);
+
     // 4. Fetch all active subscriptions for eligible users
     let subsQuery = supabase
       .from('push_subscriptions')
@@ -174,19 +189,34 @@ Deno.serve(async (req) => {
     }
 
     if (!subscriptions || subscriptions.length === 0) {
+      // Persist to push_notification_logs for each eligible admin user so it appears in in-app notification center
+      for (const uid of eligibleUserIds) {
+        try {
+          await supabase.from('push_notification_logs').insert({
+            user_id: uid,
+            subscription_id: null,
+            event_type,
+            event_id: event_id || null,
+            idempotency_key: `${idempotency_key}_user_${uid}`,
+            title: sanitizedTitle,
+            body: sanitizedBody,
+            status: 'sent',
+            deep_link,
+            created_at: new Date().toISOString(),
+          });
+        } catch (logErr) {
+          console.debug('[send-push-notification] Fallback log notice:', logErr);
+        }
+      }
       return new Response(
         JSON.stringify({
           success: true,
-          message: 'No active device subscriptions for target users',
+          message: 'Saved to notification logs (no active device subscriptions for target users)',
           dispatched_count: 0,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    // 5. Sanitize Notification Content (No sensitive medical/financial data)
-    const sanitizedTitle = title.slice(0, 100);
-    const sanitizedBody = body.slice(0, 240);
 
     const pushPayloadJson = JSON.stringify({
       title: sanitizedTitle,
