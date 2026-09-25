@@ -150,6 +150,20 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
                       {emailData.subject || '(Sem assunto definido)'}
                     </span>
                   </div>
+                  {Boolean(template.has_attachment || template.attachment_name || template.template_key === 'zygomatic_course_details') && (
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                      <span className="text-slate-400 font-medium w-16">Anexo:</span>
+                      <div className="flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-lg text-xs font-medium">
+                        <span className="font-bold text-[10px] bg-rose-200 px-1 rounded">PDF</span>
+                        <span>
+                          {template.attachment_name ||
+                            (template.template_key === 'zygomatic_course_details'
+                              ? 'Zygomatic Course (2).pdf'
+                              : 'Documento PDF')}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Rendered Sanitized HTML */}

@@ -1,14 +1,77 @@
 // =============================================================================
-// EDS HUB — Salutation Resolver
+// EDS HUB — Salutation & Greeting Resolver (Central Rule)
 // =============================================================================
-// Single source of truth for computing the greeting name.
-// Rule:
-//   1. If last_name has real content after trim → use last_name
-//   2. Else if first_name has real content after trim → use first_name
-//   3. Else → use defaultSalutation (defaults to "Doc")
+// Single source of truth for computing greeting names and salutations across:
+// - First contact emails & automations (Meta, HubSpot, website, manual)
+// - Email composer & templates
+// - SMS messages & campaigns
+//
+// CANONICAL GREETING RULES:
+// 1. If valid first_name exists:
+//    "Hello {{first_name}}," -> "Hello John," / "Hello Maria,"
+// 2. If first_name is missing (null, undefined, empty, whitespace) or is a
+//    placeholder artifact (e.g. "Doutor(a)", "Doutor", "dr(a)", "null", "undefined"):
+//    STRICTLY "Hello Doctor,"
+// 3. Never emit:
+//    - "Hello ,"
+//    - "Hello undefined,"
+//    - "Hello null,"
+//    - "Hello {{first_name}},"
+//    - "Hello Doutor(a),"
 // =============================================================================
 
 import { DEFAULT_SALUTATION } from '../lib/constants';
+
+/**
+ * Normalizes and validates a lead's first name for safe template rendering.
+ * If first_name is missing, empty, only whitespace, or a placeholder like "Doutor(a)",
+ * it returns the canonical fallback ("Doctor").
+ */
+export function resolveSafeFirstName(
+  firstName: string | null | undefined,
+  fallback: string = 'Doctor'
+): string {
+  if (!firstName || typeof firstName !== 'string') return fallback;
+  const trimmed = firstName.trim();
+  if (!trimmed) return fallback;
+
+  // Placeholder blacklist (case-insensitive)
+  const lower = trimmed.toLowerCase();
+  const placeholders = [
+    'doutor(a)',
+    'doutora',
+    'doutor',
+    'dr(a)',
+    'dr(a).',
+    'dr.',
+    'dra.',
+    'dr',
+    'dra',
+    'undefined',
+    'null',
+    'n/a',
+    'none',
+  ];
+
+  if (placeholders.includes(lower)) {
+    return fallback;
+  }
+
+  return trimmed;
+}
+
+/**
+ * Returns the canonical greeting line for first-contact emails.
+ * Valid name: "Hello John,"
+ * Missing/placeholder: "Hello Doctor,"
+ */
+export function resolveCanonicalGreeting(
+  firstName: string | null | undefined,
+  salutationWord: string = 'Hello'
+): string {
+  const safeName = resolveSafeFirstName(firstName, 'Doctor');
+  return `${salutationWord} ${safeName},`;
+}
 
 /**
  * Resolves the salutation name for a lead.
@@ -25,12 +88,15 @@ export function resolveSalutation(
 ): string {
   const trimmedLast = lastName?.trim();
   if (trimmedLast && trimmedLast.length > 0) {
-    return trimmedLast;
+    const lower = trimmedLast.toLowerCase();
+    if (!['doutor(a)', 'doutor', 'doutora', 'dr(a)', 'dr.', 'dra.'].includes(lower)) {
+      return trimmedLast;
+    }
   }
 
-  const trimmedFirst = firstName?.trim();
-  if (trimmedFirst && trimmedFirst.length > 0) {
-    return trimmedFirst;
+  const safeFirst = resolveSafeFirstName(firstName, '');
+  if (safeFirst && safeFirst.length > 0) {
+    return safeFirst;
   }
 
   return defaultSalutation;

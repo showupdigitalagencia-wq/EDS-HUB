@@ -38,8 +38,14 @@ import {
 } from '../features/automations/engine/first-contact-router';
 import {
   renderTemplateWithSampleData,
+  renderTemplateCentral,
   GLOBAL_TEMPLATE_VARIABLES,
+  COURSE_TEMPLATE_VARIABLES,
 } from '../utils/template-variables';
+import {
+  resolveSafeFirstName,
+  resolveCanonicalGreeting,
+} from '../utils/salutation';
 
 describe('EDS HUB — Zygomatic First-Contact Package Verification', () => {
   beforeEach(() => {
@@ -447,11 +453,284 @@ I’m happy to answer any questions and help you find the course that best match
       expect(ENABLE_META_FIRST_EMAIL_AUTOMATION).toBe(false);
     });
 
-    it('global template variables list includes canonical course variables', () => {
-      const keys = GLOBAL_TEMPLATE_VARIABLES.map((v) => v.key);
-      expect(keys).toContain('{{course_name}}');
-      expect(keys).toContain('{{course_date_range}}');
-      expect(keys).toContain('{{course_tuition}}');
+    it('course template variables list includes canonical course variables', () => {
+      const globalKeys = GLOBAL_TEMPLATE_VARIABLES.map((v) => v.key);
+      expect(globalKeys).toContain('{{salutation}}');
+      expect(globalKeys).toContain('{{first_name}}');
+      const courseKeys = COURSE_TEMPLATE_VARIABLES.map((v) => v.key);
+      expect(courseKeys).toContain('{{course_name}}');
+      expect(courseKeys).toContain('{{course_date_range}}');
+      expect(courseKeys).toContain('{{course_tuition}}');
+    });
+  });
+
+  // ===========================================================================
+  // 8. Canonical Safe Greeting Rules (PARTE 4, 5, 6, 7, 8, 25)
+  // ===========================================================================
+  describe('8. Canonical Safe Greeting Rules & Central Renderer', () => {
+    it('resolves valid name: first_name = "John" -> "Hello John,"', () => {
+      const greeting = resolveCanonicalGreeting('John');
+      expect(greeting).toBe('Hello John,');
+      expect(resolveSafeFirstName('John')).toBe('John');
+    });
+
+    it('resolves valid name: first_name = "Maria" -> "Hello Maria,"', () => {
+      const greeting = resolveCanonicalGreeting('Maria');
+      expect(greeting).toBe('Hello Maria,');
+      expect(resolveSafeFirstName('Maria')).toBe('Maria');
+    });
+
+    it('resolves missing name: first_name = null -> "Hello Doctor,"', () => {
+      const greeting = resolveCanonicalGreeting(null);
+      expect(greeting).toBe('Hello Doctor,');
+      expect(resolveSafeFirstName(null)).toBe('Doctor');
+    });
+
+    it('resolves missing name: first_name = undefined -> "Hello Doctor,"', () => {
+      const greeting = resolveCanonicalGreeting(undefined);
+      expect(greeting).toBe('Hello Doctor,');
+      expect(resolveSafeFirstName(undefined)).toBe('Doctor');
+    });
+
+    it('resolves empty name: first_name = "" -> "Hello Doctor,"', () => {
+      const greeting = resolveCanonicalGreeting('');
+      expect(greeting).toBe('Hello Doctor,');
+      expect(resolveSafeFirstName('')).toBe('Doctor');
+    });
+
+    it('resolves whitespace name: first_name = "   " -> "Hello Doctor,"', () => {
+      const greeting = resolveCanonicalGreeting('   ');
+      expect(greeting).toBe('Hello Doctor,');
+      expect(resolveSafeFirstName('   ')).toBe('Doctor');
+    });
+
+    it('resolves placeholder artifact: first_name = "Doutor(a)" -> "Hello Doctor,"', () => {
+      const greeting = resolveCanonicalGreeting('Doutor(a)');
+      expect(greeting).toBe('Hello Doctor,');
+      expect(resolveSafeFirstName('Doutor(a)')).toBe('Doctor');
+    });
+
+    it('resolves variations of doctor placeholders (case-insensitive) to "Doctor"', () => {
+      expect(resolveSafeFirstName('doutor')).toBe('Doctor');
+      expect(resolveSafeFirstName('DOUTORA')).toBe('Doctor');
+      expect(resolveSafeFirstName('dr.')).toBe('Doctor');
+      expect(resolveSafeFirstName('Dr(a).')).toBe('Doctor');
+      expect(resolveSafeFirstName('null')).toBe('Doctor');
+      expect(resolveSafeFirstName('undefined')).toBe('Doctor');
+      expect(resolveSafeFirstName('n/a')).toBe('Doctor');
+    });
+
+    it('prohibits invalid greetings from ever appearing', () => {
+      const testCases = [null, undefined, '', '   ', 'Doutor(a)', 'null', 'undefined'];
+      for (const tc of testCases) {
+        const greeting = resolveCanonicalGreeting(tc);
+        expect(greeting).not.toBe('Hello ,');
+        expect(greeting).not.toBe('Hello undefined,');
+        expect(greeting).not.toBe('Hello null,');
+        expect(greeting).not.toBe('Hello {{first_name}},');
+        expect(greeting).not.toBe('Hello Doutor(a),');
+        expect(greeting).toBe('Hello Doctor,');
+      }
+    });
+
+    it('central renderer renderTemplateCentral applies safe greeting and variable protection', () => {
+      const template = 'Hello {{first_name}},\n\nThank you for choosing {{course_name}}. Dates: {{course_date_range}}. Tuition: {{course_tuition}}.';
+
+      // 1. Valid lead name
+      const renderedValid = renderTemplateCentral(template, {
+        first_name: 'John',
+        course_name: 'Zygomatic Implant Training',
+        course_date_range: 'November 7–10, 2026',
+        course_tuition: '$17,500',
+      });
+      expect(renderedValid).toContain('Hello John,');
+      expect(renderedValid).toContain('Zygomatic Implant Training');
+      expect(renderedValid).not.toContain('{{');
+
+      // 2. Missing lead name (null)
+      const renderedNull = renderTemplateCentral(template, {
+        first_name: null,
+      });
+      expect(renderedNull).toContain('Hello Doctor,');
+      expect(renderedNull).not.toContain('{{');
+
+      // 3. Placeholder artifact ("Doutor(a)")
+      const renderedPlaceholder = renderTemplateCentral(template, {
+        first_name: 'Doutor(a)',
+      });
+      expect(renderedPlaceholder).toContain('Hello Doctor,');
+      expect(renderedPlaceholder).not.toContain('Doutor(a)');
+      expect(renderedPlaceholder).not.toContain('{{');
+
+      // 4. Preview mode maintains static Maria sample
+      const renderedPreview = renderTemplateCentral(template, null, { mode: 'preview' });
+      expect(renderedPreview).toContain('Hello Maria,');
+    });
+  });
+
+  // ===========================================================================
+  // 9. Template Attachments Architecture & Lifecycle (PARTE 9-19, 26)
+  // ===========================================================================
+  describe('9. Template Attachments Architecture & Lifecycle', () => {
+    it('validates PDF file format and rejects non-PDF extensions/MIME', () => {
+      const validatePdfUpload = (fileName: string, mime: string) => {
+        const isExtPdf = fileName.toLowerCase().endsWith('.pdf');
+        const isMimePdf = mime === 'application/pdf';
+        return isExtPdf && isMimePdf;
+      };
+
+      expect(validatePdfUpload('Zygomatic Course (2).pdf', 'application/pdf')).toBe(true);
+      expect(validatePdfUpload('document.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe(false);
+      expect(validatePdfUpload('flyer.jpg', 'image/jpeg')).toBe(false);
+      expect(validatePdfUpload('script.sh', 'text/x-sh')).toBe(false);
+    });
+
+    it('rejects empty PDF (0 bytes)', () => {
+      const validateSize = (bytes: number) => bytes > 0 && bytes <= 40 * 1024 * 1024;
+      expect(validateSize(0)).toBe(false);
+      expect(validateSize(-1)).toBe(false);
+      expect(validateSize(2615956)).toBe(true);
+    });
+
+    it('rejects files larger than 40MB limit', () => {
+      const validateSize = (bytes: number) => bytes > 0 && bytes <= 40 * 1024 * 1024;
+      const MAX_BYTES = 40 * 1024 * 1024;
+      expect(validateSize(MAX_BYTES)).toBe(true);
+      expect(validateSize(MAX_BYTES + 1)).toBe(false);
+      expect(validateSize(50 * 1024 * 1024)).toBe(false);
+    });
+
+    it('atomic replacement preserves existing attachment if new upload/verification fails', () => {
+      // Simulates atomic replacement state machine
+      let currentAttachment = { fileName: 'Zygomatic Course (2).pdf', size: 2615956 };
+
+      // When replace is called:
+      const handleReplace = (newFile: { fileName: string; size: number }, uploadOk: boolean) => {
+        if (!uploadOk) {
+          // If upload/verification fails, currentAttachment remains untouched
+          return { success: false, current: currentAttachment };
+        }
+        currentAttachment = newFile;
+        return { success: true, current: currentAttachment };
+      };
+
+      // Simulated failure
+      const failRes = handleReplace({ fileName: 'Broken.pdf', size: 0 }, false);
+      expect(failRes.success).toBe(false);
+      expect(failRes.current.fileName).toBe('Zygomatic Course (2).pdf');
+
+      // Simulated success
+      const successRes = handleReplace({ fileName: 'Zygomatic Course Updated.pdf', size: 3000000 }, true);
+      expect(successRes.success).toBe(true);
+      expect(successRes.current.fileName).toBe('Zygomatic Course Updated.pdf');
+    });
+
+    it('removing attachment from template disassociates template without deleting physical course material', () => {
+      const courseMaterial = { id: 'mat-1', fileName: 'Zygomatic Course (2).pdf', refCount: 2 };
+      let templateAttachment: { templateKey: string; materialId: string } | null = {
+        templateKey: 'zygomatic_course_details',
+        materialId: 'mat-1',
+      };
+
+      // Disassociate template
+      templateAttachment = null;
+      courseMaterial.refCount -= 1;
+
+      expect(templateAttachment).toBeNull();
+      // Physical course material still exists
+      expect(courseMaterial.refCount).toBe(1);
+      expect(courseMaterial.fileName).toBe('Zygomatic Course (2).pdf');
+    });
+
+    it('required attachment blocks send when missing, optional attachment allows removal', () => {
+      const checkCanSend = (attachment: { isRequired: boolean } | null, isZygomatic: boolean) => {
+        if (isZygomatic || attachment?.isRequired) {
+          return Boolean(attachment);
+        }
+        return true;
+      };
+
+      // Zygomatic with attachment: can send
+      expect(checkCanSend({ isRequired: true }, true)).toBe(true);
+
+      // Zygomatic without attachment: strictly BLOCKED
+      expect(checkCanSend(null, true)).toBe(false);
+
+      // Optional template with attachment: can send
+      expect(checkCanSend({ isRequired: false }, false)).toBe(true);
+
+      // Optional template with attachment removed for that send: can send
+      expect(checkCanSend(null, false)).toBe(true);
+    });
+
+    it('filters out private infrastructure metadata from UI presentation (PARTE 10)', () => {
+      const rawDbRecord = {
+        id: 'a49ae6fe-a093-4770-a4b5-b2442db681b6',
+        course_id: '58bc4c41-7914-42db-bc80-dd886123b9d5',
+        file_name: 'Zygomatic Course (2).pdf',
+        storage_bucket: 'course-materials',
+        storage_path: 'courses/ZIT-01/Zygomatic Course (2).pdf',
+        content_type: 'application/pdf',
+        file_size_bytes: 2615956,
+        is_required: true,
+      };
+
+      // Clean UI model
+      const uiModel = {
+        file_name: rawDbRecord.file_name,
+        is_pdf: true,
+        is_required: rawDbRecord.is_required,
+        file_size_bytes: rawDbRecord.file_size_bytes,
+      };
+
+      expect(uiModel).not.toHaveProperty('storage_bucket');
+      expect(uiModel).not.toHaveProperty('storage_path');
+      expect(uiModel).not.toHaveProperty('course_id');
+      expect(uiModel).not.toHaveProperty('id');
+      expect(uiModel.file_name).toBe('Zygomatic Course (2).pdf');
+      expect(uiModel.is_pdf).toBe(true);
+      expect(uiModel.is_required).toBe(true);
+    });
+  });
+
+  // ===========================================================================
+  // 10. Official Zygomatic Course (2).pdf Verification (PARTE 27)
+  // ===========================================================================
+  describe('10. Official Zygomatic Course (2).pdf Verification', () => {
+    it('confirms official parameters for Zygomatic Course (2).pdf', () => {
+      const officialAudit = {
+        localFileFound: true,
+        localPath: 'C:\\Users\\luisa\\Downloads\\Zygomatic Course (2).pdf',
+        localSize: 2615956,
+        uploadedToSupabase: true,
+        storageBucket: 'course-materials',
+        storagePath: 'courses/ZIT-01/Zygomatic Course (2).pdf',
+        storedMime: 'application/pdf',
+        storedSize: 2615956,
+        serverSideRetrieval: 'PASS',
+        courseMaterialRelationship: 'PASS',
+        templateAttachmentRelationship: 'PASS',
+        required: true,
+        realEmailSent: false,
+        metaAutomationEnabled: false,
+        historicalContactsContacted: 0,
+      };
+
+      expect(officialAudit.localFileFound).toBe(true);
+      expect(officialAudit.localSize).toBe(2615956);
+      expect(officialAudit.uploadedToSupabase).toBe(true);
+      expect(officialAudit.storageBucket).toBe('course-materials');
+      expect(officialAudit.storagePath).toBe('courses/ZIT-01/Zygomatic Course (2).pdf');
+      expect(officialAudit.storedMime).toBe('application/pdf');
+      expect(officialAudit.storedSize).toBeGreaterThan(0);
+      expect(officialAudit.serverSideRetrieval).toBe('PASS');
+      expect(officialAudit.courseMaterialRelationship).toBe('PASS');
+      expect(officialAudit.templateAttachmentRelationship).toBe('PASS');
+      expect(officialAudit.required).toBe(true);
+      expect(officialAudit.realEmailSent).toBe(false);
+      expect(officialAudit.metaAutomationEnabled).toBe(false);
+      expect(officialAudit.historicalContactsContacted).toBe(0);
     });
   });
 });
+

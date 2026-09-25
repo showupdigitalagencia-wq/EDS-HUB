@@ -884,7 +884,7 @@ async function handleEmailPreference(
 
   const templateVars = {
     salutation,
-    first_name: payload.first_name || salutation || 'Doctor',
+    first_name: resolveSafeFirstName(payload.first_name),
     course_name: payload.course_interest || (templateKey === 'zygomatic_course_details' ? 'Zygomatic Implant Training' : 'Intensive Dental Implant Training'),
     course_date_range: 'November 7–10, 2026',
     course_tuition: '$17,500',
@@ -1357,16 +1357,52 @@ async function handleCallPreference(
   }
 }
 
+function resolveSafeFirstName(firstName?: string | null): string {
+  if (!firstName || typeof firstName !== 'string') return 'Doctor';
+  const trimmed = firstName.trim();
+  if (!trimmed) return 'Doctor';
+  const lower = trimmed.toLowerCase();
+  const placeholders = [
+    'doutor(a)',
+    'doutora',
+    'doutor',
+    'dr(a)',
+    'dr(a).',
+    'dr.',
+    'dra.',
+    'dr',
+    'dra',
+    'undefined',
+    'null',
+    'n/a',
+    'none',
+  ];
+  if (placeholders.includes(lower)) return 'Doctor';
+  return trimmed;
+}
+
 function renderTemplate(
   template: string,
-  vars: { salutation: string; first_name?: string } | string
+  vars: { salutation?: string; first_name?: string; course_name?: string; course_date_range?: string; course_tuition?: string } | string
 ): string {
   if (typeof vars === 'string') {
-    return template.replace(/\{\{salutation\}\}/g, vars);
+    return template.replace(/\{\{salutation\}\}/gi, vars);
   }
-  return template
-    .replace(/\{\{salutation\}\}/g, vars.salutation || 'Doctor')
-    .replace(/\{\{first_name\}\}/g, vars.first_name || vars.salutation || 'Doctor');
+  const safeFirst = resolveSafeFirstName(vars.first_name);
+  const safeSalutation = vars.salutation && !['doutor(a)', 'doutora', 'doutor', 'dr(a)', 'dr.', 'dra.'].includes(vars.salutation.toLowerCase())
+    ? vars.salutation
+    : safeFirst;
+
+  let res = template
+    .replace(/\{\{\s*salutation\s*\}\}/gi, safeSalutation)
+    .replace(/\{\{\s*first_name\s*\}\}/gi, safeFirst)
+    .replace(/\{\{\s*course_name\s*\}\}/gi, vars.course_name || 'Zygomatic Implant Training')
+    .replace(/\{\{\s*course_date_range\s*\}\}/gi, vars.course_date_range || 'November 7–10, 2026')
+    .replace(/\{\{\s*course_tuition\s*\}\}/gi, vars.course_tuition || '$17,500');
+
+  // Strip any remaining unresolved template tags safely
+  res = res.replace(/\{\{\s*[\w.]+\s*\}\}/g, '');
+  return res;
 }
 
 function jsonResponse(body: LeadIntakeResponse): Response {

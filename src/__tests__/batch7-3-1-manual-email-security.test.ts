@@ -352,13 +352,17 @@ describe('EDS HUB — BATCH 7.3.1: Manual Email Security Check', () => {
   // 9. Architectural Safety & Constraints
   // ===========================================================================
   describe('9. Safety Constraints', () => {
-    it('verifies migration 00060 is authorized for push notifications and no 00061 exists', () => {
+    it('verifies authorized migrations up to 00062 exist and no unauthorized 00063 exists', () => {
       const migrationsDir = join(process.cwd(), 'supabase', 'migrations');
       const files = existsSync(migrationsDir) ? require('fs').readdirSync(migrationsDir) : [];
       const has00060 = files.some((f: string) => f.startsWith('00060'));
       expect(has00060).toBe(true);
       const has00061 = files.some((f: string) => f.startsWith('00061'));
-      expect(has00061).toBe(false);
+      expect(has00061).toBe(true);
+      const has00062 = files.some((f: string) => f.startsWith('00062'));
+      expect(has00062).toBe(true);
+      const has00063 = files.some((f: string) => f.startsWith('00063'));
+      expect(has00063).toBe(false);
     });
 
     it('verifies zero real emails sent during test execution (mocks only)', () => {

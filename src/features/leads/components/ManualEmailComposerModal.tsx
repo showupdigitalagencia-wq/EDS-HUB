@@ -20,7 +20,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
-import { resolveSalutation } from '../../../utils/salutation';
+import { resolveSalutation, resolveSafeFirstName } from '../../../utils/salutation';
 import { getTemplateSubject } from '../../../utils/template-variables';
 import type { Lead, EmailTemplate } from '../../../types';
 
@@ -55,7 +55,7 @@ export function ManualEmailComposerModal({
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string | null>(null);
-  const [attachment, setAttachment] = useState<{ displayName: string; canRemove: boolean } | null>(null);
+  const [attachment, setAttachment] = useState<{ displayName: string; canRemove: boolean; isRequired?: boolean } | null>(null);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
 
   // Suppression state
@@ -159,18 +159,20 @@ export function ManualEmailComposerModal({
     const isZygomatic = tpl.template_key === 'zygomatic_course_details' || tpl.name.toLowerCase().includes('zygomatic');
     const hasAtt = Boolean(tpl.has_attachment || (tpl.content_json as any)?.has_attachment || isZygomatic);
     if (hasAtt) {
+      const isRequired = isZygomatic || Boolean((tpl as any).is_attachment_required || (tpl.content_json as any)?.is_attachment_required);
       setAttachment({
-        displayName: tpl.attachment_name || (tpl.content_json as any)?.attachment_name || 'Zygomatic Course PDF',
-        canRemove: true,
+        displayName: isZygomatic ? 'Zygomatic Course (2).pdf' : (tpl.attachment_name || (tpl.content_json as any)?.attachment_name || 'Documento PDF'),
+        canRemove: !isRequired,
+        isRequired,
       });
     } else {
       setAttachment(null);
     }
     setSelectedTemplateKey(tpl.template_key || (isZygomatic ? 'zygomatic_course_details' : null));
 
-    // Resolve variables with lead data safely
-    const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doc');
-    const firstName = lead.first_name ? lead.first_name.trim() : (salutation || 'Doctor');
+    // Resolve variables with lead data safely using canonical rule
+    const firstName = resolveSafeFirstName(lead.first_name, 'Doctor');
+    const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doctor');
     const lastName = lead.last_name ? lead.last_name.trim() : '';
     const courseName = lead.course_interest || (isZygomatic ? 'Zygomatic Implant Training' : 'Intensive Dental Implant Training');
     const courseDateRange = 'November 7–10, 2026';
@@ -178,7 +180,7 @@ export function ManualEmailComposerModal({
 
     const replaceVars = (text: string) =>
       text
-        .replace(/\{\{\s*salutation\s*\}\}/gi, salutation || '')
+        .replace(/\{\{\s*salutation\s*\}\}/gi, salutation || 'Doctor')
         .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
         .replace(/\{\{\s*last_name\s*\}\}/gi, lastName)
         .replace(/\{\{\s*course_name\s*\}\}/gi, courseName)
@@ -226,6 +228,13 @@ export function ManualEmailComposerModal({
 
     if (!body.trim()) {
       setError('Por favor, escreva a mensagem do e-mail.');
+      return;
+    }
+
+    // Strict enforcement: if template requires an attachment, it cannot be sent without it
+    const isZygomaticTpl = selectedTemplateKey === 'zygomatic_course_details';
+    if ((isZygomaticTpl || attachment?.isRequired) && !attachment) {
+      setError('O anexo PDF oficial é obrigatório para este modelo e não pode ser removido.');
       return;
     }
 
@@ -474,22 +483,32 @@ export function ManualEmailComposerModal({
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-semibold text-slate-800">{attachment.displayName}</span>
-                    <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                      Anexo Oficial
-                    </span>
+                    {attachment.isRequired ? (
+                      <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                        Obrigatório
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        Anexo Oficial
+                      </span>
+                    )}
                   </div>
                   <p className="text-[10px] text-slate-400">PDF • Documento oficial do curso incluído</p>
                 </div>
               </div>
-              {attachment.canRemove && (
+              {attachment.canRemove ? (
                 <button
                   type="button"
                   onClick={() => setAttachment(null)}
                   className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/50 transition-colors cursor-pointer"
-                  title="Remover anexo deste envio"
+                  title="Remover anexo apenas deste envio"
                 >
                   <X className="h-4 w-4" />
                 </button>
+              ) : (
+                <span className="text-[10px] text-slate-400 italic">
+                  Anexo fixo
+                </span>
               )}
             </div>
           )}

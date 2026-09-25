@@ -5,7 +5,8 @@
 // sample preview substitution with resolver parity, and encoding-aware SMS estimation.
 // =============================================================================
 
-import { resolveSalutation } from './salutation';
+import { resolveSalutation, resolveSafeFirstName } from './salutation';
+export { resolveCanonicalGreeting, resolveSafeFirstName, resolveSalutation } from './salutation';
 
 export type TemplateChannel = 'email' | 'sms';
 
@@ -61,6 +62,12 @@ export const GLOBAL_TEMPLATE_VARIABLES: TemplateVariable[] = [
     label: 'Primeiro Nome',
     description: 'Primeiro nome cadastrado (ex: Maria)',
   },
+];
+
+/**
+ * Course-specific template variables for first contact and course communications.
+ */
+export const COURSE_TEMPLATE_VARIABLES: TemplateVariable[] = [
   {
     key: '{{course_name}}',
     label: 'Nome do Curso',
@@ -78,11 +85,16 @@ export const GLOBAL_TEMPLATE_VARIABLES: TemplateVariable[] = [
   },
 ];
 
+export const ALL_TEMPLATE_VARIABLES: TemplateVariable[] = [
+  ...GLOBAL_TEMPLATE_VARIABLES,
+  ...COURSE_TEMPLATE_VARIABLES,
+];
+
 /**
  * Campaign-specific variable set (campaign-send-batch explicitly supports {{last_name}}).
  */
 export const CAMPAIGN_SPECIFIC_VARIABLES: TemplateVariable[] = [
-  ...GLOBAL_TEMPLATE_VARIABLES,
+  ...ALL_TEMPLATE_VARIABLES,
   {
     key: '{{last_name}}',
     label: 'Sobrenome',
@@ -128,6 +140,71 @@ export function renderTemplateWithSampleData(
   if (context === 'campaign') {
     output = output.replace(/\{\{\s*last_name\s*\}\}/gi, SAMPLE_PREVIEW_DATA.last_name);
   }
+
+  return output;
+}
+
+export interface TemplateLeadVariables {
+  first_name?: string | null;
+  last_name?: string | null;
+  course_name?: string | null;
+  course_date_range?: string | null;
+  course_tuition?: string | null;
+  salutation?: string | null;
+}
+
+export interface RenderTemplateOptions {
+  strictVariables?: boolean;
+  mode?: 'live' | 'preview';
+  context?: 'global' | 'campaign';
+}
+
+/**
+ * Canonical central template renderer used across all lead origins (Meta, HubSpot, website, manual).
+ * Enforces:
+ * 1. Valid first_name -> "Hello John," / "Hello Maria,"
+ * 2. Missing/empty/placeholder ("Doutor(a)") -> STRICTLY "Hello Doctor,"
+ * 3. Never leaves unresolved {{first_name}} in output email.
+ * 4. Strips unmapped {{...}} safely or fails if strictVariables is set.
+ */
+export function renderTemplateCentral(
+  text: string | null | undefined,
+  leadVars?: TemplateLeadVariables | null,
+  options: RenderTemplateOptions = {}
+): string {
+  if (!text) return '';
+
+  if (options.mode === 'preview') {
+    return renderTemplateWithSampleData(text, options.context);
+  }
+
+  const safeFirstName = resolveSafeFirstName(leadVars?.first_name, 'Doctor');
+  const safeSalutation = resolveSalutation(leadVars?.last_name, leadVars?.first_name, 'Doctor');
+  const courseName = leadVars?.course_name || 'Zygomatic Implant Training';
+  const courseDateRange = leadVars?.course_date_range || 'November 7–10, 2026';
+  const courseTuition = leadVars?.course_tuition || '$17,500';
+
+  let output = text
+    .replace(/\{\{\s*salutation\s*\}\}/gi, safeSalutation)
+    .replace(/\{\{\s*first_name\s*\}\}/gi, safeFirstName)
+    .replace(/\{\{\s*course_name\s*\}\}/gi, courseName)
+    .replace(/\{\{\s*course_date_range\s*\}\}/gi, courseDateRange)
+    .replace(/\{\{\s*course_tuition\s*\}\}/gi, courseTuition);
+
+  if (options.context === 'campaign' && leadVars?.last_name) {
+    output = output.replace(/\{\{\s*last_name\s*\}\}/gi, leadVars.last_name.trim());
+  }
+
+  // Safety check: ensure no unresolved variable tags remain
+  if (options.strictVariables) {
+    const unmappedMatch = output.match(/\{\{\s*[\w.]+\s*\}\}/g);
+    if (unmappedMatch && unmappedMatch.length > 0) {
+      throw new Error(`Unresolved template variables found: ${unmappedMatch.join(', ')}`);
+    }
+  }
+
+  // Safe cleanup of any unmapped variables so {{...}} never reaches the recipient
+  output = output.replace(/\{\{\s*[\w.]+\s*\}\}/g, '');
 
   return output;
 }

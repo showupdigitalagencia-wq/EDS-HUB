@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { BlockEditor } from '../../editor/BlockEditor';
 import { CategorySelect } from './CategorySelect';
@@ -34,6 +34,9 @@ import {
   ChevronUp,
   ChevronDown,
   ExternalLink,
+  Paperclip,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 
 interface TemplateEditorModalProps {
@@ -80,6 +83,33 @@ export function TemplateEditorModal({
   const [usage, setUsage] = useState<TemplateUsage | null>(null);
   const [variableCopiedNotice, setVariableCopiedNotice] = useState<string | null>(null);
 
+  // Attachment state (PARTE 9-19)
+  const [attachment, setAttachment] = useState<{
+    file_name: string;
+    display_name: string;
+    is_required: boolean;
+    file_size_bytes: number;
+    is_pdf?: boolean;
+  } | null>(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+
+  const loadAttachment = useCallback(async (key: string) => {
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('manage-course-materials', {
+        body: { action: 'get', template_key: key },
+      });
+      if (!fnErr && data?.has_attachment && data.attachment) {
+        setAttachment(data.attachment);
+      } else {
+        setAttachment(null);
+      }
+    } catch (e) {
+      console.error('Failed to load template attachment:', e);
+      setAttachment(null);
+    }
+  }, []);
+
   // Initialize or reset state when modal opens
   useEffect(() => {
     if (!isOpen) return;
@@ -112,12 +142,24 @@ export function TemplateEditorModal({
         setCurrentHtml(editingTemplate.html_template || renderBlocksToHtml(loadedBlocks));
         setCurrentText(editingTemplate.text_template || renderBlocksToText(loadedBlocks));
         setSmsBody('');
+
+        const tplKey =
+          editingTemplate.template_key ||
+          (editingTemplate.name?.toLowerCase().includes('zygomatic')
+            ? 'zygomatic_course_details'
+            : null);
+        if (tplKey) {
+          void loadAttachment(tplKey);
+        } else {
+          setAttachment(null);
+        }
       } else {
         setSubject('');
         setCurrentBlocks([]);
         setCurrentHtml('');
         setCurrentText('');
         setSmsBody(editingTemplate.text_template || '');
+        setAttachment(null);
       }
 
       // Check origin usage (non-blocking)
@@ -130,6 +172,7 @@ export function TemplateEditorModal({
       setDescription('');
       setCategory('general');
       setSubject('');
+      setAttachment(null);
       const defaultBlocks: EmailBlock[] = [
         {
           id: 'h-1',
@@ -162,7 +205,7 @@ export function TemplateEditorModal({
       setSmsBody('');
       setUsage(null);
     }
-  }, [isOpen, editingTemplate]);
+  }, [isOpen, editingTemplate, loadAttachment]);
 
   // Handle ESC key to close
   useEffect(() => {
@@ -303,6 +346,189 @@ export function TemplateEditorModal({
     handleBlocksChange(copy);
   };
 
+  // Attachment Management (PARTE 9-19)
+  const getEffectiveKey = () => {
+    return (
+      editingTemplate?.template_key ||
+      (editingTemplate?.name?.toLowerCase().includes('zygomatic')
+        ? 'zygomatic_course_details'
+        : (name.toLowerCase().replace(/\s+/g, '_') || 'custom_email_template'))
+    );
+  };
+
+  const handleAttachmentFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      setAttachmentError('Apenas arquivos PDF são permitidos.');
+      return;
+    }
+    if (file.size === 0) {
+      setAttachmentError('O arquivo PDF selecionado está vazio (0 bytes).');
+      return;
+    }
+    if (file.size > 40 * 1024 * 1024) {
+      setAttachmentError('O arquivo excede o limite máximo permitido de 40MB para envio.');
+      return;
+    }
+
+    setAttachmentError(null);
+    setIsUploadingAttachment(true);
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+
+      const effectiveKey = getEffectiveKey();
+      const { data, error: upErr } = await supabase.functions.invoke('manage-course-materials', {
+        body: {
+          action: 'upload',
+          file_name: file.name,
+          template_key: effectiveKey,
+          is_required: true,
+          file_base64: base64,
+        },
+      });
+
+      if (upErr || !data?.success) {
+        throw new Error(data?.message || upErr?.message || 'Falha ao enviar arquivo');
+      }
+
+      setAttachment({
+        file_name: file.name,
+        display_name: file.name,
+        is_required: true,
+        file_size_bytes: file.size,
+        is_pdf: true,
+      });
+    } catch (err: any) {
+      console.error('Attachment upload failed:', err);
+      setAttachmentError(err.message || 'Erro ao enviar PDF. Tente novamente.');
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
+  const handleAttachmentReplace = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      setAttachmentError('Apenas arquivos PDF são permitidos.');
+      return;
+    }
+    if (file.size === 0) {
+      setAttachmentError('O novo arquivo PDF está vazio (0 bytes).');
+      return;
+    }
+    if (file.size > 40 * 1024 * 1024) {
+      setAttachmentError('O novo arquivo excede o limite máximo permitido de 40MB.');
+      return;
+    }
+
+    setAttachmentError(null);
+    setIsUploadingAttachment(true);
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+
+      const effectiveKey = getEffectiveKey();
+      const { data, error: repErr } = await supabase.functions.invoke('manage-course-materials', {
+        body: {
+          action: 'replace',
+          file_name: file.name,
+          template_key: effectiveKey,
+          is_required: attachment?.is_required ?? true,
+          file_base64: base64,
+        },
+      });
+
+      if (repErr || !data?.success) {
+        throw new Error(data?.message || repErr?.message || 'Falha na substituição');
+      }
+
+      setAttachment({
+        file_name: file.name,
+        display_name: file.name,
+        is_required: attachment?.is_required ?? true,
+        file_size_bytes: file.size,
+        is_pdf: true,
+      });
+    } catch (err: any) {
+      console.error('Attachment replace failed:', err);
+      setAttachmentError(err.message || 'Falha ao substituir arquivo. O PDF anterior foi mantido.');
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
+  const handleAttachmentRemove = async () => {
+    if (!confirm('Remover este PDF do template?')) return;
+
+    setAttachmentError(null);
+    setIsUploadingAttachment(true);
+
+    try {
+      const effectiveKey = getEffectiveKey();
+      const { data, error: delErr } = await supabase.functions.invoke('manage-course-materials', {
+        body: {
+          action: 'remove',
+          template_key: effectiveKey,
+        },
+      });
+
+      if (delErr || !data?.success) {
+        throw new Error(data?.message || delErr?.message || 'Falha ao remover anexo');
+      }
+
+      setAttachment(null);
+    } catch (err: any) {
+      console.error('Attachment removal failed:', err);
+      setAttachmentError(err.message || 'Falha ao desassociar anexo.');
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
+  const handleToggleRequired = async (newVal: boolean) => {
+    if (!attachment) return;
+    const prev = attachment.is_required;
+    setAttachment((curr) => (curr ? { ...curr, is_required: newVal } : null));
+
+    try {
+      const effectiveKey = getEffectiveKey();
+      const { data, error: updErr } = await supabase.functions.invoke('manage-course-materials', {
+        body: {
+          action: 'toggle_required',
+          template_key: effectiveKey,
+          is_required: newVal,
+        },
+      });
+
+      if (updErr || !data?.success) {
+        setAttachment((curr) => (curr ? { ...curr, is_required: prev } : null));
+        throw new Error(data?.message || updErr?.message || 'Falha ao atualizar obrigatoriedade');
+      }
+    } catch (err: any) {
+      console.error('Failed to toggle required status:', err);
+      setAttachmentError(err.message || 'Falha ao alterar obrigatoriedade do anexo.');
+    }
+  };
+
   // Save handler
   const handleSave = async () => {
     if (!name.trim()) {
@@ -331,6 +557,8 @@ export function TemplateEditorModal({
               content_json: payloadContentJson,
               html_template: currentHtml,
               text_template: currentText,
+              has_attachment: Boolean(attachment),
+              attachment_name: attachment ? attachment.file_name : null,
               updated_at: new Date().toISOString(),
             })
             .eq('id', editingTemplate.id);
@@ -344,6 +572,8 @@ export function TemplateEditorModal({
             content_json: payloadContentJson,
             html_template: currentHtml,
             text_template: currentText,
+            has_attachment: Boolean(attachment),
+            attachment_name: attachment ? attachment.file_name : null,
           });
 
           if (insErr) throw insErr;
@@ -718,8 +948,9 @@ export function TemplateEditorModal({
           {activeMode === 'compor' && (
             <div>
               {channel === 'email' ? (
-                /* EMAIL COMPOSER */
-                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden flex flex-col">
+                <>
+                  {/* EMAIL COMPOSER */}
+                  <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden flex flex-col">
                   {/* Gmail-style Envelope Header */}
                   <div className="bg-slate-50/70 border-b border-slate-200/80 px-4 sm:px-6 py-3 space-y-2 text-xs">
                     <div className="flex items-center gap-2">
@@ -958,7 +1189,119 @@ export function TemplateEditorModal({
                     )}
                   </div>
                 </div>
-              ) : (
+
+                {/* ===================================================================
+                    ANEXOS (PARTE 9-19: MINIMALIST PDF MANAGEMENT)
+                =================================================================== */}
+                <div className="mt-4 bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Paperclip className="w-4 h-4 text-slate-500" />
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider font-heading">
+                        Anexos
+                      </h3>
+                    </div>
+                    {!attachment && (
+                      <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#08254f] bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl cursor-pointer transition-colors shadow-2xs">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>+ Adicionar PDF</span>
+                        <input
+                          type="file"
+                          accept="application/pdf"
+                          className="hidden"
+                          onChange={handleAttachmentFilePick}
+                          disabled={isUploadingAttachment}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {attachment ? (
+                    <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-lg bg-rose-50 text-rose-600 font-bold text-xs flex items-center justify-center border border-rose-200 shrink-0">
+                          PDF
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs sm:text-sm font-semibold text-slate-800 truncate">
+                              {attachment.file_name}
+                            </span>
+                            <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                              PDF
+                            </span>
+                            {attachment.is_required && (
+                              <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                Obrigatório
+                              </span>
+                            )}
+                          </div>
+                          {attachment.file_size_bytes > 0 && (
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              {(attachment.file_size_bytes / (1024 * 1024)).toFixed(2)} MB • Documento oficial do curso
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200/60 justify-end">
+                        <label className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs">
+                          <span>Substituir</span>
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            className="hidden"
+                            onChange={handleAttachmentReplace}
+                            disabled={isUploadingAttachment}
+                          />
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={handleAttachmentRemove}
+                          disabled={isUploadingAttachment}
+                          className="px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-1">
+                      Nenhum arquivo anexado a este template.
+                    </p>
+                  )}
+
+                  {attachment && (
+                    <div className="pt-1 flex items-center">
+                      <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={attachment.is_required}
+                          onChange={(e) => handleToggleRequired(e.target.checked)}
+                          disabled={isUploadingAttachment}
+                          className="rounded border-slate-300 text-[#08254f] focus:ring-[#08254f]"
+                        />
+                        <span>Anexo obrigatório</span>
+                      </label>
+                    </div>
+                  )}
+
+                  {attachmentError && (
+                    <p className="text-xs text-rose-600 font-medium bg-rose-50 p-2.5 rounded-lg border border-rose-200">
+                      {attachmentError}
+                    </p>
+                  )}
+
+                  {isUploadingAttachment && (
+                    <div className="text-xs text-slate-500 flex items-center gap-2 pt-1">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#08254f]" />
+                      <span>Processando arquivo de forma segura...</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
                 /* SMS COMPOSER */
                 <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-6 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
