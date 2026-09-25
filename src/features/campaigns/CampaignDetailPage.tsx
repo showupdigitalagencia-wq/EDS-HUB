@@ -582,9 +582,9 @@ export function CampaignDetailPage() {
                 onChange={(e) => setChannel(e.target.value as 'email' | 'sms' | 'call')}
                 className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800"
               >
-                <option value="email">Campanha de Email</option>
-                <option value="sms">Campanha de SMS</option>
-                <option value="call">Campanha de Ligações (Operacional)</option>
+                <option value="email">Campanha de Email (Canal Automático)</option>
+                <option value="sms">SMS (Indisponível em Massa — Manual Assistido)</option>
+                <option value="call">Campanha de Ligações (Tarefas Manuais)</option>
               </select>
             </div>
           </div>
@@ -996,47 +996,80 @@ export function CampaignDetailPage() {
                   </div>
                 )}
               </div>
+            ) : channel === 'sms' ? (
+              /* SMS Bulk Disabled & Manual Assistido View */
+              <div className="bg-amber-50/70 p-6 rounded-2xl border border-amber-200 shadow-xs space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 bg-amber-100 rounded-xl text-amber-800 shrink-0">
+                    <MessageSquare className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-amber-950 font-heading">
+                        SMS em Massa Indisponível — Manual Assistido Apenas
+                      </h3>
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-200/80 text-amber-900 uppercase tracking-wider">
+                        Disparo em Massa Bloqueado
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-900/90 leading-relaxed">
+                      O envio automatizado de SMS em massa está permanentemente desabilitado no EDS HUB. Não há provedores de SMS em lote habilitados (Twilio não é utilizado).
+                    </p>
+                    <p className="text-xs text-amber-850 leading-relaxed">
+                      Para interagir por SMS com leads com preferência por SMS, utilize exclusivamente o recurso de <strong>SMS Manual Assistido</strong> no Inbox ou via WhatsApp Web na tela de cada lead.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-white/90 rounded-xl border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-600">
+                    Contatos identificados com preferência por SMS neste segmento: <strong className="text-slate-900">{campaignAudience?.eligible_count ?? 0}</strong>
+                  </span>
+                  <span className="text-amber-800 font-semibold flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4 text-amber-600" />
+                    Proteção de Canal Ativa
+                  </span>
+                </div>
+              </div>
             ) : (
-              /* Email / SMS Provider Deferred View */
+              /* Email Provider Execution View */
               <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-6">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-gray-900">Campaign Execution & Delivery</h3>
-                    <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                      Provider Integration Deferred — Phase 7
+                    <h3 className="text-base font-bold text-gray-900 font-heading">Execução & Entrega da Campanha de Email</h3>
+                    <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      Canal Automático: Email
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Live batch sending via Resend (Email) and Twilio (SMS) is scheduled for Phase 7 (Integrations). Audience segmentation, contact preference safety, and snapshot immutability are fully operational.
+                  <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                    O canal oficial para disparos em massa é exclusivamente o Email. A audiência é filtrada por preferência estrita de contato (leads com preferência por SMS, Telefone, WhatsApp ou Não Informada são excluídos por segurança).
                   </p>
                 </div>
 
-                {/* Safe Preview Section (Correction 3: No live provider dispatch in Batch 4.3) */}
-                {channel === 'email' && (
-                  <div className="p-4 rounded-xl border border-slate-200/80 bg-slate-50/50 space-y-3">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2 text-[#08254f]">
-                        <Eye className="h-4 w-4 text-[#449bd5]" />
-                        <span className="text-xs font-bold text-slate-800 font-heading">Pré-visualização da Mensagem</span>
-                      </div>
-                      <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-amber-50 text-amber-700 border border-amber-200">
-                        Disparo em teste desativado (Provedores inativos)
-                      </span>
+                {/* Safe Preview Section */}
+                <div className="p-4 rounded-xl border border-slate-200/80 bg-slate-50/50 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 text-[#08254f]">
+                      <Eye className="h-4 w-4 text-[#449bd5]" />
+                      <span className="text-xs font-bold text-slate-800 font-heading">Pré-visualização da Mensagem</span>
                     </div>
-                    <p className="text-xs text-slate-500">
-                      Visualize a renderização real do template de email e verifique as tags de substituição sem envio de mensagens para redes externas.
-                    </p>
-                    <div className="p-4 bg-white rounded-xl border border-slate-200 text-xs max-h-72 overflow-y-auto">
-                      <div className="mb-2 pb-2 border-b border-slate-100 text-slate-500">
-                        <strong>Assunto:</strong> {subject || '(Sem assunto)'}
-                      </div>
-                      <div
-                        className="prose prose-sm max-w-none text-slate-800"
-                        dangerouslySetInnerHTML={{ __html: htmlContent || '<p class="text-slate-400 italic">Nenhum conteúdo adicionado ao editor.</p>' }}
-                      />
-                    </div>
+                    <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Validação Canônica Ativa
+                    </span>
                   </div>
-                )}
+                  <p className="text-xs text-slate-500">
+                    Visualize a renderização real do template de email e verifique as tags de substituição sem envio de mensagens para redes externas.
+                  </p>
+                  <div className="p-4 bg-white rounded-xl border border-slate-200 text-xs max-h-72 overflow-y-auto">
+                    <div className="mb-2 pb-2 border-b border-slate-100 text-slate-500">
+                      <strong>Assunto:</strong> {subject || '(Sem assunto)'}
+                    </div>
+                    <div
+                      className="prose prose-sm max-w-none text-slate-800"
+                      dangerouslySetInnerHTML={{ __html: htmlContent || '<p class="text-slate-400 italic">Nenhum conteúdo adicionado ao editor.</p>' }}
+                    />
+                  </div>
+                </div>
               </div>
             )}
 

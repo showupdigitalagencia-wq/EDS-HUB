@@ -4,6 +4,7 @@ export interface PreferenceGuardResult {
   allowed: boolean;
   skip_reason_code?:
     | 'CONTACT_PREFERENCE_MISMATCH'
+    | 'NO_VALID_CONTACT_PREFERENCE'
     | 'WEBSITE_INITIAL_OUTREACH_SUPPRESSED'
     | 'HISTORICAL_IMPORT_SUPPRESSED'
     | 'TEST_LEAD_SUPPRESSED'
@@ -27,7 +28,8 @@ export interface CheckPreferenceContext {
  * - Test leads: strictly suppressed from automatic outreach.
  * - Historical imports (hubspot_sync, hubspot_historical, csv_import): suppressed from automatic outreach.
  * - Website leads (source = 'form' | source_detail = 'website'): suppresses automated initial outreach.
- * - Meta leads: triggers both Email and SMS if channels are valid on initial outreach, regardless of preference.
+ * - Meta leads: triggers initial outreach only when channels and explicit rules permit.
+ * - NULL or Unknown preference: NEVER assumed as Email. Must be rejected with NO_VALID_CONTACT_PREFERENCE.
  * - Ongoing sequences / standard actions:
  *   - send_email: allowed ONLY if lead.contact_preference === 'email'
  *   - send_sms: allowed ONLY if lead.contact_preference === 'sms'
@@ -39,7 +41,8 @@ export function checkContactPreference(
   leadPreference: ContactPreference | string | null | undefined,
   context?: CheckPreferenceContext
 ): PreferenceGuardResult {
-  const pref = (leadPreference || 'email').toLowerCase();
+  const rawPref = (leadPreference || '').trim().toLowerCase();
+  const pref = rawPref || null;
 
   // Guard against automated outreach to test or historical import leads
   if (context) {
@@ -81,6 +84,22 @@ export function checkContactPreference(
 
     if (context.source === 'meta') {
       if (actionType === 'send_email') {
+        if (!pref) {
+          return {
+            allowed: false,
+            channel: 'email',
+            skip_reason_code: 'NO_VALID_CONTACT_PREFERENCE',
+            skip_reason_message: 'Meta lead has unspecified contact preference; cannot assume Email',
+          };
+        }
+        if (pref !== 'email') {
+          return {
+            allowed: false,
+            channel: 'email',
+            skip_reason_code: 'CONTACT_PREFERENCE_MISMATCH',
+            skip_reason_message: `Meta lead prefers ${pref.toUpperCase()}`,
+          };
+        }
         if (context.hasValidEmail === false) {
           return {
             allowed: false,
@@ -93,6 +112,22 @@ export function checkContactPreference(
       }
 
       if (actionType === 'send_sms') {
+        if (!pref) {
+          return {
+            allowed: false,
+            channel: 'sms',
+            skip_reason_code: 'NO_VALID_CONTACT_PREFERENCE',
+            skip_reason_message: 'Meta lead has unspecified contact preference; cannot assume SMS',
+          };
+        }
+        if (pref !== 'sms') {
+          return {
+            allowed: false,
+            channel: 'sms',
+            skip_reason_code: 'CONTACT_PREFERENCE_MISMATCH',
+            skip_reason_message: `Meta lead prefers ${pref.toUpperCase()}`,
+          };
+        }
         if (context.hasValidPhone === false) {
           return {
             allowed: false,
@@ -106,10 +141,10 @@ export function checkContactPreference(
 
       if (actionType === 'create_call_task') {
         return {
-          allowed: pref === 'call',
+          allowed: pref === 'call' || pref === 'phone',
           channel: 'call',
-          skip_reason_code: pref === 'call' ? undefined : 'CONTACT_PREFERENCE_MISMATCH',
-          skip_reason_message: pref === 'call' ? undefined : `Lead prefers ${pref.toUpperCase()}`,
+          skip_reason_code: (pref === 'call' || pref === 'phone') ? undefined : 'CONTACT_PREFERENCE_MISMATCH',
+          skip_reason_message: (pref === 'call' || pref === 'phone') ? undefined : `Lead prefers ${pref ? pref.toUpperCase() : 'UNKNOWN'}`,
         };
       }
 
@@ -119,6 +154,14 @@ export function checkContactPreference(
 
   // Standard ongoing sequence step check
   if (actionType === 'send_email') {
+    if (!pref) {
+      return {
+        allowed: false,
+        channel: 'email',
+        skip_reason_code: 'NO_VALID_CONTACT_PREFERENCE',
+        skip_reason_message: 'Contact preference is unknown or unspecified (cannot assume Email)',
+      };
+    }
     if (pref !== 'email') {
       return {
         allowed: false,
@@ -131,6 +174,14 @@ export function checkContactPreference(
   }
 
   if (actionType === 'send_sms') {
+    if (!pref) {
+      return {
+        allowed: false,
+        channel: 'sms',
+        skip_reason_code: 'NO_VALID_CONTACT_PREFERENCE',
+        skip_reason_message: 'Contact preference is unknown or unspecified (cannot assume SMS)',
+      };
+    }
     if (pref !== 'sms') {
       return {
         allowed: false,
@@ -143,7 +194,15 @@ export function checkContactPreference(
   }
 
   if (actionType === 'create_call_task') {
-    if (pref !== 'call') {
+    if (!pref) {
+      return {
+        allowed: false,
+        channel: 'call',
+        skip_reason_code: 'NO_VALID_CONTACT_PREFERENCE',
+        skip_reason_message: 'Contact preference is unknown or unspecified',
+      };
+    }
+    if (pref !== 'call' && pref !== 'phone') {
       return {
         allowed: false,
         channel: 'call',

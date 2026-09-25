@@ -111,16 +111,16 @@ Deno.serve(async (req) => {
     const effectiveSubject = renderVariables(subject || (channel === 'email' ? 'Update from Expert Dental Solutions' : ''));
 
     // 3. Contact Preference Guard with Explicit User Confirmation Override
-    const leadPref = (lead.contact_preference || 'email').toLowerCase();
-    const isChannelMismatch = channel !== leadPref;
+    const leadPref = (lead.contact_preference || '').toLowerCase();
+    const isChannelMismatch = Boolean(leadPref && channel !== leadPref);
 
     if (isChannelMismatch && !override_preference_confirmed) {
       return new Response(
         JSON.stringify({
           error: 'CONTACT_PREFERENCE_MISMATCH',
           preference_warning: true,
-          preferred_channel: leadPref,
-          message: `This lead prefers ${leadPref.toUpperCase()}. Send ${channel.toUpperCase()} anyway?`,
+          preferred_channel: leadPref || 'unspecified',
+          message: `This lead prefers ${leadPref ? leadPref.toUpperCase() : 'an unspecified channel'}. Send ${channel.toUpperCase()} anyway?`,
         }),
         { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );

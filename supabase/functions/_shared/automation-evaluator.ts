@@ -158,7 +158,8 @@ export function checkContactPreference(
   leadPreference: string | null | undefined,
   context?: CheckPreferenceContext
 ): { allowed: boolean; channel?: 'email' | 'sms' | 'call'; skip_reason_code?: string; skip_reason_message?: string } {
-  const pref = (leadPreference || 'email').toLowerCase();
+  const rawPref = (leadPreference || '').trim().toLowerCase();
+  const pref = rawPref || null;
 
   // Guard against automated outreach to test or historical import leads
   if (context) {
@@ -200,6 +201,22 @@ export function checkContactPreference(
 
     if (context.source === 'meta') {
       if (actionType === 'send_email') {
+        if (!pref) {
+          return {
+            allowed: false,
+            channel: 'email',
+            skip_reason_code: 'NO_VALID_CONTACT_PREFERENCE',
+            skip_reason_message: 'Meta lead has unspecified contact preference; cannot assume Email',
+          };
+        }
+        if (pref !== 'email') {
+          return {
+            allowed: false,
+            channel: 'email',
+            skip_reason_code: 'CONTACT_PREFERENCE_MISMATCH',
+            skip_reason_message: `Meta lead prefers ${pref.toUpperCase()}`,
+          };
+        }
         if (context.hasValidEmail === false) {
           return {
             allowed: false,
@@ -212,6 +229,22 @@ export function checkContactPreference(
       }
 
       if (actionType === 'send_sms') {
+        if (!pref) {
+          return {
+            allowed: false,
+            channel: 'sms',
+            skip_reason_code: 'NO_VALID_CONTACT_PREFERENCE',
+            skip_reason_message: 'Meta lead has unspecified contact preference; cannot assume SMS',
+          };
+        }
+        if (pref !== 'sms') {
+          return {
+            allowed: false,
+            channel: 'sms',
+            skip_reason_code: 'CONTACT_PREFERENCE_MISMATCH',
+            skip_reason_message: `Meta lead prefers ${pref.toUpperCase()}`,
+          };
+        }
         if (context.hasValidPhone === false) {
           return {
             allowed: false,
@@ -225,10 +258,10 @@ export function checkContactPreference(
 
       if (actionType === 'create_call_task') {
         return {
-          allowed: pref === 'call',
+          allowed: pref === 'call' || pref === 'phone',
           channel: 'call',
-          skip_reason_code: pref === 'call' ? undefined : 'CONTACT_PREFERENCE_MISMATCH',
-          skip_reason_message: pref === 'call' ? undefined : `Lead prefers ${pref.toUpperCase()}`,
+          skip_reason_code: (pref === 'call' || pref === 'phone') ? undefined : 'CONTACT_PREFERENCE_MISMATCH',
+          skip_reason_message: (pref === 'call' || pref === 'phone') ? undefined : `Lead prefers ${pref ? pref.toUpperCase() : 'UNKNOWN'}`,
         };
       }
 
@@ -238,6 +271,14 @@ export function checkContactPreference(
 
   // Standard non-initial action check (preserves single channel preference)
   if (actionType === 'send_email') {
+    if (!pref) {
+      return {
+        allowed: false,
+        channel: 'email',
+        skip_reason_code: 'NO_VALID_CONTACT_PREFERENCE',
+        skip_reason_message: 'Contact preference is unknown or unspecified (cannot assume Email)',
+      };
+    }
     if (pref !== 'email') {
       return {
         allowed: false,
@@ -250,6 +291,14 @@ export function checkContactPreference(
   }
 
   if (actionType === 'send_sms') {
+    if (!pref) {
+      return {
+        allowed: false,
+        channel: 'sms',
+        skip_reason_code: 'NO_VALID_CONTACT_PREFERENCE',
+        skip_reason_message: 'Contact preference is unknown or unspecified (cannot assume SMS)',
+      };
+    }
     if (pref !== 'sms') {
       return {
         allowed: false,
@@ -262,7 +311,15 @@ export function checkContactPreference(
   }
 
   if (actionType === 'create_call_task') {
-    if (pref !== 'call') {
+    if (!pref) {
+      return {
+        allowed: false,
+        channel: 'call',
+        skip_reason_code: 'NO_VALID_CONTACT_PREFERENCE',
+        skip_reason_message: 'Contact preference is unknown or unspecified',
+      };
+    }
+    if (pref !== 'call' && pref !== 'phone') {
       return {
         allowed: false,
         channel: 'call',

@@ -206,7 +206,7 @@ export function CampaignsListPage() {
     <Layout
       eyebrow="MARKETING & COMUNICAÇÃO"
       title="Campanhas"
-      subtitle="Campanhas multicanal (Email, SMS) com segmentação canônica, congelamento de snapshot e histórico de versões"
+      subtitle="Campanhas de Email com segmentação de audiência, respeito a preferências de contato e congelamento de snapshot"
       actions={
         <div className="flex flex-wrap items-center gap-2.5">
           <select
@@ -336,14 +336,17 @@ export function CampaignsListPage() {
                 <button
                   type="button"
                   onClick={() => setNewCampChannel('sms')}
-                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
+                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 relative ${
                     newCampChannel === 'sms'
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-900 font-bold shadow-2xs'
+                      ? 'border-amber-500 bg-amber-50 text-amber-900 font-bold shadow-2xs'
                       : 'border-slate-200 hover:border-slate-300 text-slate-600'
                   }`}
                 >
-                  <MessageSquare className={`h-4 w-4 ${newCampChannel === 'sms' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  <MessageSquare className={`h-4 w-4 ${newCampChannel === 'sms' ? 'text-amber-600' : 'text-slate-400'}`} />
                   <span className="text-xs">SMS</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-amber-700 bg-amber-100/80 px-1 rounded">
+                    Manual
+                  </span>
                 </button>
 
                 <button
@@ -357,12 +360,17 @@ export function CampaignsListPage() {
                 >
                   <PhoneCall className={`h-4 w-4 ${newCampChannel === 'call' ? 'text-purple-600' : 'text-slate-400'}`} />
                   <span className="text-xs">Fila de Ligações</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-purple-700 bg-purple-100/80 px-1 rounded">
+                    Tarefas
+                  </span>
                 </button>
               </div>
               <p className="text-[11px] text-slate-500 mt-1.5">
                 {newCampChannel === 'call'
-                  ? 'Gera tarefas de ligação deduplicadas na Fila de Operações ao ativar.'
-                  : 'Segmentação e congelamento de snapshot prontos. Envio real inativo nesta fase.'}
+                  ? 'Gera tarefas de ligação manuais deduplicadas na Fila de Operações ao ativar (sem chamadas automáticas).'
+                  : newCampChannel === 'sms'
+                  ? 'SMS em massa indisponível. Disparos de SMS operam exclusivamente via Manual Assistido no Inbox.'
+                  : 'Canal automático oficial para disparos em lote com validação de preferência e segmentação.'}
               </p>
             </div>
 

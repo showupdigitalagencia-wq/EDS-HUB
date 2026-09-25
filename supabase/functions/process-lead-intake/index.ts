@@ -319,71 +319,183 @@ Deno.serve(async (req) => {
         });
         actionSucceeded = true;
       } else {
-        const hasValidEmail = Boolean(
-          payload.email &&
-          payload.email.trim().length > 3 &&
-          payload.email.includes('@') &&
-          payload.email.includes('.')
-        );
-        const hasValidPhone = Boolean(payload.phone && payload.phone.replace(/\D/g, '').length >= 8);
+        const metaPref = payload.contact_preference
+          ? String(payload.contact_preference).trim().toLowerCase()
+          : null;
 
-        if (hasValidEmail) {
-          // Stable lead-level first-contact idempotency:
-          // Check if an automatic first email was already attempted or accepted for this lead
-          const { data: existingFirstContact } = await db
-            .from('outbound_messages')
-            .select('id, status, provider_message_id')
-            .eq('lead_id', leadId)
-            .eq('channel', 'email')
-            .eq('template_key', 'lead_intake_email')
-            .in('status', ['sent', 'delivered', 'pending'])
-            .maybeSingle();
+        // 1. Explicit SMS preference -> NÃO email automático, SMS Manual Assistido/task
+        if (metaPref === 'sms' || metaPref === 'text') {
+          await db.from('tasks').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            task_type: 'follow_up',
+            title: 'SMS Manual Assistido — Meta Lead',
+            description: `Lead indicou preferência explícita por SMS. Envio automático de SMS está desabilitado. Contatar manualmente via SMS Assistido no Inbox ou WhatsApp Web. Telefone: ${payload.phone || 'não informado'}.`,
+            status: 'pending',
+            created_by: 'system',
+          });
+          await db.from('lead_activities').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'channel_skipped',
+            channel: 'email',
+            actor_type: 'system',
+            summary: 'Email automático suprimido: lead possui preferência explícita por SMS. Tarefa de SMS Manual Assistido criada.',
+            metadata: { preference: 'sms', suppressed_channel: 'email', manual_assisted: true },
+          });
+          tasksCreated++;
+          actionSucceeded = true;
+        }
+        // 2. Phone / Call -> ligação manual/task
+        else if (metaPref === 'call' || metaPref === 'phone') {
+          await db.from('tasks').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            task_type: 'call',
+            title: 'Ligação Telefônica — Meta Lead',
+            description: `Lead indicou preferência por Ligação Telefônica. Contatar pelo telefone: ${payload.phone || 'não informado'}.`,
+            status: 'pending',
+            created_by: 'system',
+          });
+          await db.from('lead_activities').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'channel_skipped',
+            channel: 'email',
+            actor_type: 'system',
+            summary: 'Email automático suprimido: lead possui preferência por Ligação Telefônica. Tarefa de ligação criada.',
+            metadata: { preference: 'call', suppressed_channel: 'email', manual_task: true },
+          });
+          tasksCreated++;
+          actionSucceeded = true;
+        }
+        // 3. WhatsApp -> manual/task
+        else if (metaPref === 'whatsapp') {
+          await db.from('tasks').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            task_type: 'follow_up',
+            title: 'WhatsApp Manual — Meta Lead',
+            description: `Lead indicou preferência por WhatsApp. Contatar pelo WhatsApp: ${payload.phone || 'não informado'}.`,
+            status: 'pending',
+            created_by: 'system',
+          });
+          await db.from('lead_activities').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'channel_skipped',
+            channel: 'email',
+            actor_type: 'system',
+            summary: 'Email automático suprimido: lead possui preferência por WhatsApp. Tarefa manual criada.',
+            metadata: { preference: 'whatsapp', suppressed_channel: 'email', manual_task: true },
+          });
+          tasksCreated++;
+          actionSucceeded = true;
+        }
+        // 4. Unknown / Null / Unspecified -> NÃO assumir Email
+        else if (!metaPref || metaPref === 'unknown' || metaPref === 'unspecified') {
+          await db.from('tasks').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            task_type: 'data_review',
+            title: 'Revisão de Preferência de Contato — Meta Lead',
+            description: 'Lead capturado sem preferência de contato especificada. Não presumir Email automaticamente. Verificar canal preferido antes de disparar.',
+            status: 'pending',
+            created_by: 'system',
+          });
+          await db.from('lead_activities').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'channel_skipped',
+            channel: 'email',
+            actor_type: 'system',
+            summary: 'Email automático suprimido: preferência de contato não informada (não presumir Email). Lead retido para revisão manual.',
+            metadata: { preference: null, suppressed_channel: 'email', manual_review: true },
+          });
+          tasksCreated++;
+          actionSucceeded = true;
+        }
+        // 5. Email preference -> email automático somente se todas as demais regras passarem
+        else if (metaPref === 'email') {
+          const hasValidEmail = Boolean(
+            payload.email &&
+            payload.email.trim().length > 3 &&
+            payload.email.includes('@') &&
+            payload.email.includes('.')
+          );
+          const hasValidPhone = Boolean(payload.phone && payload.phone.replace(/\D/g, '').length >= 8);
 
-          if (existingFirstContact) {
+          if (hasValidEmail) {
+            // Stable lead-level first-contact idempotency:
+            // Check if an automatic first email was already attempted or accepted for this lead
+            const { data: existingFirstContact } = await db
+              .from('outbound_messages')
+              .select('id, status, provider_message_id')
+              .eq('lead_id', leadId)
+              .eq('channel', 'email')
+              .in('template_key', ['lead_intake_email', 'zygomatic_course_details', 'intensive_course_details'])
+              .in('status', ['sent', 'delivered', 'pending'])
+              .maybeSingle();
+
+            if (existingFirstContact) {
+              await db.from('lead_activities').insert({
+                lead_id: leadId,
+                intake_event_id: intakeEventId,
+                activity_type: 'intake_received',
+                actor_type: 'system',
+                summary: 'First automatic email has already been accepted/sent for this lead. Duplicate send skipped.',
+                metadata: { outbound_message_id: existingFirstContact.id, provider_message_id: existingFirstContact.provider_message_id },
+              });
+              actionSucceeded = true;
+            } else {
+              const emailRes = await handleEmailPreference(
+                db, payload, leadId, intakeEventId, salutation, idempotencyKey,
+              );
+              messagesSent += emailRes.sent;
+              messagesFailed += emailRes.failed;
+              tasksCreated += emailRes.tasksCreated;
+              errors.push(...emailRes.errors);
+              actionSucceeded = emailRes.allSucceeded;
+            }
+          } else if (hasValidPhone && !hasValidEmail) {
+            // Phone-only Meta lead:
+            // In this email-only phase, SMS is inactive. Send NOTHING automatically.
+            // Retain lead in Novo Lead for manual follow-up without creating a failure state.
             await db.from('lead_activities').insert({
               lead_id: leadId,
               intake_event_id: intakeEventId,
               activity_type: 'intake_received',
               actor_type: 'system',
-              summary: 'First automatic email has already been accepted/sent for this lead. Duplicate send skipped.',
-              metadata: { outbound_message_id: existingFirstContact.id, provider_message_id: existingFirstContact.provider_message_id },
+              summary: 'Meta lead has phone only. Automated SMS is inactive in email-only phase; lead retained in Novo Lead for manual follow-up.',
+              metadata: { source: payload.source, source_detail: payload.source_detail, has_phone: true, has_email: false },
             });
             actionSucceeded = true;
           } else {
-            const emailRes = await handleEmailPreference(
-              db, payload, leadId, intakeEventId, salutation, idempotencyKey,
-            );
-            messagesSent += emailRes.sent;
-            messagesFailed += emailRes.failed;
-            tasksCreated += emailRes.tasksCreated;
-            errors.push(...emailRes.errors);
-            actionSucceeded = emailRes.allSucceeded;
+            // Neither valid email nor valid phone
+            await db.from('lead_activities').insert({
+              lead_id: leadId,
+              intake_event_id: intakeEventId,
+              activity_type: 'processing_failed',
+              actor_type: 'system',
+              summary: 'Meta lead has neither valid email nor valid phone for first contact.',
+              metadata: { source: payload.source, source_detail: payload.source_detail },
+            });
+            actionSucceeded = false;
+            errors.push('Meta lead has neither valid email nor valid phone for first contact');
           }
-        } else if (hasValidPhone && !hasValidEmail) {
-          // Phone-only Meta lead:
-          // In this email-only phase, SMS is inactive. Send NOTHING automatically.
-          // Retain lead in Novo Lead for manual follow-up without creating a failure state.
-          await db.from('lead_activities').insert({
+        } else {
+          // Any other raw preference value
+          await db.from('tasks').insert({
             lead_id: leadId,
             intake_event_id: intakeEventId,
-            activity_type: 'intake_received',
-            actor_type: 'system',
-            summary: 'Meta lead has phone only. Automated SMS is inactive in email-only phase; lead retained in Novo Lead for manual follow-up.',
-            metadata: { source: payload.source, source_detail: payload.source_detail, has_phone: true, has_email: false },
+            task_type: 'data_review',
+            title: `Revisão de Canal Desconhecido (${metaPref}) — Meta Lead`,
+            description: `Preferência de contato "${metaPref}" não suportada para disparo automático. Avaliar contato manual.`,
+            status: 'pending',
+            created_by: 'system',
           });
           actionSucceeded = true;
-        } else {
-          // Neither valid email nor valid phone
-          await db.from('lead_activities').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'processing_failed',
-            actor_type: 'system',
-            summary: 'Meta lead has neither valid email nor valid phone for first contact.',
-            metadata: { source: payload.source, source_detail: payload.source_detail },
-          });
-          actionSucceeded = false;
-          errors.push('Meta lead has neither valid email nor valid phone for first contact');
+          tasksCreated++;
         }
       }
     } else {
@@ -852,6 +964,7 @@ async function handleEmailPreference(
 
   // Resolve course template key if specified
   let templateKey = 'lead_intake_email';
+  let isCourseUnidentified = false;
   if (payload.course_interest) {
     const normalizedCourse = payload.course_interest.trim().toLowerCase();
     if (normalizedCourse === 'zygomatic' || normalizedCourse === 'zit-01' || normalizedCourse.includes('zygomatic')) {
@@ -862,7 +975,21 @@ async function handleEmailPreference(
       templateKey = 'endodontic_course_details';
     } else if (normalizedCourse === 'wisdom' || normalizedCourse === 'wtt-01' || normalizedCourse.includes('wisdom')) {
       templateKey = 'wisdom_course_details';
+    } else {
+      isCourseUnidentified = true;
     }
+  }
+
+  if (isCourseUnidentified) {
+    await db.from('tasks').insert({
+      lead_id: leadId,
+      intake_event_id: intakeEventId,
+      task_type: 'data_review',
+      title: 'Triagem de Curso Não Identificado — Meta Lead',
+      description: `Interesse de curso não identificado: "${payload.course_interest}". Realizar triagem manual para definir a turma apropriada.`,
+      status: 'pending',
+      created_by: 'system',
+    });
   }
 
   // Get email template

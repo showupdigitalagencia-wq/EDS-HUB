@@ -288,7 +288,7 @@ export function AutomationRunsPage() {
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-gray-100 text-gray-700">
-                          {run.lead?.contact_preference || 'email'}
+                          {run.lead?.contact_preference || 'Não informada'}
                         </span>
                       </td>
                       <td className="py-3.5 px-4">{getStatusBadge(run.status)}</td>

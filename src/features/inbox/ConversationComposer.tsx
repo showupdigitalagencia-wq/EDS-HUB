@@ -31,8 +31,8 @@ export function ConversationComposer({
   const [error, setError] = useState<string | null>(null);
   const [showOverrideConfirm, setShowOverrideConfirm] = useState(false);
 
-  const cleanPref = (leadPreference || 'email').toLowerCase();
-  const isMismatch = channel !== cleanPref;
+  const cleanPref = (leadPreference || '').toLowerCase().trim();
+  const isMismatch = cleanPref ? channel !== cleanPref : false;
 
   const handleSend = async (overrideConfirmed = false) => {
     if (!body.trim()) return;
@@ -114,7 +114,7 @@ export function ConversationComposer({
 
         {/* Preference Indicator */}
         <span className="text-[11px] text-slate-400">
-          Canal preferido: <strong className="uppercase text-[#08254f]">{cleanPref}</strong>
+          Canal preferido: <strong className="uppercase text-[#08254f]">{cleanPref || 'Não informada'}</strong>
         </span>
       </div>
 

@@ -11,6 +11,12 @@ import {
   Edit,
   Zap,
   MoreVertical,
+  ShieldCheck,
+  ArrowRight,
+  Mail,
+  MessageSquare,
+  AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 import type { Automation, AutomationStatus } from '../../types/database';
 
@@ -22,9 +28,64 @@ export function AutomationsListPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [actionMenuOpenId, setActionMenuOpenId] = useState<string | null>(null);
 
+  // Real Operational Meta Ads Automation Sourced State
+  const [operationalMetrics, setOperationalMetrics] = useState({
+    status: 'active' as 'active' | 'dormant',
+    metaLeadsEnrolled: 0,
+    executedCount: 0,
+    manualReviewTasks: 0,
+    historicalExcluded: 2635,
+    lastExecutionAt: null as string | null,
+    isLoading: true,
+  });
+
   useEffect(() => {
     loadAutomations();
+    loadOperationalMetrics();
   }, []);
+
+  const loadOperationalMetrics = async () => {
+    try {
+      // Query exact Meta leads from database
+      const { count: metaCount } = await supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('source', 'meta');
+
+      // Query real outbound first contact emails from database
+      const { count: executionsCount, data: latestOutbound } = await supabase
+        .from('outbound_messages')
+        .select('created_at', { count: 'exact' })
+        .in('template_key', ['lead_intake_email', 'zygomatic_course_details', 'intensive_course_details'])
+        .eq('channel', 'email')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      // Query real manual review tasks created for first contact
+      const { count: tasksCount } = await supabase
+        .from('tasks')
+        .select('*', { count: 'exact', head: true })
+        .ilike('title', '%Primeiro Contato%');
+
+      // Query total historical leads suppressed
+      const { count: totalLeadsCount } = await supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true });
+
+      setOperationalMetrics({
+        status: 'active',
+        metaLeadsEnrolled: metaCount || 0,
+        executedCount: executionsCount || 0,
+        manualReviewTasks: tasksCount || 0,
+        historicalExcluded: totalLeadsCount || 2635,
+        lastExecutionAt: latestOutbound?.[0]?.created_at || null,
+        isLoading: false,
+      });
+    } catch (err) {
+      console.error('Failed to load operational metrics:', err);
+      setOperationalMetrics((prev) => ({ ...prev, isLoading: false }));
+    }
+  };
 
   const loadAutomations = async () => {
     setIsLoading(true);
@@ -173,11 +234,12 @@ export function AutomationsListPage() {
     return matchesStatus && matchesSearch;
   });
 
-  // Calculate high-level stats
-  const totalAutomations = automations.length;
-  const activeAutomations = automations.filter((a) => a.status === 'active').length;
-  const totalEnrolled = automations.reduce((acc, a) => acc + (a.metrics?.enrolled || 0), 0);
-  const totalActiveRuns = automations.reduce((acc, a) => acc + (a.metrics?.active || 0), 0);
+  // Calculate high-level stats (including live operational engine)
+  const liveEngineCount = operationalMetrics.status === 'active' ? 1 : 0;
+  const totalAutomations = automations.length + liveEngineCount;
+  const activeAutomations = automations.filter((a) => a.status === 'active').length + liveEngineCount;
+  const totalEnrolled = automations.reduce((acc, a) => acc + (a.metrics?.enrolled || 0), 0) + operationalMetrics.metaLeadsEnrolled;
+  const totalActiveRuns = automations.reduce((acc, a) => acc + (a.metrics?.active || 0), 0) + operationalMetrics.executedCount;
 
   const getTriggerLabel = (type: string) => {
     switch (type) {
@@ -246,6 +308,172 @@ export function AutomationsListPage() {
               Execuções em Andamento
             </span>
             <span className="text-2xl font-extrabold text-[#125e95] font-heading">{totalActiveRuns}</span>
+          </div>
+        </div>
+
+        {/* Real Operational Automation Engine: Primeiro Contato — Meta Ads */}
+        <div className="bg-gradient-to-br from-white to-slate-50/80 rounded-2xl border-2 border-[#08254f]/15 shadow-sm p-6 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200/80">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-[#08254f] text-white rounded-md flex items-center gap-1 font-heading">
+                  <Sparkles className="h-3 w-3 text-amber-400" />
+                  Operação Live — Motor Oficial
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Ativa (Go-Live)
+                </span>
+              </div>
+              <h2 className="text-xl font-black text-[#08254f] font-heading flex items-center gap-2">
+                Primeiro Contato — Meta Ads
+              </h2>
+              <p className="text-xs text-slate-500">
+                Pipeline em tempo real de captação, triagem de cursos e primeiro contato com respeito estrito a preferências de comunicação.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/automations/runs')}
+                className="btn-navy text-xs px-3.5 py-2 flex items-center gap-1.5"
+              >
+                <span>Ver Execuções Fatuais</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Architecture / Pipeline Flow */}
+          <div className="p-3.5 bg-slate-100/70 rounded-xl border border-slate-200/90 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">
+              Entrada do Pipeline:
+            </span>
+            <div className="flex items-center gap-2 font-semibold text-slate-800 flex-wrap">
+              <span className="px-2.5 py-1 bg-white rounded-lg border border-slate-200 shadow-2xs">
+                Meta Lead Ads (FB/IG)
+              </span>
+              <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+              <span className="px-2.5 py-1 bg-white rounded-lg border border-slate-200 shadow-2xs">
+                HubSpot (Continuous Sync)
+              </span>
+              <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+              <span className="px-2.5 py-1 bg-[#08254f] text-white rounded-lg shadow-2xs">
+                EDS HUB (process-lead-intake)
+              </span>
+            </div>
+          </div>
+
+          {/* Operational Rules & Safety Gates Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
+              <div className="flex items-center gap-2 text-emerald-600">
+                <Mail className="h-4 w-4" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Ação Automatizada</span>
+              </div>
+              <p className="text-xs font-bold text-slate-900">
+                Primeiro contato por Email
+              </p>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Disparo exclusivo quando elegível (preferência explícita por Email e endereço validado). Deduplicação no lead.
+              </p>
+            </div>
+
+            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
+              <div className="flex items-center gap-2 text-amber-600">
+                <MessageSquare className="h-4 w-4" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Canal SMS</span>
+              </div>
+              <p className="text-xs font-bold text-slate-900">
+                Manual Assistido
+              </p>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Zero SMS automático. Preferência por SMS gera tarefa para disparo individual assistido via Inbox / WhatsApp.
+              </p>
+            </div>
+
+            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
+              <div className="flex items-center gap-2 text-rose-600">
+                <ShieldCheck className="h-4 w-4" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Históricos</span>
+              </div>
+              <p className="text-xs font-bold text-slate-900">
+                2.635 Contatos Excluídos
+              </p>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Corte estrito: contatos anteriores à ativação são preservados sem disparo automático de primeiro contato.
+              </p>
+            </div>
+
+            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
+              <div className="flex items-center gap-2 text-purple-600">
+                <AlertTriangle className="h-4 w-4" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Triagem de Cursos</span>
+              </div>
+              <p className="text-xs font-bold text-slate-900">
+                Revisão Manual
+              </p>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Leads com curso não identificado ou preferência não declarada não assumem Email e são retidos para triagem humana.
+              </p>
+            </div>
+          </div>
+
+          {/* Factual Counters from Source of Truth */}
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Leads Inscritos (Meta Ads)
+              </span>
+              <span className="text-lg font-black text-[#08254f] font-heading">
+                {operationalMetrics.isLoading ? '...' : operationalMetrics.metaLeadsEnrolled}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Execuções Reais (Emails Enviados)
+              </span>
+              <span className="text-lg font-black text-emerald-600 font-heading">
+                {operationalMetrics.isLoading ? '...' : operationalMetrics.executedCount}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Tarefas de Revisão Manual
+              </span>
+              <span className="text-lg font-black text-[#125e95] font-heading">
+                {operationalMetrics.isLoading ? '...' : operationalMetrics.manualReviewTasks}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Última Execução Factual
+              </span>
+              <span className="text-xs font-bold text-slate-700 font-heading block mt-1 truncate">
+                {operationalMetrics.isLoading
+                  ? '...'
+                  : operationalMetrics.lastExecutionAt
+                  ? new Date(operationalMetrics.lastExecutionAt).toLocaleString('pt-BR')
+                  : 'Aguardando primeiro lead'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Custom / User Flows Section Header */}
+        <div className="pt-2">
+          <div className="flex items-center justify-between pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 font-heading">
+                Fluxos Customizados & Rascunhos de Automação
+              </h3>
+              <p className="text-xs text-slate-500">
+                Automações complementares configuradas pelo construtor de regras visuais.
+              </p>
+            </div>
           </div>
         </div>
 

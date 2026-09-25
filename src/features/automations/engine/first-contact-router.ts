@@ -228,7 +228,7 @@ export function evaluateFirstContactEligibility(
   lead: FirstContactLeadInput,
   options?: FirstContactRouterOptions
 ): FirstContactEligibility {
-  const preservedPreference = lead.contact_preference || 'email';
+  const preservedPreference = lead.contact_preference || 'unspecified';
   const hasValidEmailAddr = isValidEmail(lead.email);
   const hasValidPhoneNum = isValidPhone(lead.phone_e164 || lead.phone_raw);
 
@@ -331,7 +331,7 @@ export function evaluateFirstContactEligibility(
   // 6. Channel evaluation for eligible Meta leads
   const normPref = (lead.contact_preference || '').trim().toLowerCase();
 
-  // Strict Contact Preference Business Rule (Requirement H & W)
+  // Strict Contact Preference Business Rule (Live Automation Safety)
   if (options?.honorContactPreference) {
     if (normPref === 'sms') {
       return {
@@ -352,7 +352,31 @@ export function evaluateFirstContactEligibility(
         eligibleChannels: [],
         preservedPreference,
         requiresManualWhatsApp: true,
-        suppressedReason: 'Lead solicitou preferência por WhatsApp. Envio automático bloqueado; requer ação manual.',
+        suppressedReason: 'Lead solicitou preferência por WhatsApp. Envio automático bloqueado; requer contato manual.',
+        hasValidEmail: hasValidEmailAddr,
+        hasValidPhone: hasValidPhoneNum,
+        resolvedTemplate,
+      };
+    }
+
+    if (normPref === 'call' || normPref === 'phone') {
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        suppressedReason: 'Lead solicitou preferência por Ligação telefônica. Envio automático de e-mail bloqueado; requer tarefa de ligação.',
+        hasValidEmail: hasValidEmailAddr,
+        hasValidPhone: hasValidPhoneNum,
+        resolvedTemplate,
+      };
+    }
+
+    if (!normPref || normPref === 'unspecified' || normPref === 'unknown' || normPref === 'nao_informada') {
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        suppressedReason: 'Preferência de contato não informada pelo lead. Não é permitido presumir e-mail automaticamente; requer verificação manual.',
         hasValidEmail: hasValidEmailAddr,
         hasValidPhone: hasValidPhoneNum,
         resolvedTemplate,
