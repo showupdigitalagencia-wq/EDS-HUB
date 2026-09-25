@@ -213,6 +213,56 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Strict Channel Isolation: Ensure template matches the channel
+    if (template_key) {
+      const { data: tplRecord } = await db
+        .from('email_templates')
+        .select('id, name, template_key, category, content_json')
+        .eq('template_key', template_key)
+        .maybeSingle();
+
+      if (tplRecord) {
+        const cj = tplRecord.content_json as Record<string, unknown> | null;
+        const isSmsTpl =
+          tplRecord.category === 'sms' ||
+          cj?.channel === 'sms' ||
+          (tplRecord as Record<string, unknown>).channel === 'sms';
+
+        if (channel === 'email' && isSmsTpl) {
+          return new Response(
+            JSON.stringify({
+              error: 'TEMPLATE_CHANNEL_MISMATCH',
+              message: 'Modelos de SMS não podem ser enviados via e-mail.',
+            }),
+            { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (channel === 'sms' && !isSmsTpl) {
+          return new Response(
+            JSON.stringify({
+              error: 'TEMPLATE_CHANNEL_MISMATCH',
+              message: 'Modelos de e-mail não podem ser enviados via SMS.',
+            }),
+            { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+    }
+
+    // Strict SMS Rule: SMS must have no attachments
+    if (channel === 'sms') {
+      if (include_attachment === true) {
+        return new Response(
+          JSON.stringify({
+            error: 'SMS_ATTACHMENTS_NOT_SUPPORTED',
+            message: 'SMS não suporta anexos ou arquivos PDF.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Attachment tracking across all channels (declared in outer function scope)
     let attachmentMetadata = {
       included: false,

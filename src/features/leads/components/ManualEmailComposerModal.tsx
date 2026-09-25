@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { resolveSalutation, resolveSafeFirstName } from '../../../utils/salutation';
-import { getTemplateSubject } from '../../../utils/template-variables';
+import { getTemplateSubject, getTemplateChannel } from '../../../utils/template-variables';
 import type { Lead, EmailTemplate } from '../../../types';
 
 export interface ManualEmailComposerModalProps {
@@ -101,7 +101,7 @@ export function ManualEmailComposerModal({
       setIsCheckingSuppression(false);
     }
 
-    // Load active templates
+    // Load active templates — STRICT CHANNEL ISOLATION: EMAIL ONLY
     setIsLoadingTemplates(true);
     try {
       const { data: tpls } = await supabase
@@ -109,7 +109,8 @@ export function ManualEmailComposerModal({
         .select('*')
         .eq('is_active', true)
         .order('name');
-      setTemplates((tpls || []) as EmailTemplate[]);
+      const emailOnlyTemplates = (tpls || []).filter((t) => getTemplateChannel(t) === 'email');
+      setTemplates(emailOnlyTemplates as EmailTemplate[]);
     } catch (err) {
       console.error('Failed to load email templates:', err);
       setError('Não foi possível preparar o e-mail. Tente novamente.');
@@ -158,8 +159,17 @@ export function ManualEmailComposerModal({
       const tpl = templates.find((t) => t.id === templateId);
       if (!tpl) return;
 
-      // Check attachment configuration
-      const isZygomatic = tpl.template_key === 'zygomatic_course_details' || tpl.name.toLowerCase().includes('zygomatic');
+      // Strict Channel Guard: Reject non-email templates
+      if (getTemplateChannel(tpl) !== 'email') {
+        setError('Apenas templates de e-mail podem ser selecionados neste compositor.');
+        setSelectedTemplateId('');
+        setSelectedTemplateKey(null);
+        setAttachment(null);
+        return;
+      }
+
+      // Check attachment configuration (Zygomatic Course Details email requires PDF)
+      const isZygomatic = tpl.template_key === 'zygomatic_course_details' || (tpl.name.toLowerCase().includes('zygomatic') && !tpl.name.toLowerCase().includes('sms'));
       const hasAtt = Boolean(tpl.has_attachment || (tpl.content_json as any)?.has_attachment || isZygomatic);
       if (hasAtt) {
         const isRequired = isZygomatic || Boolean((tpl as any).is_attachment_required || (tpl.content_json as any)?.is_attachment_required);

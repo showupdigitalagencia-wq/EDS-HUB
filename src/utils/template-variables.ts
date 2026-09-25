@@ -16,8 +16,13 @@ export type TemplateChannel = 'email' | 'sms';
  * - New templates with content_json.channel === 'sms' | 'email'
  * - Legacy templates where content_json is an EmailBlock[] array (treated as 'email')
  */
-export function getTemplateChannel(template: { content_json?: unknown } | null | undefined): TemplateChannel {
+export function getTemplateChannel(
+  template: { content_json?: unknown; category?: string; channel?: string; type?: string } | null | undefined
+): TemplateChannel {
   if (!template) return 'email';
+  const anyTpl = template as Record<string, unknown>;
+  if (anyTpl.channel === 'sms' || anyTpl.category === 'sms' || anyTpl.type === 'sms') return 'sms';
+  if (anyTpl.channel === 'email' || anyTpl.category === 'email' || anyTpl.type === 'email') return 'email';
   const cj = template.content_json;
   if (typeof cj === 'object' && cj !== null && !Array.isArray(cj)) {
     const channel = (cj as { channel?: string }).channel;

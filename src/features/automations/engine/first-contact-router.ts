@@ -56,6 +56,8 @@ export interface FirstContactEligibility {
   suppressedReason?: string;
   hasValidEmail: boolean;
   hasValidPhone: boolean;
+  requiresManualSms?: boolean;
+  requiresManualWhatsApp?: boolean;
   resolvedTemplate?: FirstContactTemplateResolution | null;
 }
 
@@ -78,6 +80,7 @@ export interface FirstContactOutcome {
 
 export interface FirstContactRouterOptions {
   emailOnlyPhase?: boolean;
+  honorContactPreference?: boolean;
 }
 
 export interface FirstContactTemplateResolution {
@@ -326,6 +329,37 @@ export function evaluateFirstContactEligibility(
   }
 
   // 6. Channel evaluation for eligible Meta leads
+  const normPref = (lead.contact_preference || '').trim().toLowerCase();
+
+  // Strict Contact Preference Business Rule (Requirement H & W)
+  if (options?.honorContactPreference) {
+    if (normPref === 'sms') {
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        requiresManualSms: true,
+        suppressedReason: 'Lead solicitou preferência por SMS. Envio automático de e-mail e SMS bloqueado; requer tarefa para SMS Manual Assistido.',
+        hasValidEmail: hasValidEmailAddr,
+        hasValidPhone: hasValidPhoneNum,
+        resolvedTemplate,
+      };
+    }
+
+    if (normPref === 'whatsapp') {
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        requiresManualWhatsApp: true,
+        suppressedReason: 'Lead solicitou preferência por WhatsApp. Envio automático bloqueado; requer ação manual.',
+        hasValidEmail: hasValidEmailAddr,
+        hasValidPhone: hasValidPhoneNum,
+        resolvedTemplate,
+      };
+    }
+  }
+
   if (options?.emailOnlyPhase) {
     // Batch 7.5 Email-Only Safe Activation: SMS is completely inactive
     if (hasValidEmailAddr) {
@@ -451,4 +485,15 @@ export function resolveFirstContactOutcome(input: FirstContactOutcomeInput): Fir
  */
 export function evaluateMetaFirstContactEligibility(lead: FirstContactLeadInput): FirstContactEligibility {
   return evaluateFirstContactEligibility(lead, { emailOnlyPhase: true });
+}
+
+/**
+ * Operational Go-Live Helper: Evaluates live Meta lead eligibility under strict
+ * contact preference honoring (Requirement H & W).
+ */
+export function evaluateMetaLiveAutomationEligibility(lead: FirstContactLeadInput): FirstContactEligibility {
+  return evaluateFirstContactEligibility(lead, {
+    emailOnlyPhase: true,
+    honorContactPreference: true,
+  });
 }

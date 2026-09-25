@@ -52,6 +52,9 @@ Deno.serve(async (req) => {
       client_secret_configured: !!Deno.env.get('HUBSPOT_CLIENT_SECRET'),
       operational_status: Deno.env.get('HUBSPOT_ACCESS_TOKEN') ? 'Configured' : 'Configuration Required',
     },
+    automations: {
+      enable_meta_first_email_automation: Deno.env.get('ENABLE_META_FIRST_EMAIL_AUTOMATION') === 'true',
+    },
   };
 
   return new Response(

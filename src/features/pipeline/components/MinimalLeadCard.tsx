@@ -71,6 +71,16 @@ export function isLeadClosed(
   return false;
 }
 
+export function formatContactPreferenceLabel(preference?: string | null): string {
+  if (!preference) return 'Preferência: Não informada';
+  const norm = preference.trim().toLowerCase();
+  if (norm === 'email') return 'Preferência: Email';
+  if (norm === 'sms') return 'Preferência: SMS';
+  if (norm === 'whatsapp') return 'Preferência: WhatsApp';
+  if (norm === 'call' || norm === 'phone' || norm === 'ligacao' || norm === 'ligação') return 'Preferência: Ligação';
+  return 'Preferência: Não informada';
+}
+
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 export function formatSessionMonthYear(dateStr?: string | null): string | null {
@@ -308,6 +318,24 @@ export function MinimalLeadCard({
           </div>
         </div>
       )}
+
+      {/* Contact Preference Badge — Compact, non-intrusive operational indicator */}
+      <div className="pt-0.5">
+        <span
+          data-testid="contact-preference-badge"
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md border select-none max-w-full truncate ${
+            (lead.contact_preference || '').toLowerCase() === 'email'
+              ? 'bg-blue-50/80 text-blue-700 border-blue-200/80'
+              : (lead.contact_preference || '').toLowerCase() === 'sms'
+              ? 'bg-purple-50/80 text-purple-700 border-purple-200/80'
+              : (lead.contact_preference || '').toLowerCase() === 'whatsapp'
+              ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/80'
+              : 'bg-slate-50 text-slate-500 border-slate-200/80'
+          }`}
+        >
+          {formatContactPreferenceLabel(lead.contact_preference)}
+        </span>
+      </div>
 
       {/* 4. Course Interests (Up to 3, formatted: Course • Month Year) */}
       <div className="space-y-1 pt-1 border-t border-slate-100/80">

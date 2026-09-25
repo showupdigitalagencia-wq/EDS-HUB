@@ -35,16 +35,30 @@ interface SmsTemplate {
   body: string;
 }
 
+export const OFFICIAL_ZYGOMATIC_SMS_BODY = `Hello Dr.
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Zygomatic Implant Training in Brazil.
+
+I just sent you an email with all the course details.
+
+To help you choose the best option, could you tell me a little about your implant experience?
+
+We currently have openings for our November 7 to 10 course. Would those dates work for you?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`;
+
+export const OFFICIAL_GENERAL_SMS_BODY =
+  'Hello {{first_name}}, thank you for your interest in Expert Dental Solutions. We received your request and would love to answer your questions regarding our hands-on surgical programs.';
+
 const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
   {
     id: 'zygomatic_followup_sms',
     name: 'Zygomatic — Follow-up SMS',
-    body: 'Hello {{first_name}}, this is Expert Dental Solutions following up on your inquiry about our Zygomatic Implant Training in Rio de Janeiro. How can we assist you?',
+    body: OFFICIAL_ZYGOMATIC_SMS_BODY,
   },
   {
     id: 'general_inquiry_sms',
     name: 'Contato Inicial — Geral',
-    body: 'Hello {{first_name}}, thank you for your interest in Expert Dental Solutions. We received your request and would love to answer your questions regarding our hands-on surgical programs.',
+    body: OFFICIAL_GENERAL_SMS_BODY,
   },
 ];
 
@@ -64,7 +78,6 @@ export function ManualSmsComposerModal({
   const digitsOnly = rawPhone.replace(/\D/g, '');
   const firstName = resolveSafeFirstName(lead.first_name, 'Doctor');
 
-
   // Initialize template text with safe variable replacement
   useEffect(() => {
     if (!isOpen) return;
@@ -72,9 +85,15 @@ export function ManualSmsComposerModal({
     setError(null);
 
     const tpl = DEFAULT_SMS_TEMPLATES.find((t) => t.id === selectedTemplateId) || DEFAULT_SMS_TEMPLATES[0];
-    const greetingName = firstName || 'Doctor';
-    const filled = tpl.body.replace(/\{\{\s*first_name\s*\}\}/g, greetingName);
-    setMessageText(filled);
+    if (tpl.id === 'zygomatic_followup_sms') {
+      // RULE D: For Zygomatic Follow-up SMS, preserve exact "Hello Dr."
+      // Never replace with name or Hello Doctor
+      setMessageText(tpl.body);
+    } else {
+      const greetingName = firstName || 'Doctor';
+      const filled = tpl.body.replace(/\{\{\s*first_name\s*\}\}/g, greetingName);
+      setMessageText(filled);
+    }
   }, [isOpen, selectedTemplateId, firstName]);
 
   if (!isOpen) return null;
@@ -83,8 +102,12 @@ export function ManualSmsComposerModal({
     setSelectedTemplateId(templateId);
     const tpl = DEFAULT_SMS_TEMPLATES.find((t) => t.id === templateId);
     if (tpl) {
-      const greetingName = firstName || 'Doctor';
-      setMessageText(tpl.body.replace(/\{\{\s*first_name\s*\}\}/g, greetingName));
+      if (tpl.id === 'zygomatic_followup_sms') {
+        setMessageText(tpl.body);
+      } else {
+        const greetingName = firstName || 'Doctor';
+        setMessageText(tpl.body.replace(/\{\{\s*first_name\s*\}\}/g, greetingName));
+      }
     }
   };
 

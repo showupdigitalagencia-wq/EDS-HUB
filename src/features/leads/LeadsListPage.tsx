@@ -9,7 +9,7 @@ import { NewLeadModal } from './components/NewLeadModal';
 import { LeadProfileDrawer } from './components/LeadProfileDrawer';
 import { CsvImportModal } from './import/CsvImportModal';
 import type { Lead, PipelineStage, Tag, Course, CourseSession } from '../../types';
-import { formatSessionMonthYear } from '../pipeline/components/MinimalLeadCard';
+import { formatSessionMonthYear, formatContactPreferenceLabel } from '../pipeline/components/MinimalLeadCard';
 import {
   batchFetchPipelineDeliverabilityHealth,
   type LeadDeliverabilityInfo,
@@ -684,6 +684,24 @@ export function LeadsListPage() {
                       </div>
                     )}
 
+                    {/* Contact Preference Badge */}
+                    <div className="pt-0.5">
+                      <span
+                        data-testid="contact-card-preference-badge"
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md border select-none max-w-full truncate ${
+                          (lead.contact_preference || '').toLowerCase() === 'email'
+                            ? 'bg-blue-50/80 text-blue-700 border-blue-200/80'
+                            : (lead.contact_preference || '').toLowerCase() === 'sms'
+                            ? 'bg-purple-50/80 text-purple-700 border-purple-200/80'
+                            : (lead.contact_preference || '').toLowerCase() === 'whatsapp'
+                            ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/80'
+                            : 'bg-slate-50 text-slate-500 border-slate-200/80'
+                        }`}
+                      >
+                        {formatContactPreferenceLabel(lead.contact_preference)}
+                      </span>
+                    </div>
+
                     {/* 3. Curso de Interesse (Apoio) */}
                     <div className="space-y-1 pt-1.5 border-t border-slate-100/80">
                       {hasInterests ? (
@@ -877,6 +895,23 @@ export function LeadsListPage() {
                                   </div>
                                 </div>
                               )}
+                              {/* Contact Preference Badge */}
+                              <div className="pt-0.5">
+                                <span
+                                  data-testid="lead-table-contact-preference"
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md border select-none max-w-full truncate ${
+                                    (lead.contact_preference || '').toLowerCase() === 'email'
+                                      ? 'bg-blue-50/80 text-blue-700 border-blue-200/80'
+                                      : (lead.contact_preference || '').toLowerCase() === 'sms'
+                                      ? 'bg-purple-50/80 text-purple-700 border-purple-200/80'
+                                      : (lead.contact_preference || '').toLowerCase() === 'whatsapp'
+                                      ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/80'
+                                      : 'bg-slate-50 text-slate-500 border-slate-200/80'
+                                  }`}
+                                >
+                                  {formatContactPreferenceLabel(lead.contact_preference)}
+                                </span>
+                              </div>
                               {!lead.email && !lead.phone_raw && (
                                 <span className="text-slate-400 italic">Sem contato</span>
                               )}
