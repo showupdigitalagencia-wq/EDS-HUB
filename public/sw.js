@@ -8,7 +8,7 @@
 // 4. Safe App Shell Management (Zero CRM Data Caching)
 // =============================================================================
 
-const CACHE_NAME = 'eds-hub-shell-v5';
+const CACHE_NAME = 'eds-hub-shell-v6';
 const SHELL_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -91,8 +91,8 @@ self.addEventListener('push', (event) => {
   console.info('[SW] Web push event received at', new Date().toISOString());
 
   let payload = {
-    title: 'Teste de notificação — EDS HUB',
-    body: 'Se você recebeu este alerta, as notificações estão funcionando neste dispositivo.',
+    title: 'Notificação — EDS HUB',
+    body: 'Novo alerta operacional recebido.',
     icon: '/pwa-192x192.png',
     badge: '/favicon.png',
     data: { url: '/' },
@@ -104,13 +104,14 @@ self.addEventListener('push', (event) => {
       const targetDeepLink = data.deep_link || data.url || (data.data && (data.data.url || data.data.deep_link)) || '/';
       const eventType = data.event_type || (data.data && data.data.eventType) || 'eds-crm-alert';
       const eventId = data.event_id || (data.data && data.data.eventId) || null;
+      const uniqueTag = `${eventType}_${eventId || Date.now()}`;
 
       payload = {
         title: data.title || payload.title,
         body: data.body || payload.body,
         icon: data.icon || '/pwa-192x192.png',
         badge: data.badge || '/favicon.png',
-        tag: eventType,
+        tag: uniqueTag,
         data: {
           url: targetDeepLink,
           event_type: eventType,
@@ -143,18 +144,15 @@ self.addEventListener('push', (event) => {
     }
   }).catch(() => {});
 
-  // Construct options safely for iOS and cross-browser support
+  // Construct options safely for iOS Safari and cross-browser support
   const fullOptions = {
     body: payload.body,
     data: payload.data,
+    tag: payload.tag,
   };
 
   if (payload.icon) fullOptions.icon = payload.icon;
   if (payload.badge) fullOptions.badge = payload.badge;
-  if (payload.tag) {
-    fullOptions.tag = payload.tag;
-    fullOptions.renotify = true;
-  }
 
   // Critical for iOS Safari: Call showNotification within event.waitUntil with minimal fallback
   const displayPromise = self.registration.showNotification(payload.title, fullOptions)

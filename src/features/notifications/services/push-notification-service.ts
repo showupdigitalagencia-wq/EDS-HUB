@@ -173,6 +173,14 @@ export async function subscribeToPush(
     const deviceType = detectDeviceType();
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
 
+    // Revoke previous subscriptions for this user on this device type to prevent orphaned duplicates
+    await supabase
+      .from('push_subscriptions')
+      .update({ status: 'revoked', updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('device_type', deviceType)
+      .neq('endpoint', subscription.endpoint);
+
     const { error: dbError } = await supabase.from('push_subscriptions').upsert(
       {
         user_id: userId,
@@ -427,6 +435,14 @@ export async function reregisterCurrentDevice(
     // 6. Save new active subscription to Supabase
     const deviceType = detectDeviceType();
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+
+    // Revoke previous subscriptions for this user on this device type to prevent orphaned duplicates
+    await supabase
+      .from('push_subscriptions')
+      .update({ status: 'revoked', updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('device_type', deviceType)
+      .neq('endpoint', newSubscription.endpoint);
 
     const { error: dbError } = await supabase.from('push_subscriptions').upsert(
       {
@@ -720,7 +736,7 @@ export async function notifyNewLead(params: {
   return dispatchPushNotification({
     event_type: 'new_lead',
     event_id: params.leadId,
-    idempotency_key: `lead_${params.leadId}_created`,
+    idempotency_key: `lead_${params.leadId}_${Date.now()}`,
     title: 'Novo lead recebido',
     body: `${name} demonstrou interesse em ${course}.`,
     deep_link: `/leads/${params.leadId}`,
@@ -779,7 +795,7 @@ export async function notifyIncompleteRegistration(params: {
   return dispatchPushNotification({
     event_type: 'incomplete_registration',
     event_id: params.leadId,
-    idempotency_key: `incomplete_reg_${params.attemptId || params.leadId}`,
+    idempotency_key: `incomplete_reg_${params.attemptId || params.leadId}_${Date.now()}`,
     title: 'Inscrição não concluída',
     body: `${name} precisa de acompanhamento.`,
     deep_link: `/leads/${params.leadId}`,
@@ -798,7 +814,7 @@ export async function notifyTaskDue(params: {
   return dispatchPushNotification({
     event_type: 'task_due',
     event_id: params.taskId,
-    idempotency_key: `task_${params.taskId}_due`,
+    idempotency_key: `task_${params.taskId}_${Date.now()}`,
     title: 'Tarefa pendente',
     body: params.taskTitle,
     deep_link: '/work',

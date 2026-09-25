@@ -844,6 +844,26 @@ Deno.serve(async (req) => {
       })
       .eq('id', intakeEventId);
 
+    // Supplementary non-blocking push notification for new lead
+    if (actionSucceeded && leadId) {
+      try {
+        const leadName = `${payload.first_name || ''} ${payload.last_name || ''}`.trim() || 'Novo interessado';
+        const courseName = payload.course_title || 'curso de especialização';
+        await db.functions.invoke('send-push-notification', {
+          body: {
+            event_type: 'new_lead',
+            event_id: leadId,
+            idempotency_key: `lead_${leadId}_${Date.now()}`,
+            title: 'Novo lead recebido',
+            body: `${leadName} demonstrou interesse em ${courseName}.`,
+            deep_link: `/leads/${leadId}`,
+          },
+        });
+      } catch (pushErr) {
+        console.warn('[process-lead-intake] Supplementary push notification notice:', pushErr);
+      }
+    }
+
     return jsonResponse({
       success: actionSucceeded,
       intake_event_id: intakeEventId,

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, CheckSquare, Clock } from 'lucide-react';
 import { createCrmTask } from '../../work/services/work-queue-service';
+import { notifyTaskDue } from '../../notifications/services/push-notification-service';
 import type { TaskType } from '../../../types/database';
 
 interface LeadTaskModalProps {
@@ -76,7 +77,7 @@ export function LeadTaskModal({
 
       const dueIso = date && time ? new Date(`${date}T${time}:00`).toISOString() : null;
 
-      await createCrmTask({
+      const taskRes = await createCrmTask({
         leadId,
         title,
         taskType: selectedType,
@@ -84,6 +85,13 @@ export function LeadTaskModal({
         priority: 'normal',
         description: note.trim() || undefined,
       });
+
+      // Supplementary non-blocking push notification
+      void notifyTaskDue({
+        taskId: taskRes?.task_id || leadId,
+        taskTitle: title,
+        leadId,
+      }).catch(() => {});
 
       onTaskCreated();
       onClose();

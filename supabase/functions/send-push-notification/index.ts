@@ -173,20 +173,33 @@ Deno.serve(async (req) => {
     // 4. Fetch all active subscriptions for eligible users
     let subsQuery = supabase
       .from('push_subscriptions')
-      .select('id, user_id, endpoint, p256dh, auth_key, device_type')
+      .select('id, user_id, endpoint, p256dh, auth_key, device_type, created_at')
       .in('user_id', eligibleUserIds)
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
 
     if (target_subscription_ids && target_subscription_ids.length > 0) {
       subsQuery = subsQuery.in('id', target_subscription_ids);
     }
 
-    const { data: subscriptions, error: subsError } = await subsQuery;
+    const { data: rawSubscriptions, error: subsError } = await subsQuery;
 
     if (subsError) {
       console.error('[send-push-notification] Error fetching subscriptions:', subsError);
       throw subsError;
     }
+
+    // Deduplicate subscriptions: If a user has multiple active subscriptions for the same device_type,
+    // take only the newest one (since older ones are orphaned from previous PWA installations).
+    const seenUserDevice = new Set<string>();
+    const subscriptions = (rawSubscriptions || []).filter((sub: { id: string; user_id: string; device_type: string }) => {
+      // If targeting specific subscription, preserve it
+      if (target_subscription_ids && target_subscription_ids.includes(sub.id)) return true;
+      const key = `${sub.user_id}_${sub.device_type}`;
+      if (seenUserDevice.has(key)) return false;
+      seenUserDevice.add(key);
+      return true;
+    });
 
     if (!subscriptions || subscriptions.length === 0) {
       // Persist to push_notification_logs for each eligible admin user so it appears in in-app notification center
@@ -225,6 +238,8 @@ Deno.serve(async (req) => {
       badge: '/favicon.png',
       deep_link: deep_link,
       url: deep_link,
+      event_type: event_type,
+      event_id: event_id || null,
       data: {
         url: deep_link,
         eventType: event_type,

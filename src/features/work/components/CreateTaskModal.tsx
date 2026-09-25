@@ -98,7 +98,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     setError(null);
 
     try {
-      await createCrmTask({
+      const created = await createCrmTask({
         leadId: targetLeadId,
         title: title.trim(),
         taskType,
@@ -111,8 +111,10 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       });
 
       // Supplementary non-blocking push notification (CRM is source of truth)
+      const createdTaskId = (created as { task_id?: string; id?: string } | undefined)?.task_id ||
+        (created as { task_id?: string; id?: string } | undefined)?.id;
       void notifyTaskDue({
-        taskId: targetLeadId,
+        taskId: createdTaskId || targetLeadId,
         taskTitle: title.trim(),
         leadId: targetLeadId,
       }).catch(() => {});

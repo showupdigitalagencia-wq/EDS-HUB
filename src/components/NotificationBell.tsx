@@ -120,7 +120,17 @@ export function NotificationBell() {
         .limit(30);
 
       if (fetchErr) throw fetchErr;
-      setNotifications((data as InAppNotification[]) || []);
+      const rawList = (data as InAppNotification[]) || [];
+      const seen = new Set<string>();
+      const deduped: InAppNotification[] = [];
+      for (const item of rawList) {
+        const dedupeKey = `${item.event_type}_${item.event_id || item.title}_${item.created_at.slice(0, 16)}`;
+        if (!seen.has(dedupeKey)) {
+          seen.add(dedupeKey);
+          deduped.push(item);
+        }
+      }
+      setNotifications(deduped);
     } catch (err) {
       console.warn('[NotificationBell] Failed to load notifications:', err);
       setError('Não foi possível carregar as notificações.');
@@ -155,7 +165,14 @@ export function NotificationBell() {
         (payload) => {
           if (payload.new) {
             const newLog = payload.new as InAppNotification;
-            setNotifications((prev) => [newLog, ...prev.filter((n) => n.id !== newLog.id)]);
+            setNotifications((prev) => {
+              const dedupeKey = `${newLog.event_type}_${newLog.event_id || newLog.title}_${newLog.created_at.slice(0, 16)}`;
+              const exists = prev.some(
+                (n) => n.id === newLog.id || `${n.event_type}_${n.event_id || n.title}_${n.created_at.slice(0, 16)}` === dedupeKey
+              );
+              if (exists) return prev;
+              return [newLog, ...prev];
+            });
           }
         }
       );
