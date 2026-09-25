@@ -8,7 +8,7 @@
 // 4. Closes related pending SMS tasks and logs activity in lead timeline.
 // =============================================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   MessageSquare,
   ExternalLink,
@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { resolveSafeFirstName } from '../../../utils/salutation';
+import { formatContactPreferenceLabel, resolveCanonicalPreference } from '../../../utils/contact-preference';
 import type { Lead } from '../../../types';
 
 export interface ManualSmsComposerModalProps {
@@ -73,6 +74,7 @@ export function ManualSmsComposerModal({
   const [hasOpenedApp, setHasOpenedApp] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
 
   const rawPhone = lead.phone_e164 || lead.phone_raw || '';
   const digitsOnly = rawPhone.replace(/\D/g, '');
@@ -83,6 +85,7 @@ export function ManualSmsComposerModal({
     if (!isOpen) return;
     setHasOpenedApp(false);
     setError(null);
+    submittingRef.current = false;
 
     const tpl = DEFAULT_SMS_TEMPLATES.find((t) => t.id === selectedTemplateId) || DEFAULT_SMS_TEMPLATES[0];
     if (tpl.id === 'zygomatic_followup_sms') {
@@ -122,77 +125,114 @@ export function ManualSmsComposerModal({
     const encodedBody = encodeURIComponent(messageText);
     const smsUri = `sms:${digitsOnly}?body=${encodedBody}`;
 
-    // Log attempt activity (non-blocking)
-    void supabase.from('lead_activities').insert({
-      lead_id: lead.id,
-      activity_type: 'sms_manual_attempt',
-      actor_type: 'user',
-      summary: 'Aplicativo de SMS nativo aberto para envio manual',
-      metadata: {
-        channel: 'sms',
-        phone: rawPhone,
-        template_id: selectedTemplateId,
-        opened_at: new Date().toISOString(),
-      },
-    });
-
+    // RULE PART 10: Opening native SMS app MUST NOT record anything in lead_activities
     setHasOpenedApp(true);
     window.open(smsUri, '_self');
   };
 
   const handleMarkAsSent = async () => {
+    // Double tap / retry idempotency guard
+    if (isRecording || submittingRef.current) return;
+    submittingRef.current = true;
     setIsRecording(true);
     setError(null);
+
     try {
-      // 1. Record manual SMS sent in lead_activities
-      const { error: actErr } = await supabase.from('lead_activities').insert({
+      // 1. Record manual send confirmed in lead_activities
+      // Status is factual confirmation (manually_confirmed), NOT delivered
+      const payload = {
         lead_id: lead.id,
-        activity_type: 'sms_manual_sent',
+        activity_type: 'sms_manual_confirmed',
+        channel: 'sms',
         actor_type: 'user',
         summary: `SMS enviado manualmente: "${messageText.slice(0, 80)}${messageText.length > 80 ? '...' : ''}"`,
         metadata: {
           channel: 'sms',
+          direction: 'outbound',
+          status: 'manually_confirmed',
+          manual: true,
+          provider: 'manual',
           phone: rawPhone,
           template_id: selectedTemplateId,
           content: messageText,
           sent_at: new Date().toISOString(),
         },
-      });
+      };
 
-      if (actErr) throw actErr;
-
-      // 2. Complete any pending SMS-related task for this lead
-      const { data: pendingTasks } = await supabase
-        .from('crm_tasks')
-        .select('id, title')
-        .eq('lead_id', lead.id)
-        .eq('status', 'pending');
-
-      if (pendingTasks && pendingTasks.length > 0) {
-        const smsTask = pendingTasks.find(
-          (t) =>
-            t.title.toLowerCase().includes('sms') ||
-            t.title.toLowerCase().includes('contato') ||
-            t.title.toLowerCase().includes('responder')
-        );
-        if (smsTask) {
-          await supabase
-            .from('crm_tasks')
-            .update({
-              status: 'completed',
-              completed_at: new Date().toISOString(),
-            })
-            .eq('id', smsTask.id);
-        }
+      let { error: actErr } = await supabase.from('lead_activities').insert(payload);
+      if (actErr && (actErr.message?.includes('check') || actErr.code === '23514')) {
+        // Fallback to 'sms_dispatched' if custom activity type is not yet applied
+        const fallbackPayload = {
+          ...payload,
+          activity_type: 'sms_dispatched',
+        };
+        const { error: fbErr } = await supabase.from('lead_activities').insert(fallbackPayload);
+        if (fbErr) throw fbErr;
+      } else if (actErr) {
+        throw actErr;
       }
 
-      // 3. Notify parent to refresh timeline
+      // 2. Complete any pending SMS-related task for this lead in public.tasks
+      try {
+        const { data: pendingTasks } = await supabase
+          .from('tasks')
+          .select('id, title')
+          .eq('lead_id', lead.id)
+          .eq('status', 'pending');
+
+        if (pendingTasks && pendingTasks.length > 0) {
+          const smsTask = pendingTasks.find(
+            (t) =>
+              t.title.toLowerCase().includes('sms') ||
+              t.title.toLowerCase().includes('contato') ||
+              t.title.toLowerCase().includes('responder')
+          );
+          if (smsTask) {
+            await supabase
+              .from('tasks')
+              .update({
+                status: 'completed',
+                completed_at: new Date().toISOString(),
+              })
+              .eq('id', smsTask.id);
+          }
+        }
+      } catch (taskErr) {
+        console.warn('[ManualSms] Non-fatal task completion warning:', taskErr);
+      }
+
+      // 3. Update conversation last message preview in conversations table
+      try {
+        const { data: conv } = await supabase
+          .from('conversations')
+          .select('id')
+          .eq('lead_id', lead.id)
+          .eq('channel', 'sms')
+          .maybeSingle();
+
+        if (conv) {
+          await supabase
+            .from('conversations')
+            .update({
+              last_message_at: new Date().toISOString(),
+              last_message_preview: messageText.slice(0, 100),
+              last_message_direction: 'outbound',
+            })
+            .eq('id', conv.id);
+        }
+      } catch (convErr) {
+        console.warn('[ManualSms] Non-fatal conversation update warning:', convErr);
+      }
+
+      // 4. Notify parent to refresh timeline and lead state immediately
       if (onSmsRecorded) onSmsRecorded();
       onClose();
     } catch (err: any) {
       console.error('Error recording manual SMS:', err);
+      // On failure: DO NOT close modal. Show clear error.
       setError(err.message || 'Erro ao registrar envio do SMS.');
     } finally {
+      submittingRef.current = false;
       setIsRecording(false);
     }
   };
@@ -246,10 +286,20 @@ export function ManualSmsComposerModal({
           </div>
 
           {/* Contact preference note */}
-          {lead.contact_preference === 'sms' && (
+          {resolveCanonicalPreference(lead.contact_preference) === 'sms' ? (
             <div className="p-2.5 rounded-lg bg-blue-50/80 border border-blue-200/60 text-xs text-blue-800 flex items-center gap-2">
               <Clock className="w-4 h-4 shrink-0 text-blue-600" />
               <span>Lead indicou preferência por contato via <strong>SMS</strong>.</span>
+            </div>
+          ) : (
+            <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                Preferência registrada:
+              </span>
+              <span className="font-semibold text-slate-700">
+                {formatContactPreferenceLabel(lead.contact_preference, { withPrefix: false })}
+              </span>
             </div>
           )}
 

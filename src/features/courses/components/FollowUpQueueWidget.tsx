@@ -78,8 +78,14 @@ export const FollowUpQueueWidget: React.FC<FollowUpQueueWidgetProps> = ({
     );
   };
 
-  const getContactIcon = (pref: string) => {
+  const getContactIcon = (pref?: string | null) => {
     switch (pref) {
+      case 'whatsapp':
+        return (
+          <span title="Preferência: WhatsApp">
+            <MessageSquare className="w-3 h-3 text-emerald-600" />
+          </span>
+        );
       case 'sms':
         return (
           <span title="Preferência: SMS">

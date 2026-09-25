@@ -35,6 +35,7 @@ import { ManualSmsComposerModal } from './ManualSmsComposerModal';
 import { EditLeadModal } from './EditLeadModal';
 import { ChangeLeadStageModal } from './ChangeLeadStageModal';
 import { fetchLeadEmailHealth, type LeadEmailHealthResult } from '../../dashboard/services/deliverability-health-service';
+import { formatContactPreferenceLabel, getContactPreferenceBadgeClasses } from '../../../utils/contact-preference';
 import type { Lead, LeadActivity, Task, LeadNote, IncompleteEnrollment } from '../../../types';
 
 export interface LeadProfileContentProps {
@@ -324,6 +325,9 @@ export function LeadProfileContent({
                     {pipelineStage.name}
                   </Badge>
                 )}
+                <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-full border ${getContactPreferenceBadgeClasses(lead.contact_preference).badge}`}>
+                  {formatContactPreferenceLabel(lead.contact_preference, { withPrefix: true })}
+                </span>
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
                 {lead.phone_raw || lead.phone_e164 ? (
@@ -580,14 +584,12 @@ export function LeadProfileContent({
                   </span>
                 </div>
               )}
-              {lead.contact_preference && (
-                <div>
-                  <span className="text-slate-400 block text-[11px] mb-0.5">Canal Preferencial</span>
-                  <span className="font-semibold text-slate-700 capitalize">
-                    {lead.contact_preference}
-                  </span>
-                </div>
-              )}
+              <div>
+                <span className="text-slate-400 block text-[11px] mb-0.5">Preferência de Contato</span>
+                <span className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-md border ${getContactPreferenceBadgeClasses(lead.contact_preference).badge}`}>
+                  {formatContactPreferenceLabel(lead.contact_preference, { withPrefix: false })}
+                </span>
+              </div>
               {lead.referred_by && (
                 <div className="flex items-center gap-1.5 text-slate-600 bg-slate-50 p-2 rounded-lg sm:col-span-2">
                   <UserCheck className="h-3.5 w-3.5 text-[#449bd5] shrink-0" />

@@ -8,7 +8,7 @@
 // 4. Safe App Shell Management (Zero CRM Data Caching)
 // =============================================================================
 
-const CACHE_NAME = 'eds-hub-shell-v4';
+const CACHE_NAME = 'eds-hub-shell-v5';
 const SHELL_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -29,7 +29,6 @@ self.addEventListener('install', (event) => {
       });
     })
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -44,6 +43,13 @@ self.addEventListener('activate', (event) => {
       );
     }).then(() => self.clients.claim())
   );
+});
+
+// Allow client app to trigger instant safe activation without waiting
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // --- 2. Network Fetch Strategy ---

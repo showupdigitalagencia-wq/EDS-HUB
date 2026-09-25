@@ -705,6 +705,79 @@ Deno.serve(async (req) => {
         tasksCreated = result.tasksCreated;
         actionSucceeded = result.success;
         errors.push(...result.errors);
+      } else if (pref === 'whatsapp') {
+        // Explicit WhatsApp branch: ZERO auto-email, create manual task
+        await db.from('lead_activities').insert([
+          {
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'contact_preference_detected',
+            actor_type: 'system',
+            summary: 'Contact preference detected: whatsapp',
+            metadata: { preference: 'whatsapp', valid: true },
+          },
+          {
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'channel_skipped',
+            channel: 'email',
+            actor_type: 'system',
+            summary: 'Email channel skipped: contact preference is whatsapp',
+            metadata: { channel: 'email', reason: 'preference_exclusion', preferred: 'whatsapp' },
+          },
+          {
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'channel_skipped',
+            channel: 'sms',
+            actor_type: 'system',
+            summary: 'SMS channel skipped: contact preference is whatsapp',
+            metadata: { channel: 'sms', reason: 'preference_exclusion', preferred: 'whatsapp' },
+          },
+        ]);
+
+        const { error: taskErr } = await db.from('tasks').insert({
+          lead_id: leadId,
+          title: `Contato WhatsApp — ${payload.first_name || 'Lead'} ${payload.last_name || ''}`.trim(),
+          description: `Lead solicitou preferência por WhatsApp. Telefone: ${payload.phone_raw || payload.phone_e164 || 'N/A'}. Realizar contato manual via aparelho ou WhatsApp corporativo.`,
+          status: 'pending',
+          priority: 'high',
+          due_date: new Date().toISOString(),
+        });
+        if (!taskErr) tasksCreated++;
+        actionSucceeded = true;
+      } else {
+        // NULL / Unspecified preference: ZERO auto-email, create review task
+        await db.from('lead_activities').insert([
+          {
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'contact_preference_detected',
+            actor_type: 'system',
+            summary: 'Contact preference not specified: manual review required',
+            metadata: { preference: null, valid: false },
+          },
+          {
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'channel_skipped',
+            channel: 'email',
+            actor_type: 'system',
+            summary: 'Email channel skipped: preference not specified (no automatic fallback to email)',
+            metadata: { channel: 'email', reason: 'unspecified_preference_protection' },
+          },
+        ]);
+
+        const { error: taskErr } = await db.from('tasks').insert({
+          lead_id: leadId,
+          title: `Revisão Manual — ${payload.first_name || 'Lead'} ${payload.last_name || ''}`.trim(),
+          description: `Preferência de contato não informada pelo lead. Não é permitido presumir e-mail automaticamente. Verificar dados cadastrais e definir melhor abordagem humana.`,
+          status: 'pending',
+          priority: 'medium',
+          due_date: new Date().toISOString(),
+        });
+        if (!taskErr) tasksCreated++;
+        actionSucceeded = true;
       }
     }
 

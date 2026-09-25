@@ -321,11 +321,12 @@ describe('Phase 3 Block 3: Follow-Up Sequences & History Verification Suite', ()
       expect(callTaskGuard.allowed).toBe(true);
     });
 
-    it('14. neutral preference allows configured channel', () => {
-      // When lead preference is null/undefined, canonical fallback is email
+    it('14. neutral / null preference strictly forbids automated email (NO_VALID_CONTACT_PREFERENCE)', () => {
+      // Rule: Unspecified/null preference must NEVER assume Email
       const neutralLead = { ...baseLead, contact_preference: null };
       const emailGuard = checkContactPreference('send_email', neutralLead.contact_preference);
-      expect(emailGuard.allowed).toBe(true);
+      expect(emailGuard.allowed).toBe(false);
+      expect(emailGuard.skip_reason_code).toBe('NO_VALID_CONTACT_PREFERENCE');
 
       // Generic CRM tasks are allowed regardless of preference
       const taskGuard = checkContactPreference('create_task', neutralLead.contact_preference);

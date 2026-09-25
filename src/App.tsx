@@ -1,7 +1,10 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './features/auth/AuthProvider';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
+import { startTaskReminderScheduler } from './features/notifications/services/task-reminder-service';
 
 // Static route page imports for bulletproof stability
 import { LoginPage } from './features/auth/LoginPage';
@@ -33,10 +36,18 @@ import { WorkDashboardPage } from './features/work/WorkDashboardPage';
 import { ReportsPage } from './features/reports/ReportsPage';
 
 export default function App() {
+  useEffect(() => {
+    const stopScheduler = startTaskReminderScheduler();
+    return () => {
+      stopScheduler();
+    };
+  }, []);
+
   return (
     <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
+          <PwaUpdatePrompt />
           <Routes>
               {/* Public routes */}
               <Route path="/login" element={<LoginPage />} />

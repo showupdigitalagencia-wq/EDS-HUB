@@ -71,15 +71,8 @@ export function isLeadClosed(
   return false;
 }
 
-export function formatContactPreferenceLabel(preference?: string | null): string {
-  if (!preference) return 'Preferência: Não informada';
-  const norm = preference.trim().toLowerCase();
-  if (norm === 'email') return 'Preferência: Email';
-  if (norm === 'sms') return 'Preferência: SMS';
-  if (norm === 'whatsapp') return 'Preferência: WhatsApp';
-  if (norm === 'call' || norm === 'phone' || norm === 'ligacao' || norm === 'ligação') return 'Preferência: Ligação';
-  return 'Preferência: Não informada';
-}
+import { formatContactPreferenceLabel } from '../../../utils/contact-preference';
+export { formatContactPreferenceLabel };
 
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 

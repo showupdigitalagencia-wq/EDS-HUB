@@ -73,6 +73,17 @@ Deno.serve(async (req) => {
 
     const filters = audience?.filter_definition || {};
 
+    const campChannel = campaign.channel || 'email';
+    if (campChannel !== 'email') {
+      return new Response(
+        JSON.stringify({
+          error: `Campaign channel '${campChannel}' does not support bulk automated messaging. Only Email campaigns are permitted.`,
+          code: 'CHANNEL_NOT_SUPPORTED',
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // 4. Query eligible leads
     let query = db
       .from('leads')
@@ -95,9 +106,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (filters.contact_preference) {
-      query = query.eq('contact_preference', filters.contact_preference);
-    }
+    // Strict business rule: Bulk email campaigns require explicit contact_preference = 'email'
+    // Leads with preference = 'sms', 'call', 'whatsapp', or null (unspecified) are excluded by default.
+    const effectivePref = filters.contact_preference || 'email';
+    query = query.eq('contact_preference', effectivePref);
 
     const { data: leads, error: leadsError } = await query;
 

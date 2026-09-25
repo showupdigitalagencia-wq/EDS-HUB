@@ -3,6 +3,8 @@ import { Send, AlertTriangle, Mail, MessageSquare, Loader2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase';
 import type { ContactPreference, ConversationChannel } from '../../types/database';
 
+import { formatContactPreferenceLabel, resolveCanonicalPreference } from '../../utils/contact-preference';
+
 interface ConversationComposerProps {
   leadId: string;
   leadName?: string;
@@ -18,7 +20,7 @@ export function ConversationComposer({
   leadId,
   leadName = 'Lead',
   conversationId,
-  leadPreference = 'email',
+  leadPreference = null,
   initialChannel = 'email',
   inReplyToMessageId,
   defaultSubject,
@@ -31,7 +33,7 @@ export function ConversationComposer({
   const [error, setError] = useState<string | null>(null);
   const [showOverrideConfirm, setShowOverrideConfirm] = useState(false);
 
-  const cleanPref = (leadPreference || '').toLowerCase().trim();
+  const cleanPref = resolveCanonicalPreference(leadPreference);
   const isMismatch = cleanPref ? channel !== cleanPref : false;
 
   const handleSend = async (overrideConfirmed = false) => {
@@ -127,7 +129,7 @@ export function ConversationComposer({
               Aviso de Preferência de Contato
             </p>
             <p className="text-amber-800 text-[11px] leading-relaxed">
-              {leadName} prefere contato via <strong className="uppercase">{cleanPref}</strong>. Tem certeza de que deseja enviar manualmente via <strong>{channel.toUpperCase()}</strong>?
+              {leadName} prefere contato via <strong>{formatContactPreferenceLabel(cleanPref, { withPrefix: false })}</strong>. Tem certeza de que deseja enviar manualmente via <strong>{channel.toUpperCase()}</strong>?
             </p>
             <div className="flex items-center gap-2 pt-1">
               <button
@@ -143,7 +145,7 @@ export function ConversationComposer({
                 onClick={() => { setShowOverrideConfirm(false); setChannel(cleanPref === 'sms' ? 'sms' : 'email'); }}
                 className="px-2.5 py-1 text-slate-600 hover:text-slate-900 font-medium text-[11px]"
               >
-                Alternar para {cleanPref.toUpperCase()}
+                Alternar para {cleanPref ? formatContactPreferenceLabel(cleanPref, { withPrefix: false }) : 'canal preferencial'}
               </button>
             </div>
           </div>

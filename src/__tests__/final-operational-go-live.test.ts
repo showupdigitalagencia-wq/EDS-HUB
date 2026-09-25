@@ -308,7 +308,7 @@ I\u2019m happy to answer any questions and help you find the course that best ma
       expect(eligibility.eligibleChannels).toHaveLength(0);
     });
 
-    it('6. Future HubSpot contact with factual Meta origin IS eligible for automation', () => {
+    it('6. Future HubSpot contact with factual Meta origin IS eligible for automation when preference is email', () => {
       const metaViaHsLead: FirstContactLeadInput = {
         source: 'hubspot',
         source_detail: 'hubspot_sync',
@@ -316,6 +316,7 @@ I\u2019m happy to answer any questions and help you find the course that best ma
         hs_analytics_source_data_1: 'facebook_ad_123',
         hs_facebook_ad_clicked: true,
         email: 'meta.ad@example.com',
+        contact_preference: 'email',
         course_interest: 'ZIT-01',
       };
 
@@ -323,6 +324,12 @@ I\u2019m happy to answer any questions and help you find the course that best ma
       const eligibility = evaluateMetaLiveAutomationEligibility(metaViaHsLead);
       expect(eligibility.isEligible).toBe(true);
       expect(eligibility.eligibleChannels).toEqual(['email']);
+
+      // Without explicit email preference, it is strictly suppressed
+      const unspecifiedPrefLead = { ...metaViaHsLead, contact_preference: null };
+      const unspecifiedEligibility = evaluateMetaLiveAutomationEligibility(unspecifiedPrefLead);
+      expect(unspecifiedEligibility.isEligible).toBe(false);
+      expect(unspecifiedEligibility.suppressedReason).toContain('Preferência de contato não informada');
     });
 
     it('7. SMS-preference Meta lead NEVER triggers auto SMS or auto Email under strict business rule', () => {

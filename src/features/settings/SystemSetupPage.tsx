@@ -22,6 +22,7 @@ import type { AppSettings, Course } from '../../types';
 import { fetchCourses, updateCourse, formatCurrency } from '../revenue/services/revenue-service';
 import { HubSpotIntegrationView } from '../integrations/hubspot/HubSpotIntegrationView';
 import { NotificationPreferencesView } from './components/NotificationPreferencesView';
+import { TimezoneSettingsCard } from './components/TimezoneSettingsCard';
 
 export type SettingsTab = 'general' | 'courses' | 'data-management' | 'integrations' | 'notifications';
 
@@ -316,11 +317,14 @@ export function SystemSetupPage() {
         {/* TAB 1: GENERAL SETTINGS                                         */}
         {/* =============================================================== */}
         {activeTab === 'general' && (
-          <div className="card-executive">
-            <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100">
-              <h2 className="text-base font-bold font-heading text-[#08254f]">Configurações Gerais</h2>
-              <p className="text-xs text-slate-500 mt-1">Configure os parâmetros da sua instância EDS HUB.</p>
-            </div>
+          <div className="space-y-6">
+            <TimezoneSettingsCard />
+
+            <div className="card-executive">
+              <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100">
+                <h2 className="text-base font-bold font-heading text-[#08254f]">Configurações Gerais</h2>
+                <p className="text-xs text-slate-500 mt-1">Configure os parâmetros da sua instância EDS HUB.</p>
+              </div>
 
             <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-5">
               <div>
@@ -492,7 +496,8 @@ export function SystemSetupPage() {
               </div>
             </form>
           </div>
-        )}
+        </div>
+      )}
 
         {/* =============================================================== */}
         {/* TAB 2: COURSE CATALOG & PRICING                                 */}

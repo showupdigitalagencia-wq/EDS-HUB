@@ -518,7 +518,7 @@ describe('Batch 2: Authoritative Meta & Website First-Contact Rules', () => {
     expect(eligibility.suppressedReason).toContain('Historical import lead is excluded');
   });
 
-  it('checkContactPreference allows both email and sms for Meta initial outreach', () => {
+  it('checkContactPreference enforces strict contact preference on Meta initial outreach', () => {
     const metaContext = {
       source: 'meta',
       isInitialOutreach: true,
@@ -526,13 +526,22 @@ describe('Batch 2: Authoritative Meta & Website First-Contact Rules', () => {
       hasValidPhone: true,
     };
 
-    // Even if preference is 'email', SMS is allowed on initial Meta outreach
-    const smsCheck = checkContactPreference('send_sms', 'email', metaContext);
-    expect(smsCheck.allowed).toBe(true);
+    // Preference 'email' allows email outreach, but blocks SMS
+    const emailPrefEmailCheck = checkContactPreference('send_email', 'email', metaContext);
+    expect(emailPrefEmailCheck.allowed).toBe(true);
+    const emailPrefSmsCheck = checkContactPreference('send_sms', 'email', metaContext);
+    expect(emailPrefSmsCheck.allowed).toBe(false);
+    expect(emailPrefSmsCheck.skip_reason_code).toBe('CONTACT_PREFERENCE_MISMATCH');
 
-    // Even if preference is 'sms', Email is allowed on initial Meta outreach
-    const emailCheck = checkContactPreference('send_email', 'sms', metaContext);
-    expect(emailCheck.allowed).toBe(true);
+    // Preference 'sms' blocks automatic email
+    const smsPrefEmailCheck = checkContactPreference('send_email', 'sms', metaContext);
+    expect(smsPrefEmailCheck.allowed).toBe(false);
+    expect(smsPrefEmailCheck.skip_reason_code).toBe('CONTACT_PREFERENCE_MISMATCH');
+
+    // Unspecified (null) preference blocks both channels with NO_VALID_CONTACT_PREFERENCE
+    const nullEmailCheck = checkContactPreference('send_email', null, metaContext);
+    expect(nullEmailCheck.allowed).toBe(false);
+    expect(nullEmailCheck.skip_reason_code).toBe('NO_VALID_CONTACT_PREFERENCE');
   });
 
   it('checkContactPreference suppresses website leads during initial outreach', () => {

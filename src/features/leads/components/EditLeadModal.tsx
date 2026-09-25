@@ -488,14 +488,16 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
                 Canal Preferencial
               </label>
               <select
-                value={contactPreference}
-                onChange={(e) => setContactPreference(e.target.value as ContactPreference)}
+                value={contactPreference || ''}
+                onChange={(e) => setContactPreference((e.target.value || null) as ContactPreference)}
                 disabled={isSubmitting}
                 className="w-full px-3 py-2 text-sm bg-slate-50/50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] transition-all cursor-pointer"
               >
+                <option value="">Não informada</option>
                 <option value="email">E-mail</option>
                 <option value="sms">SMS</option>
                 <option value="call">Ligação / Telefone</option>
+                <option value="whatsapp">WhatsApp</option>
               </select>
             </div>
             <div>

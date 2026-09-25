@@ -3,8 +3,8 @@
 // =============================================================================
 
 export type LeadSource = 'meta' | 'google' | 'manual' | 'test' | 'form';
-export type ContactPreference = 'email' | 'sms' | 'call';
-export type MessageChannel = 'email' | 'sms' | 'call';
+export type ContactPreference = 'email' | 'sms' | 'call' | 'whatsapp' | null;
+export type MessageChannel = 'email' | 'sms' | 'call' | 'whatsapp';
 export type MessageProvider = 'resend' | 'twilio';
 export type MessageStatus = 'queued' | 'pending' | 'sent' | 'delivered' | 'failed' | 'bounced' | 'complained';
 export type IntakeStatus = 'received' | 'processing' | 'processed' | 'failed' | 'duplicate';
@@ -68,6 +68,8 @@ export type ActivityType =
   | 'whatsapp_contact_attempt'
   | 'email_manual_attempt'
   | 'sms_manual_attempt'
+  | 'sms_manual_confirmed'
+  | 'whatsapp_contact_confirmed'
   | 'incomplete_enrollment_captured'
   | 'incomplete_enrollment_recovered'
   | 'incomplete_enrollment_dismissed';
