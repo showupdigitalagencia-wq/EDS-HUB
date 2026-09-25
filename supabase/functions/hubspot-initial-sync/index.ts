@@ -76,7 +76,26 @@ Deno.serve(async (req) => {
   }
 
   try {
-    let url = `https://api.hubapi.com/crm/v3/objects/contacts?limit=${limit}&properties=firstname,lastname,email,phone,mobilephone,hs_lead_status,course_interest,lastmodifieddate`;
+    const propList = [
+      'firstname',
+      'lastname',
+      'email',
+      'phone',
+      'mobilephone',
+      'hs_lead_status',
+      'course_interest',
+      'curso_de_interesse',
+      'curso_de_interesse_2',
+      'curso_de_interesse_3',
+      'data_do_curso_de_interesse',
+      'status_de_qualificacao',
+      'hs_analytics_source',
+      'hs_analytics_source_data_1',
+      'hs_analytics_source_data_2',
+      'createdate',
+      'lastmodifieddate',
+    ].join(',');
+    let url = `https://api.hubapi.com/crm/v3/objects/contacts?limit=${limit}&properties=${propList}`;
     if (cursor) {
       url += `&after=${encodeURIComponent(cursor)}`;
     }

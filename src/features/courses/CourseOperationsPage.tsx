@@ -18,6 +18,7 @@ import { CourseOperationsKpisWidget } from './components/CourseOperationsKpisWid
 import { UpcomingSessionsWidget } from './components/UpcomingSessionsWidget';
 import { OperationalNeedsAttentionWidget } from './components/OperationalNeedsAttentionWidget';
 import { UnassignedStudentsWidget } from './components/UnassignedStudentsWidget';
+import { CourseCatalogOverviewWidget } from './components/CourseCatalogOverviewWidget';
 import { SessionModal } from './components/SessionModal';
 import { AssignSessionModal } from './components/AssignSessionModal';
 import type {
@@ -59,7 +60,7 @@ export const CourseOperationsPage: React.FC = () => {
       setData(res);
     } catch (err: any) {
       console.error('Error loading course operations dashboard:', err);
-      setError(err.message || 'Failed to load course operations dashboard.');
+      setError(err.message || 'Erro ao carregar painel de operações de cursos.');
     } finally {
       setLoading(false);
     }
@@ -94,7 +95,6 @@ export const CourseOperationsPage: React.FC = () => {
   };
 
   const handleOpenAssignModal = (enrollmentId: string, leadId: string, studentName: string) => {
-    // Find enrollment in unassigned list or needs attention to get courseId
     const found =
       data?.unassigned_students.find((s) => s.enrollment_id === enrollmentId) ||
       data?.needs_attention.find((i) => i.enrollment_id === enrollmentId);
@@ -121,8 +121,8 @@ export const CourseOperationsPage: React.FC = () => {
   return (
     <Layout
       eyebrow="OPERAÇÕES ACADÊMICAS"
-      title="Course Operations"
-      subtitle="Gestão de turmas presenciais, alocação de estudantes, checklist e ciclo acadêmico"
+      title="Cursos & Turmas"
+      subtitle="Gestão de cursos oficiais, turmas presenciais, alocação de estudantes e materiais"
       actions={
         <div className="flex items-center gap-2">
           <button
@@ -172,10 +172,13 @@ export const CourseOperationsPage: React.FC = () => {
       {loading ? (
         <div className="py-24 text-center">
           <RefreshCw className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-3" />
-          <p className="text-sm font-medium text-slate-600">Carregando Course Operations...</p>
+          <p className="text-sm font-medium text-slate-600">Carregando Cursos & Operações...</p>
         </div>
       ) : data ? (
         <>
+          {/* Official Courses Catalog Overview */}
+          <CourseCatalogOverviewWidget />
+
           {/* Operational KPIs */}
           <CourseOperationsKpisWidget
             kpis={data.kpis}
@@ -194,7 +197,7 @@ export const CourseOperationsPage: React.FC = () => {
               }`}
             >
               <Clock className="w-4 h-4" />
-              <span>Upcoming Sessions ({data.upcoming_sessions.length})</span>
+              <span>Turmas Agendadas ({data.upcoming_sessions.length})</span>
             </button>
 
             <button
@@ -206,7 +209,7 @@ export const CourseOperationsPage: React.FC = () => {
               }`}
             >
               <AlertTriangle className="w-4 h-4" />
-              <span>Needs Attention ({data.needs_attention.length})</span>
+              <span>Atenção Operacional ({data.needs_attention.length})</span>
             </button>
 
             <button
@@ -218,7 +221,7 @@ export const CourseOperationsPage: React.FC = () => {
               }`}
             >
               <UserCheck className="w-4 h-4" />
-              <span>Awaiting Session ({data.unassigned_students.length})</span>
+              <span>Aguardando Turma ({data.unassigned_students.length})</span>
             </button>
 
             <button
@@ -230,7 +233,7 @@ export const CourseOperationsPage: React.FC = () => {
               }`}
             >
               <Layers className="w-4 h-4" />
-              <span>All Sessions</span>
+              <span>Todas as Turmas</span>
             </button>
           </div>
 
@@ -260,21 +263,21 @@ export const CourseOperationsPage: React.FC = () => {
             {activeTab === 'all' && (
               <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-                  <h3 className="text-base font-bold text-slate-900">All Course Sessions</h3>
+                  <h3 className="text-base font-bold text-slate-900">Todas as Turmas</h3>
                   <span className="text-xs font-semibold px-2.5 py-1 rounded bg-slate-100 text-slate-600">
-                    {allSessions.length} total
+                    {allSessions.length} no total
                   </span>
                 </div>
                 <div className="divide-y divide-slate-100 overflow-x-auto">
                   <table className="w-full text-left text-sm text-slate-600">
                     <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-500 tracking-wider">
                       <tr>
-                        <th className="py-3 px-6">Code & Title</th>
-                        <th className="py-3 px-4">Dates</th>
-                        <th className="py-3 px-4">Location</th>
-                        <th className="py-3 px-4">Capacity</th>
+                        <th className="py-3 px-6">Turma & Curso</th>
+                        <th className="py-3 px-4">Período</th>
+                        <th className="py-3 px-4">Local</th>
+                        <th className="py-3 px-4">Capacidade</th>
                         <th className="py-3 px-4">Status</th>
-                        <th className="py-3 px-6 text-right">Roster</th>
+                        <th className="py-3 px-6 text-right">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -293,7 +296,7 @@ export const CourseOperationsPage: React.FC = () => {
                           </td>
                           <td className="py-3.5 px-4 text-xs">{s.location || 'Orlando, FL'}</td>
                           <td className="py-3.5 px-4 text-xs font-semibold">
-                            {s.capacity === null ? 'Unlimited' : s.capacity}
+                            {s.capacity === null ? 'Ilimitada' : s.capacity}
                           </td>
                           <td className="py-3.5 px-4">
                             <span className="px-2 py-0.5 rounded text-xs font-semibold uppercase bg-slate-100 text-slate-700">
@@ -308,7 +311,7 @@ export const CourseOperationsPage: React.FC = () => {
                               }}
                               className="px-3 py-1 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded"
                             >
-                              View Roster
+                              Ver Turma
                             </button>
                           </td>
                         </tr>

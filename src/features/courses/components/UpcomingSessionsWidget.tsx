@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Users, MapPin, AlertCircle, CheckCircle2, ChevronRight, User } from 'lucide-react';
 import type { UpcomingSessionSummary } from '../../../types/database';
+import { formatCohortDateRange } from '../../../utils/format';
 
 interface Props {
   sessions: UpcomingSessionSummary[];
@@ -14,15 +15,15 @@ export const UpcomingSessionsWidget: React.FC<Props> = ({ sessions, onEditSessio
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'open':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Open</span>;
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Aberta</span>;
       case 'confirmed':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">Confirmed</span>;
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">Confirmada</span>;
       case 'draft':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">Draft</span>;
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">Rascunho</span>;
       case 'completed':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">Completed</span>;
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">Concluída</span>;
       case 'cancelled':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800">Cancelled</span>;
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800">Cancelada</span>;
       default:
         return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-800">{status}</span>;
     }
@@ -32,7 +33,7 @@ export const UpcomingSessionsWidget: React.FC<Props> = ({ sessions, onEditSessio
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
       <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
         <div>
-          <h3 className="text-base font-bold text-slate-900">Upcoming Course Sessions</h3>
+          <h3 className="text-base font-bold text-slate-900">Turmas Agendadas</h3>
           <p className="text-xs text-slate-500 mt-0.5">Turmas agendadas e controle operacional de vagas</p>
         </div>
         <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-slate-100 text-slate-600">
@@ -51,13 +52,13 @@ export const UpcomingSessionsWidget: React.FC<Props> = ({ sessions, onEditSessio
           <table className="w-full text-left text-sm text-slate-600">
             <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-500 tracking-wider">
               <tr>
-                <th className="py-3 px-6">Session & Course</th>
-                <th className="py-3 px-4">Dates & Timezone</th>
-                <th className="py-3 px-4">Location & Instructor</th>
-                <th className="py-3 px-4">Capacity & Enrollment</th>
-                <th className="py-3 px-4">Readiness</th>
+                <th className="py-3 px-6">Curso & Turma</th>
+                <th className="py-3 px-4">Período</th>
+                <th className="py-3 px-4">Local & Instrutor</th>
+                <th className="py-3 px-4">Capacidade & Vagas</th>
+                <th className="py-3 px-4">Preparação</th>
                 <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-6 text-right">Actions</th>
+                <th className="py-3 px-6 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -73,19 +74,17 @@ export const UpcomingSessionsWidget: React.FC<Props> = ({ sessions, onEditSessio
                   >
                     <td className="py-3.5 px-6">
                       <div className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
-                        {s.title}
+                        {s.course_name}
                       </div>
-                      <div className="text-xs text-slate-500 font-mono mt-0.5 flex items-center gap-1.5">
-                        <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-semibold">{s.code}</span>
-                        <span>•</span>
-                        <span>{s.course_name}</span>
+                      <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
+                        <span className="font-medium text-slate-700">{formatCohortDateRange(s.start_date, s.end_date)}</span>
                       </div>
                     </td>
 
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <div className="text-xs font-medium text-slate-800 flex items-center gap-1.5">
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                        {s.start_date} até {s.end_date}
+                        {formatCohortDateRange(s.start_date, s.end_date)}
                       </div>
                       <div className="text-[11px] text-slate-400 mt-0.5 font-mono">{s.timezone}</div>
                     </td>
@@ -113,12 +112,12 @@ export const UpcomingSessionsWidget: React.FC<Props> = ({ sessions, onEditSessio
                         </div>
                         {isOverCap && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
-                            OVER CAPACITY
+                            LOTADA (EXCESSO)
                           </span>
                         )}
                         {isAtCap && !isOverCap && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                            FULL
+                            LOTADA
                           </span>
                         )}
                       </div>
@@ -133,12 +132,12 @@ export const UpcomingSessionsWidget: React.FC<Props> = ({ sessions, onEditSessio
                       {s.unready_students_count > 0 ? (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                           <AlertCircle className="w-3 h-3 text-amber-600" />
-                          {s.unready_students_count} unready
+                          {s.unready_students_count} pendente{s.unready_students_count > 1 ? 's' : ''}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          All Ready
+                          Todos Prontos
                         </span>
                       )}
                     </td>
@@ -152,14 +151,14 @@ export const UpcomingSessionsWidget: React.FC<Props> = ({ sessions, onEditSessio
                             onClick={() => onEditSession(s)}
                             className="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded transition-colors"
                           >
-                            Edit
+                            Editar
                           </button>
                         )}
                         <button
                           onClick={() => navigate(`/courses/sessions/${s.id}`)}
                           className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
                         >
-                          <span>Roster</span>
+                          <span>Ver Turma</span>
                           <ChevronRight className="w-3.5 h-3.5" />
                         </button>
                       </div>

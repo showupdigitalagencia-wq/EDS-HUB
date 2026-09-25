@@ -31,6 +31,7 @@ import { LeadEnrollmentCard } from './LeadEnrollmentCard';
 import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
 import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
 import { ManualEmailComposerModal } from './ManualEmailComposerModal';
+import { ManualSmsComposerModal } from './ManualSmsComposerModal';
 import { EditLeadModal } from './EditLeadModal';
 import { ChangeLeadStageModal } from './ChangeLeadStageModal';
 import { fetchLeadEmailHealth, type LeadEmailHealthResult } from '../../dashboard/services/deliverability-health-service';
@@ -74,8 +75,9 @@ export function LeadProfileContent({
   // Stage change modal
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
 
-  // Manual Email Composer & Lead Email Health
+  // Manual Email & SMS Composers & Lead Email Health
   const [isEmailComposerOpen, setIsEmailComposerOpen] = useState(false);
+  const [isSmsComposerOpen, setIsSmsComposerOpen] = useState(false);
   const [emailHealth, setEmailHealth] = useState<LeadEmailHealthResult | null>(null);
 
   const fetchLeadData = useCallback(async () => {
@@ -377,6 +379,7 @@ export function LeadProfileContent({
           setIsTaskModalOpen(true);
         }}
         onOpenEmailComposer={() => setIsEmailComposerOpen(true)}
+        onOpenSmsComposer={() => setIsSmsComposerOpen(true)}
         onActivityLogged={handleLeadRefresh}
       />
 
@@ -817,6 +820,16 @@ export function LeadProfileContent({
             setActiveTab('conversas');
             if (onLeadUpdated) onLeadUpdated();
           }}
+        />
+      )}
+
+      {/* Manual SMS Composer Modal (SMS Manual Assistido) */}
+      {lead && (
+        <ManualSmsComposerModal
+          isOpen={isSmsComposerOpen}
+          lead={lead}
+          onClose={() => setIsSmsComposerOpen(false)}
+          onSmsRecorded={handleLeadRefresh}
         />
       )}
 

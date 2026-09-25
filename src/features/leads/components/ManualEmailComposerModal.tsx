@@ -18,6 +18,7 @@ import {
   FileText,
   Loader2,
   CheckCircle2,
+  ExternalLink,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { resolveSalutation, resolveSafeFirstName } from '../../../utils/salutation';
@@ -336,6 +337,20 @@ export function ManualEmailComposerModal({
     }
   };
 
+  const handleOpenMailto = () => {
+    const cleanTo = (lead.email || '').trim();
+    if (!cleanTo) return;
+    const mailtoUrl = `mailto:${encodeURIComponent(cleanTo)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    void supabase.from('lead_activities').insert({
+      lead_id: lead.id,
+      activity_type: 'email_manual_attempt',
+      actor_type: 'user',
+      summary: 'Aplicativo de e-mail externo aberto via mailto',
+      metadata: { channel: 'email', method: 'mailto', timestamp: new Date().toISOString() },
+    });
+    window.open(mailtoUrl, '_self');
+  };
+
   if (!isOpen) return null;
 
   const isBlocked = Boolean(!isValidEmail || suppressionWarning);
@@ -577,25 +592,38 @@ export function ManualEmailComposerModal({
             Cancelar
           </button>
 
-          <button
-            type="button"
-            id="send-manual-email-btn"
-            onClick={handleSend}
-            disabled={isBlocked || isSending || !subject.trim() || !body.trim() || isCheckingSuppression}
-            className="btn-crimson text-xs px-5 py-2 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs active:translate-y-0.5 cursor-pointer"
-          >
-            {isSending ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>Enviando...</span>
-              </>
-            ) : (
-              <>
-                <Send className="h-3.5 w-3.5" />
-                <span>Enviar Email</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleOpenMailto}
+              disabled={isSending || !lead.email}
+              className="btn-secondary text-xs px-3.5 py-2 flex items-center gap-1.5"
+              title="Abrir no aplicativo de e-mail local (mailto:)"
+            >
+              <ExternalLink className="h-3.5 w-3.5 text-slate-500" />
+              <span>Abrir no app de e-mail</span>
+            </button>
+
+            <button
+              type="button"
+              id="send-manual-email-btn"
+              onClick={handleSend}
+              disabled={isBlocked || isSending || !subject.trim() || !body.trim() || isCheckingSuppression}
+              className="btn-crimson text-xs px-5 py-2 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs active:translate-y-0.5 cursor-pointer"
+            >
+              {isSending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Enviando...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Enviar Email</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

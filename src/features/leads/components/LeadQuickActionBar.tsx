@@ -15,6 +15,7 @@ interface LeadQuickActionBarProps {
   onOpenPaymentModal: () => void;
   onActivityLogged?: () => void;
   onOpenEmailComposer?: () => void;
+  onOpenSmsComposer?: () => void;
 }
 
 export function LeadQuickActionBar({
@@ -23,6 +24,7 @@ export function LeadQuickActionBar({
   onOpenPaymentModal,
   onActivityLogged,
   onOpenEmailComposer,
+  onOpenSmsComposer,
 }: LeadQuickActionBarProps) {
   const rawPhone = lead.phone_e164 || lead.phone_raw || '';
   const digitsOnly = rawPhone.replace(/\D/g, '');
@@ -111,17 +113,33 @@ export function LeadQuickActionBar({
               </button>
             )}
 
-            {/* 2. SMS — Provider currently inactive */}
-            <button
-              type="button"
-              disabled
-              data-testid="quick-action-sms"
-              title="SMS indisponível: canal Twilio/SMS inativo no momento."
-              className={`${actionBaseClass} ${commButtonDisabled}`}
-            >
-              <MessageSquare className="h-4 w-4 text-slate-300 shrink-0" />
-              <span>SMS</span>
-            </button>
+            {/* 2. SMS — Manual Assisted Dispatch */}
+            {onOpenSmsComposer && hasPhone ? (
+              <button
+                type="button"
+                data-testid="quick-action-sms"
+                onClick={() => {
+                  logIntentNonBlocking('sms_manual_attempt', 'SMS manual assistido iniciado', 'sms');
+                  onOpenSmsComposer();
+                }}
+                title={`Enviar SMS manual para ${rawPhone}`}
+                className={`${actionBaseClass} ${commButtonActive}`}
+              >
+                <MessageSquare className="h-4 w-4 text-[#449bd5] shrink-0" />
+                <span>SMS</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                data-testid="quick-action-sms"
+                title="SMS indisponível: canal Twilio/SMS inativo no momento."
+                className={`${actionBaseClass} ${commButtonDisabled}`}
+              >
+                <MessageSquare className="h-4 w-4 text-slate-300 shrink-0" />
+                <span>SMS</span>
+              </button>
+            )}
 
             {/* 3. Email — Canonical internal composer without mailto */}
             {isValidEmail ? (

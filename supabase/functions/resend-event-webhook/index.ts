@@ -105,17 +105,19 @@ Deno.serve(async (req) => {
 
   // 5. Match Outbound Message & Campaign Recipient by provider_message_id
   let outboundMessageId: string | null = null;
+  let outboundLeadId: string | null = null;
   let campaignRecipientId: string | null = null;
 
   if (providerMessageId) {
     const { data: outboundMatch } = await db
       .from('outbound_messages')
-      .select('id, recipient')
+      .select('id, recipient, lead_id')
       .eq('provider_message_id', providerMessageId)
       .maybeSingle();
 
     if (outboundMatch) {
       outboundMessageId = outboundMatch.id;
+      outboundLeadId = outboundMatch.lead_id || null;
       if (!recipientEmail && outboundMatch.recipient) {
         recipientEmail = outboundMatch.recipient.trim().toLowerCase();
       }
@@ -223,6 +225,16 @@ Deno.serve(async (req) => {
           { onConflict: 'normalized_email' }
         );
     }
+
+    if (outboundLeadId) {
+      await db.from('lead_activities').insert({
+        lead_id: outboundLeadId,
+        activity_type: 'email_bounced',
+        actor_type: 'system',
+        summary: `E-mail não entregue (Hard Bounce): ${bounceMessage.substring(0, 100)}`,
+        metadata: { provider: 'resend', bounce_type: data.bounce?.type || 'hard_bounce', occurred_at: occurredAt },
+      });
+    }
   } else if (isComplained) {
     if (outboundMessageId) {
       await db
@@ -267,6 +279,16 @@ Deno.serve(async (req) => {
           },
           { onConflict: 'normalized_email' }
         );
+    }
+
+    if (outboundLeadId) {
+      await db.from('lead_activities').insert({
+        lead_id: outboundLeadId,
+        activity_type: 'email_complained',
+        actor_type: 'system',
+        summary: 'Destinatário reportou e-mail como spam',
+        metadata: { provider: 'resend', occurred_at: occurredAt },
+      });
     }
   } else if (isFailed) {
     if (outboundMessageId) {

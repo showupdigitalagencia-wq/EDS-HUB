@@ -252,16 +252,16 @@ export function evaluateFirstContactEligibility(
   // 2. Historical imports: HubSpot batch sync, CSV imports, legacy migrations
   const isHistorical =
     lead.is_historical === true ||
-    lead.source === 'hubspot' ||
     lead.source === 'hubspot_historical' ||
     lead.source_detail === 'hubspot_historical' ||
-    (lead.source_detail === 'hubspot_sync' && !isFactualMetaOrigin(lead)) ||
+    ((lead.source === 'hubspot' || lead.source_detail === 'hubspot_sync') && !isFactualMetaOrigin(lead)) ||
     lead.source === 'csv_import' ||
     lead.source_detail === 'csv_import' ||
     lead.source === 'legacy_import' ||
     lead.source_detail === 'legacy_import' ||
     lead.source === 'historical_migration' ||
     lead.source_detail === 'historical_migration';
+
 
   if (isHistorical) {
     return {
