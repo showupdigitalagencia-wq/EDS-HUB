@@ -84,7 +84,7 @@ export function LeadProfileContent({
 
   const fetchLeadData = useCallback(async () => {
     if (!leadId) {
-      setLead(null);
+      setLead(initialLead || null);
       setCourseInterests([]);
       setActivities([]);
       setTasks([]);
@@ -162,6 +162,9 @@ export function LeadProfileContent({
       setIncompleteEnrollment(incData);
     } catch (err) {
       console.error('Failed to load lead in LeadProfileContent:', err);
+      if (initialLead) {
+        setLead(initialLead);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -326,7 +329,10 @@ export function LeadProfileContent({
                     {pipelineStage.name}
                   </Badge>
                 )}
-                <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-full border ${getContactPreferenceBadgeClasses(lead.contact_preference).badge}`}>
+                <span
+                  data-testid="profile-contact-preference-badge"
+                  className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-full border ${getContactPreferenceBadgeClasses(lead.contact_preference).badge}`}
+                >
                   {formatContactPreferenceLabel(lead.contact_preference, { withPrefix: true })}
                 </span>
               </div>
@@ -599,7 +605,10 @@ export function LeadProfileContent({
               )}
               <div>
                 <span className="text-slate-400 block text-[11px] mb-0.5">Preferência de Contato</span>
-                <span className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-md border ${getContactPreferenceBadgeClasses(lead.contact_preference).badge}`}>
+                <span
+                  data-testid="profile-contact-preference-value"
+                  className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-md border ${getContactPreferenceBadgeClasses(lead.contact_preference).badge}`}
+                >
                   {formatContactPreferenceLabel(lead.contact_preference, { withPrefix: false })}
                 </span>
               </div>

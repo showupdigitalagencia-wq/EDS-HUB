@@ -3,7 +3,7 @@
 // =============================================================================
 
 export type LeadSource = 'meta' | 'google' | 'manual' | 'test' | 'form';
-export type ContactPreference = 'email' | 'sms' | 'call' | 'whatsapp' | null;
+export type ContactPreference = 'email' | 'sms' | 'call' | 'whatsapp' | 'email_sms' | 'email_whatsapp' | 'sms_whatsapp' | null;
 export type MessageChannel = 'email' | 'sms' | 'call' | 'whatsapp';
 export type MessageProvider = 'resend' | 'twilio';
 export type MessageStatus = 'queued' | 'pending' | 'sent' | 'delivered' | 'failed' | 'bounced' | 'complained' | 'opened' | 'clicked' | 'delayed';

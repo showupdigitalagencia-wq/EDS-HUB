@@ -2,23 +2,34 @@
 // EDS HUB — Central Contact Preference Resolver & Formatter
 // =============================================================================
 // Single Source of Truth for Contact Preference handling across EDS HUB:
-// - Supported canonical preferences: 'email' | 'sms' | 'call' | 'whatsapp' | null
+// - Supported canonical preferences: 'email' | 'sms' | 'call' | 'whatsapp' | 'email_sms' | 'email_whatsapp' | 'sms_whatsapp' | null
 // - Official UI labels:
-//     email    -> Email
-//     sms      -> SMS
-//     call     -> Ligação
-//     whatsapp -> WhatsApp
-//     null     -> Não informada
+//     email          -> Email
+//     sms            -> SMS
+//     call           -> Ligação
+//     whatsapp       -> WhatsApp
+//     email_sms      -> Email + SMS
+//     email_whatsapp -> Email + WhatsApp
+//     sms_whatsapp   -> SMS + WhatsApp
+//     null           -> Não informada
 // - STRICT INVARIANT: Absence of preference (null/undefined/'') MUST NEVER
 //   fall back to 'email'. Having an email != preferring email.
 // =============================================================================
 
-export type CanonicalContactPreference = 'email' | 'sms' | 'call' | 'whatsapp' | 'email_sms' | null;
+export type CanonicalContactPreference =
+  | 'email'
+  | 'sms'
+  | 'call'
+  | 'whatsapp'
+  | 'email_sms'
+  | 'email_whatsapp'
+  | 'sms_whatsapp'
+  | null;
 
 /**
- * Resolves any raw preference value (from DB, HubSpot, Meta, Forms, CSV)
+ * Resolves any raw preference value (from DB, HubSpot, Meta, Forms, CSV, manual)
  * to one of the canonical values or null (unspecified / não informada).
- * Absolutely no fallback to 'email' when unspecified.
+ * Absolutely no forced fallback to 'email' when unspecified.
  */
 export function resolveCanonicalPreference(raw?: string | null): CanonicalContactPreference {
   if (!raw || typeof raw !== 'string') {
@@ -44,7 +55,7 @@ export function resolveCanonicalPreference(raw?: string | null): CanonicalContac
     return null;
   }
 
-  // Compound: Email + SMS
+  // Compound 1: Email + SMS
   if (
     norm === 'email_sms' ||
     norm === 'email+sms' ||
@@ -55,28 +66,102 @@ export function resolveCanonicalPreference(raw?: string | null): CanonicalContac
     norm === 'email e sms' ||
     norm === 'sms + email' ||
     norm === 'sms, email' ||
-    (norm.includes('email') && norm.includes('sms'))
+    norm === 'sms e email' ||
+    (norm.includes('email') && (norm.includes('sms') || norm.includes('text')))
   ) {
     return 'email_sms';
   }
 
-  // Email
-  if (norm === 'email' || norm === 'e-mail' || norm === 'mail') {
-    return 'email';
+  // Compound 2: Email + WhatsApp
+  if (
+    norm === 'email_whatsapp' ||
+    norm === 'email+whatsapp' ||
+    norm === 'email/whatsapp' ||
+    norm === 'email + whatsapp' ||
+    norm === 'email, whatsapp' ||
+    norm === 'email & whatsapp' ||
+    norm === 'email e whatsapp' ||
+    (norm.includes('email') && (norm.includes('whatsapp') || norm.includes('whats') || norm.includes('zap') || norm.includes('wpp')))
+  ) {
+    return 'email_whatsapp';
   }
 
-  // SMS
-  if (norm === 'sms' || norm === 'text' || norm === 'text_message' || norm === 'sms / text' || norm.includes('sms')) {
-    return 'sms';
+  // Compound 3: SMS + WhatsApp
+  if (
+    norm === 'sms_whatsapp' ||
+    norm === 'sms+whatsapp' ||
+    norm === 'sms/whatsapp' ||
+    norm === 'sms + whatsapp' ||
+    norm === 'sms, whatsapp' ||
+    norm === 'sms & whatsapp' ||
+    norm === 'sms e whatsapp' ||
+    ((norm.includes('sms') || norm.includes('text')) && (norm.includes('whatsapp') || norm.includes('whats') || norm.includes('zap') || norm.includes('wpp')))
+  ) {
+    return 'sms_whatsapp';
   }
 
-  // WhatsApp
-  if (norm === 'whatsapp' || norm === 'whats' || norm === 'zap' || norm === 'wa' || norm.includes('whatsapp') || norm.includes('whats') || norm.includes('zap')) {
+  // WhatsApp (prioritize before phone/call in case of 'whatsapp call')
+  if (
+    norm === 'whatsapp' ||
+    norm === 'whats' ||
+    norm === 'zap' ||
+    norm === 'wa' ||
+    norm === 'wpp' ||
+    norm.includes('whatsapp') ||
+    norm.includes('whats') ||
+    norm.includes('zap') ||
+    norm.includes('wpp')
+  ) {
     return 'whatsapp';
   }
 
+  // Email
+  if (
+    norm === 'email' ||
+    norm === 'e-mail' ||
+    norm === 'mail' ||
+    norm.includes('email') ||
+    norm.includes('e-mail') ||
+    norm.includes('correio')
+  ) {
+    return 'email';
+  }
+
+  // SMS / Text
+  if (
+    norm === 'sms' ||
+    norm === 'text' ||
+    norm === 'text_message' ||
+    norm === 'sms / text' ||
+    norm === 'sms/text' ||
+    norm === 'text/sms' ||
+    norm === 'torpedo' ||
+    norm === 'mensagem' ||
+    norm.includes('sms') ||
+    norm.includes('text') ||
+    norm.includes('torpedo')
+  ) {
+    return 'sms';
+  }
+
   // Call / Phone
-  if (norm === 'call' || norm === 'phone' || norm === 'telefone' || norm === 'ligação' || norm === 'ligacao' || norm === 'phone / call' || norm.includes('call') || norm.includes('phone') || norm.includes('lig')) {
+  if (
+    norm === 'call' ||
+    norm === 'phone' ||
+    norm === 'telefone' ||
+    norm === 'ligação' ||
+    norm === 'ligacao' ||
+    norm === 'phone / call' ||
+    norm === 'call / phone' ||
+    norm === 'voz' ||
+    norm === 'voice' ||
+    norm.includes('call') ||
+    norm.includes('phone') ||
+    norm.includes('lig') ||
+    norm.includes('tel') ||
+    norm.includes('voz') ||
+    norm.includes('voice')
+  ) {
     return 'call';
   }
 
@@ -85,7 +170,7 @@ export function resolveCanonicalPreference(raw?: string | null): CanonicalContac
 
 /**
  * Returns the exact standalone Portuguese label for a contact preference.
- * Values: 'Email', 'SMS', 'Ligação', 'WhatsApp', 'Email + SMS', 'Não informada'.
+ * Values: 'Email', 'SMS', 'Ligação', 'WhatsApp', 'Email + SMS', 'Email + WhatsApp', 'SMS + WhatsApp', 'Não informada'.
  */
 export function getContactPreferenceLabel(preference?: string | null): string {
   const canonical = resolveCanonicalPreference(preference);
@@ -100,6 +185,10 @@ export function getContactPreferenceLabel(preference?: string | null): string {
       return 'WhatsApp';
     case 'email_sms':
       return 'Email + SMS';
+    case 'email_whatsapp':
+      return 'Email + WhatsApp';
+    case 'sms_whatsapp':
+      return 'SMS + WhatsApp';
     case null:
     default:
       return 'Não informada';
@@ -168,6 +257,20 @@ export function getContactPreferenceBadgeClasses(preference?: string | null): {
         border: 'border-indigo-200',
         badge: 'bg-indigo-50 text-indigo-700 border-indigo-200',
       };
+    case 'email_whatsapp':
+      return {
+        bg: 'bg-teal-50',
+        text: 'text-teal-700',
+        border: 'border-teal-200',
+        badge: 'bg-teal-50 text-teal-700 border-teal-200',
+      };
+    case 'sms_whatsapp':
+      return {
+        bg: 'bg-cyan-50',
+        text: 'text-cyan-700',
+        border: 'border-cyan-200',
+        badge: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+      };
     case null:
     default:
       return {
@@ -178,3 +281,25 @@ export function getContactPreferenceBadgeClasses(preference?: string | null): {
       };
   }
 }
+
+/**
+ * Safely converts any canonical or raw preference to a value that satisfies the
+ * PostgreSQL check constraint:
+ * CHECK (contact_preference IS NULL OR contact_preference IN ('email', 'sms', 'call', 'whatsapp'))
+ */
+export function toDbContactPreference(
+  preference?: string | null
+): 'email' | 'sms' | 'call' | 'whatsapp' | null {
+  const canonical = resolveCanonicalPreference(preference);
+  if (canonical === 'email' || canonical === 'sms' || canonical === 'call' || canonical === 'whatsapp') {
+    return canonical;
+  }
+  if (canonical === 'email_sms' || canonical === 'email_whatsapp') {
+    return 'email';
+  }
+  if (canonical === 'sms_whatsapp') {
+    return 'sms';
+  }
+  return null;
+}
+

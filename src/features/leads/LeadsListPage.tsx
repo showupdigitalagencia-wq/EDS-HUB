@@ -172,7 +172,11 @@ export function LeadsListPage() {
 
       // Secondary Filter: Contact Preference
       if (preferenceFilter) {
-        query = query.eq('contact_preference', preferenceFilter);
+        if (preferenceFilter === 'unspecified') {
+          query = query.is('contact_preference', null);
+        } else {
+          query = query.eq('contact_preference', preferenceFilter);
+        }
       }
 
       // Secondary Filter: Score Band
@@ -547,6 +551,9 @@ export function LeadsListPage() {
                   <option value="email">Email</option>
                   <option value="sms">SMS</option>
                   <option value="call">Telefone / Ligação</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="email_sms">Email + SMS</option>
+                  <option value="unspecified">Não informada</option>
                 </select>
               </div>
 

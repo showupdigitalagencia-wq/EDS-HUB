@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/supabase';
 import type { Course, CourseSession, Lead, ContactPreference } from '../../../types';
 import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
 import { normalizePhoneDigits } from '../utils/qualificationMapping';
+import { resolveCanonicalPreference, toDbContactPreference } from '../../../utils/contact-preference';
 import {
   X,
   Edit2,
@@ -63,11 +64,7 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
     setLastName(lead.last_name || '');
     setEmail(lead.email || '');
     setPhone(lead.phone_raw || lead.phone_e164 || '');
-    setContactPreference(
-      lead.contact_preference && ['email', 'sms', 'call'].includes(lead.contact_preference)
-        ? lead.contact_preference
-        : 'email'
-    );
+    setContactPreference(resolveCanonicalPreference(lead.contact_preference));
     setReferredBy(lead.referred_by || '');
 
     async function loadData() {
@@ -279,7 +276,7 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
           email: cleanEmail || null,
           phone_raw: cleanPhone || null,
           phone_e164: phoneE164,
-          contact_preference: contactPreference,
+          contact_preference: toDbContactPreference(contactPreference),
           referred_by: referredBy.trim() || null,
           course_interest: primaryCourseName,
           course_interests: courseNames,
@@ -498,6 +495,7 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
                 <option value="sms">SMS</option>
                 <option value="call">Ligação / Telefone</option>
                 <option value="whatsapp">WhatsApp</option>
+                <option value="email_sms">Email + SMS</option>
               </select>
             </div>
             <div>

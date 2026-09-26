@@ -4,6 +4,7 @@
 
 import { normalizePhoneDigits, mapHubspotQualificationStatus } from './qualificationMapping';
 import { mapCsvStatusToStageCode } from './stageMapping';
+import { toDbContactPreference } from '../../../utils/contact-preference';
 import type { QualificationStatus, ContactPreference, LeadSource } from '../../../types';
 
 export interface DbLeadRef {
@@ -174,9 +175,7 @@ export function classifyRow(
   const mappedStageCode = mapCsvStatusToStageCode(rawStatus);
   const targetExplicitStage = mappedStageCode ? stageByCode.get(mappedStageCode) || null : null;
 
-  const contactPreference: ContactPreference = ['email', 'sms', 'call'].includes(rawPref)
-    ? (rawPref as ContactPreference)
-    : 'email';
+  const contactPreference: ContactPreference = toDbContactPreference(rawPref);
 
   const source: LeadSource = ['meta', 'google', 'manual', 'test'].includes(rawSource)
     ? (rawSource as LeadSource)

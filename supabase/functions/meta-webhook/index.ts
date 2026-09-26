@@ -432,6 +432,23 @@ Deno.serve(async (req) => {
 
     if (!matchedLead) {
       // --- 8. Create New Lead in Novo Lead ---
+      // Extract contact preference from Meta form if specified
+      const rawMetaPref =
+        fieldMap['contact_preference'] ||
+        fieldMap['preferencia_de_contato'] ||
+        fieldMap['preferencia_contato'] ||
+        fieldMap['preference'] ||
+        fieldMap['canal_de_preferencia'];
+      const normMetaPref = rawMetaPref ? rawMetaPref.toLowerCase().trim() : '';
+      let metaContactPreference: 'email' | 'sms' | 'call' | 'whatsapp' = 'email';
+      if (normMetaPref === 'sms' || normMetaPref === 'text' || normMetaPref.includes('sms')) {
+        metaContactPreference = 'sms';
+      } else if (normMetaPref === 'whatsapp' || normMetaPref === 'zap' || normMetaPref.includes('whats') || normMetaPref.includes('zap')) {
+        metaContactPreference = 'whatsapp';
+      } else if (normMetaPref === 'call' || normMetaPref === 'phone' || normMetaPref.includes('call') || normMetaPref.includes('phone') || normMetaPref.includes('lig')) {
+        metaContactPreference = 'call';
+      }
+
       isNewLead = true;
       const { data: newLead, error: createLeadErr } = await db
         .from('leads')
@@ -445,7 +462,7 @@ Deno.serve(async (req) => {
           email_confirmation: cleanEmail,
           phone_raw: rawPhone,
           phone_e164: phoneE164,
-          contact_preference: 'email',
+          contact_preference: metaContactPreference,
           pipeline_stage_id: captureStage.id, // Strictly Novo Lead
           course_interest: resolvedCourse?.courseName || null,
           course_interests: resolvedCourse?.courseName ? [resolvedCourse.courseName] : [],

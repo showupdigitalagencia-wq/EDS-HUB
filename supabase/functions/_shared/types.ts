@@ -14,7 +14,7 @@ export interface LeadIntakePayload {
   email?: string;
   email_confirmation?: string;
   phone?: string;
-  contact_preference?: 'email' | 'sms' | 'call' | string;
+  contact_preference?: 'email' | 'sms' | 'call' | 'whatsapp' | string;
   source_created_at?: string;
   raw_payload?: Record<string, unknown>;
 }

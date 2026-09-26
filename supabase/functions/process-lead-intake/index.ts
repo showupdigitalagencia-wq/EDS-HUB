@@ -499,8 +499,14 @@ Deno.serve(async (req) => {
         }
       }
     } else {
-      const pref = payload.contact_preference;
-      const isValidPreference = pref === 'email' || pref === 'sms' || pref === 'call';
+      const rawPref = payload.contact_preference ? String(payload.contact_preference).trim().toLowerCase() : null;
+      const isValidPreference =
+        rawPref === 'email' ||
+        rawPref === 'sms' ||
+        rawPref === 'call' ||
+        rawPref === 'phone' ||
+        rawPref === 'whatsapp';
+      const pref = rawPref;
 
       if (!isValidPreference) {
         // Preference missing, invalid, or unsupported
@@ -979,10 +985,18 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
     .eq('code', 'capture')
     .single();
 
-  // Determine DB-safe contact_preference ('email' | 'sms' | 'call')
-  const rawPref = payload.contact_preference;
-  const isPrefValid = rawPref === 'email' || rawPref === 'sms' || rawPref === 'call';
-  const dbContactPreference = isPrefValid ? rawPref : 'email';
+  // Determine DB-safe contact_preference ('email' | 'sms' | 'call' | 'whatsapp' | null)
+  const normPref = payload.contact_preference ? String(payload.contact_preference).trim().toLowerCase() : '';
+  let dbContactPreference: 'email' | 'sms' | 'call' | 'whatsapp' | null = null;
+  if (normPref === 'email' || normPref === 'e-mail' || normPref === 'mail') {
+    dbContactPreference = 'email';
+  } else if (normPref === 'sms' || normPref === 'text' || normPref.includes('sms')) {
+    dbContactPreference = 'sms';
+  } else if (normPref === 'whatsapp' || normPref === 'whats' || normPref === 'zap' || normPref.includes('whats') || normPref.includes('zap') || normPref === 'wa') {
+    dbContactPreference = 'whatsapp';
+  } else if (normPref === 'call' || normPref === 'phone' || normPref.includes('call') || normPref.includes('phone') || normPref.includes('lig')) {
+    dbContactPreference = 'call';
+  }
 
   // Create new lead
   const { data: newLead, error: createError } = await db

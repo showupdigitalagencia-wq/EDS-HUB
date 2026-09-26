@@ -323,8 +323,14 @@ Deno.serve(async (req) => {
     let contactPref: string | null = null;
     if (fields.contact_preference) {
       const p = String(fields.contact_preference).trim().toLowerCase();
-      if (['email', 'sms', 'call'].includes(p)) {
+      if (['email', 'sms', 'call', 'whatsapp'].includes(p)) {
         contactPref = p;
+      } else if (p === 'whats' || p === 'zap' || p.includes('whats') || p.includes('zap')) {
+        contactPref = 'whatsapp';
+      } else if (p === 'text' || p.includes('sms')) {
+        contactPref = 'sms';
+      } else if (p === 'phone' || p.includes('call') || p.includes('lig')) {
+        contactPref = 'call';
       }
     }
 
@@ -421,7 +427,7 @@ Deno.serve(async (req) => {
           last_name: fields.last_name ? String(fields.last_name).trim() : undefined,
           email: rawEmail || undefined,
           phone: phoneE164 || undefined,
-          contact_preference: (contactPref as 'email' | 'sms' | 'call') || 'email',
+          contact_preference: (contactPref as 'email' | 'sms' | 'call' | 'whatsapp') || undefined,
           raw_payload: fields,
         };
 

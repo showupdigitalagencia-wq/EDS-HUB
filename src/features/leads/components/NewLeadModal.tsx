@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import type { Course, CourseSession } from '../../../types';
 import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
+import { toDbContactPreference } from '../../../utils/contact-preference';
 import { X, UserPlus, AlertCircle, Loader2, Plus, Trash2 } from 'lucide-react';
 import { notifyNewLead } from '../../notifications/services/push-notification-service';
 
@@ -24,6 +25,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [contactPreference, setContactPreference] = useState('');
   const [referredBy, setReferredBy] = useState('');
 
   // Course Interests (up to 3 prioritized)
@@ -42,6 +44,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
     setFullName('');
     setEmail('');
     setPhone('');
+    setContactPreference('');
     setReferredBy('');
     setInterests([{ courseId: '', sessionId: '' }]);
 
@@ -145,7 +148,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
         p_last_name: lastName || null,
         p_email: trimmedEmail || null,
         p_phone: trimmedPhone || null,
-        p_contact_preference: 'email', // Safe internal default satisfying DB NOT NULL constraint
+        p_contact_preference: toDbContactPreference(contactPreference),
         p_stage_id: null, // Defaults to Novo Lead (code = 'capture')
         p_referred_by: referredBy.trim() || null,
         p_interests: validInterests,
@@ -355,18 +358,36 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
             )}
           </div>
 
-          {/* Quem indicou? */}
-          <div className="pt-2 border-t border-slate-100">
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Quem indicou?
-            </label>
-            <input
-              type="text"
-              value={referredBy}
-              onChange={(e) => setReferredBy(e.target.value)}
-              placeholder="Ex: Dr. Roberto / Indicação clínica"
-              className="input-standard"
-            />
+          {/* Origem e Preferência de Contato */}
+          <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Preferência de Contato
+              </label>
+              <select
+                value={contactPreference}
+                onChange={(e) => setContactPreference(e.target.value)}
+                className="input-standard"
+              >
+                <option value="">Não informada (Padrão)</option>
+                <option value="email">Email</option>
+                <option value="sms">SMS</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="call">Ligação</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Quem indicou?
+              </label>
+              <input
+                type="text"
+                value={referredBy}
+                onChange={(e) => setReferredBy(e.target.value)}
+                placeholder="Ex: Dr. Roberto / Indicação clínica"
+                className="input-standard"
+              />
+            </div>
           </div>
 
           {/* Form Actions */}

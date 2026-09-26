@@ -21,6 +21,10 @@ import {
   type FormattedCourseInterest,
 } from '../pipeline/components/MinimalLeadCard';
 import {
+  formatContactPreferenceLabel,
+  getContactPreferenceBadgeClasses,
+} from '../../utils/contact-preference';
+import {
   ArrowLeft,
   Mail,
   Phone,
@@ -515,6 +519,18 @@ export function LeadDetailPage() {
                 <span>Email não informado</span>
               </div>
             )}
+
+            {/* Contact Preference Badge */}
+            <div className="inline-flex items-center">
+              <span
+                data-testid="lead-detail-contact-preference"
+                className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-md border select-none ${
+                  getContactPreferenceBadgeClasses(lead.contact_preference).badge
+                }`}
+              >
+                {formatContactPreferenceLabel(lead.contact_preference)}
+              </span>
+            </div>
 
             {/* Referred By (rendered only if present) */}
             {lead.referred_by && (
