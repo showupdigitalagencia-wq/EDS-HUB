@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
+import { useAuth } from '../auth/AuthProvider';
 import { BlockEditor } from '../editor/BlockEditor';
 import { TemplatePickerModal } from './components/TemplatePickerModal';
 import { CampaignAttachmentSection } from './components/CampaignAttachmentSection';
@@ -55,6 +56,8 @@ import {
   Paperclip,
   ChevronRight,
   ChevronLeft,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 export type CampaignSectionType =
@@ -67,6 +70,8 @@ export type CampaignSectionType =
 
 export function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { isAuthorized } = useAuth();
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [activeSection, setActiveSection] = useState<CampaignSectionType>('content');
@@ -76,6 +81,11 @@ export function CampaignDetailPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Campaign Delete state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Campaign Header & Details
   const [name, setName] = useState('');
@@ -542,6 +552,20 @@ export function CampaignDetailPage() {
           .map((codeOrId) => allStages.find((s) => s.code === codeOrId || s.id === codeOrId)?.name || codeOrId)
           .join(', ')
       : null;
+
+  const handleDeleteCampaign = async () => {
+    if (!campaign || !isAuthorized) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await campaignAudienceService.safeDeleteCampaign(campaign.id);
+      setIsDeleteModalOpen(false);
+      navigate('/campaigns', { state: { message: 'Campanha excluída com sucesso.' } });
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Falha ao excluir campanha.');
+      setIsDeleting(false);
+    }
+  };
 
   // Navigation Sections Configuration
   const sections = [
@@ -1301,6 +1325,34 @@ export function CampaignDetailPage() {
           </div>
         )}
 
+        {/* Zona de Perigo: Excluir Campanha */}
+        {isAuthorized && (
+          <div className="card-executive p-5 border-rose-200 bg-rose-50/40 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-rose-900 flex items-center gap-2 font-heading">
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  Zona de Perigo
+                </h4>
+                <p className="text-xs text-rose-700 mt-0.5">
+                  Esta ação remove esta campanha do fluxo operacional do EDS HUB. O histórico factual de mensagens e entregabilidade anteriores é protegido.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(true)}
+                disabled={isDeleting}
+                data-testid="delete-campaign-button"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 self-start sm:self-auto disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4 text-rose-600" />
+                Excluir campanha
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Sticky Bottom Navigation Bar for Mobile and Desktop */}
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-3 shadow-lg">
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
@@ -1412,6 +1464,65 @@ export function CampaignDetailPage() {
           setSuccessMessage(`Segmento salvo "${seg.name}" aplicado com sucesso.`);
         }}
       />
+
+      {/* Delete Campaign Confirmation Modal */}
+      {isDeleteModalOpen && campaign && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs"
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-slate-900 font-heading">
+                  Excluir campanha?
+                </h3>
+                <div className="mt-2 text-xs text-slate-600 space-y-2">
+                  <div>
+                    <span className="text-slate-400 font-medium block">Campanha:</span>
+                    <strong className="text-slate-900 font-bold text-sm">{campaign.name}</strong>
+                  </div>
+                  <p className="text-slate-500">
+                    Esta ação removerá esta campanha do EDS HUB.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteCampaign}
+                disabled={isDeleting}
+                data-testid="confirm-delete-campaign-button"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {isDeleting ? 'Excluindo...' : 'Excluir campanha'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

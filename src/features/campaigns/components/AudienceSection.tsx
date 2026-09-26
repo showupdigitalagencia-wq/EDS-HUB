@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { campaignAudienceService, type SearchedLead } from '../services/campaign-audience-service';
 import type {
@@ -21,6 +21,8 @@ import {
   Sliders,
   X,
   Layers,
+  Phone,
+  Mail,
 } from 'lucide-react';
 
 interface CourseOption {
@@ -42,8 +44,8 @@ interface AudienceSectionProps {
   channel: 'email' | 'sms' | 'call';
   filterDefinition: AudienceFilterDefinition;
   onChange: (def: AudienceFilterDefinition) => void;
-  onOpenPreview: (preview: AudiencePreviewResult) => void;
-  onOpenSavedSegments: () => void;
+  onOpenPreview?: (preview: AudiencePreviewResult) => void;
+  onOpenSavedSegments?: () => void;
   disabled?: boolean;
 }
 
@@ -51,7 +53,7 @@ type AudienceMode = 'all' | 'stage' | 'course' | 'individual';
 
 export function AudienceSection({
   channel,
-  filterDefinition,
+  filterDefinition = { mode: 'all', version: 1, operator: 'and' },
   onChange,
   onOpenPreview,
   onOpenSavedSegments,
@@ -62,18 +64,25 @@ export function AudienceSection({
   const [courses, setCourses] = useState<CourseOption[]>([]);
   const [sessions, setSessions] = useState<CourseSessionOption[]>([]);
 
-  // Individual leads search state
+  // Real leads list & search state
   const [leadSearchTerm, setLeadSearchTerm] = useState('');
-  const [isSearchingLeads, setIsSearchingLeads] = useState(false);
-  const [searchResults, setSearchResults] = useState<SearchedLead[]>([]);
+  const [realLeads, setRealLeads] = useState<SearchedLead[]>([]);
+  const [isLoadingRealLeads, setIsLoadingRealLeads] = useState(false);
   const [selectedLeadsList, setSelectedLeadsList] = useState<SearchedLead[]>([]);
+
+  // Stage & Course matching leads previews
+  const [stageMatchingLeads, setStageMatchingLeads] = useState<SearchedLead[]>([]);
+  const [isLoadingStageLeads, setIsLoadingStageLeads] = useState(false);
+  const [courseMatchingLeads, setCourseMatchingLeads] = useState<SearchedLead[]>([]);
+  const [isLoadingCourseLeads, setIsLoadingCourseLeads] = useState(false);
 
   // Estimation & Reach state
   const [isEstimating, setIsEstimating] = useState(false);
   const [previewResult, setPreviewResult] = useState<AudiencePreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAdvancedRules, setShowAdvancedRules] = useState(false);
-  // Load canonical stages and courses
+
+  // 1. Load canonical stages and courses
   useEffect(() => {
     async function loadRefs() {
       try {
@@ -91,7 +100,7 @@ export function AudienceSection({
     loadRefs();
   }, []);
 
-  // When course changes, load its real sessions
+  // 2. When course changes, load its real sessions
   const currentCourseId = filterDefinition.course_id || filterDefinition.enrolled_course_id || '';
   useEffect(() => {
     async function loadSessions() {
@@ -113,23 +122,90 @@ export function AudienceSection({
     loadSessions();
   }, [currentCourseId]);
 
-  // Load selected individual leads details if any
+  // 3. Load Real Leads for "Leads Específicos" directly
+  const loadRealLeads = useCallback(async (query = '') => {
+    setIsLoadingRealLeads(true);
+    try {
+      const results = await campaignAudienceService.searchLeads(query, 60);
+      setRealLeads(results);
+    } catch (err) {
+      console.error('Failed to load real leads:', err);
+    } finally {
+      setIsLoadingRealLeads(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRealLeads(leadSearchTerm);
+  }, [loadRealLeads, leadSearchTerm]);
+
+  // 4. Load initial selected individual leads info
   useEffect(() => {
     async function loadInitialSelectedLeads() {
-      if (!filterDefinition.selected_lead_ids || filterDefinition.selected_lead_ids.length === 0) {
+      const currentSelectedIds = filterDefinition.selected_lead_ids || [];
+      if (currentSelectedIds.length === 0) {
         setSelectedLeadsList([]);
         return;
       }
       try {
         const leads = await campaignAudienceService.searchLeads('', 100);
-        const filtered = leads.filter((l) => filterDefinition.selected_lead_ids?.includes(l.id));
+        const filtered = leads.filter((l) => currentSelectedIds.includes(l.id));
         setSelectedLeadsList(filtered);
       } catch (err) {
         console.error('Failed to load selected leads info:', err);
       }
     }
     loadInitialSelectedLeads();
-  }, []);
+  }, [filterDefinition.selected_lead_ids]);
+
+  // 5. Load Stage Matching Leads
+  const selectedStages = useMemo(() => filterDefinition.stages || [], [filterDefinition.stages]);
+  useEffect(() => {
+    async function loadStageLeads() {
+      if (mode !== 'stage' || selectedStages.length === 0) {
+        setStageMatchingLeads([]);
+        return;
+      }
+      setIsLoadingStageLeads(true);
+      try {
+        // Resolve stage codes to UUIDs if needed
+        const stageUuids = stages
+          .filter((st) => selectedStages.includes(st.code) || selectedStages.includes(st.id))
+          .map((st) => st.id);
+        const results = await campaignAudienceService.searchLeads('', 20, {
+          stageIds: stageUuids.length > 0 ? stageUuids : selectedStages,
+        });
+        setStageMatchingLeads(results);
+      } catch (err) {
+        console.error('Failed to load stage matching leads:', err);
+      } finally {
+        setIsLoadingStageLeads(false);
+      }
+    }
+    loadStageLeads();
+  }, [mode, selectedStages, stages]);
+
+  // 6. Load Course Matching Leads
+  useEffect(() => {
+    async function loadCourseLeads() {
+      if (mode !== 'course' || !currentCourseId) {
+        setCourseMatchingLeads([]);
+        return;
+      }
+      setIsLoadingCourseLeads(true);
+      try {
+        const results = await campaignAudienceService.searchLeads('', 20, {
+          courseId: currentCourseId,
+        });
+        setCourseMatchingLeads(results);
+      } catch (err) {
+        console.error('Failed to load course matching leads:', err);
+      } finally {
+        setIsLoadingCourseLeads(false);
+      }
+    }
+    loadCourseLeads();
+  }, [mode, currentCourseId]);
 
   // Update a single filter field
   const updateFilter = useCallback(
@@ -157,10 +233,12 @@ export function AudienceSection({
       updated.course_session_id = undefined;
       updated.selected_lead_ids = undefined;
     } else if (newMode === 'stage' && (!updated.stages || updated.stages.length === 0)) {
-      // Default to first active stage if available
       if (stages.length > 0) {
         updated.stages = [stages[0].code || stages[0].id];
       }
+    } else if (newMode === 'individual') {
+      // In individual mode, make sure real leads are loaded
+      loadRealLeads('');
     }
 
     onChange(updated);
@@ -194,22 +272,13 @@ export function AudienceSection({
     updateFilter('stages', updated.length > 0 ? updated : undefined);
   };
 
-  // Search individual leads
-  const handleSearchLeads = async () => {
-    if (!leadSearchTerm.trim()) return;
-    setIsSearchingLeads(true);
-    try {
-      const results = await campaignAudienceService.searchLeads(leadSearchTerm, 20);
-      setSearchResults(results);
-    } catch (err) {
-      console.error('Failed to search leads:', err);
-    } finally {
-      setIsSearchingLeads(false);
-    }
-  };
-
-  // Toggle individual lead selection
+  // Toggle individual lead selection (enforces eligibility)
   const toggleLeadSelection = (lead: SearchedLead) => {
+    // HARD ENFORCEMENT: Never allow ineligible leads to be selected for sending
+    if (!lead.is_eligible) {
+      return;
+    }
+
     const currentIds = filterDefinition.selected_lead_ids || [];
     const isAlreadySelected = currentIds.includes(lead.id);
 
@@ -228,7 +297,32 @@ export function AudienceSection({
     updateFilter('selected_lead_ids', updatedIds.length > 0 ? updatedIds : undefined);
   };
 
-  const selectedStages = filterDefinition.stages || [];
+  // Select all currently visible eligible leads
+  const handleSelectAllEligible = () => {
+    const eligibleLeads = realLeads.filter((l) => l.is_eligible);
+    if (eligibleLeads.length === 0) return;
+
+    const currentIds = new Set(filterDefinition.selected_lead_ids || []);
+    const existingListMap = new Map(selectedLeadsList.map((l) => [l.id, l]));
+
+    eligibleLeads.forEach((lead) => {
+      currentIds.add(lead.id);
+      existingListMap.set(lead.id, lead);
+    });
+
+    const newIds = Array.from(currentIds);
+    const newList = Array.from(existingListMap.values());
+
+    setSelectedLeadsList(newList);
+    updateFilter('selected_lead_ids', newIds);
+  };
+
+  // Clear all selections
+  const handleClearSelection = () => {
+    setSelectedLeadsList([]);
+    updateFilter('selected_lead_ids', undefined);
+  };
+
   const selectedLeadIds = filterDefinition.selected_lead_ids || [];
 
   return (
@@ -247,7 +341,7 @@ export function AudienceSection({
 
         <button
           type="button"
-          onClick={onOpenSavedSegments}
+          onClick={() => onOpenSavedSegments?.()}
           disabled={disabled}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer disabled:opacity-50 self-start sm:self-auto"
         >
@@ -266,7 +360,7 @@ export function AudienceSection({
             { id: 'all', label: 'Todos os Elegíveis', icon: Users, desc: 'Toda a base ativa com preferência por email' },
             { id: 'stage', label: 'Por Etapa do Funil', icon: Layers, desc: 'Filtrar por Novo Lead, Interessado, etc.' },
             { id: 'course', label: 'Por Curso & Turma', icon: GraduationCap, desc: 'Filtrar por curso e data de turma' },
-            { id: 'individual', label: 'Leads Específicos', icon: Search, desc: 'Escolher contatos um a um por busca' },
+            { id: 'individual', label: 'Leads Específicos', icon: Search, desc: 'Escolher contatos reais na lista' },
           ].map((item) => {
             const isSelected = mode === item.id;
             return (
@@ -296,7 +390,7 @@ export function AudienceSection({
 
       {/* SUB-SECTION 1: By Pipeline Stage */}
       {mode === 'stage' && (
-        <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3">
+        <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
               <Layers className="w-4 h-4 text-blue-600" />
@@ -331,6 +425,42 @@ export function AudienceSection({
               );
             })}
           </div>
+
+          {/* Real leads matching selected stage */}
+          {selectedStages.length > 0 && (
+            <div className="pt-3 border-t border-slate-200 space-y-2">
+              <span className="text-[11px] font-bold text-slate-700 block">
+                Leads reais nesta etapa ({isLoadingStageLeads ? 'carregando...' : stageMatchingLeads.length}):
+              </span>
+              <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                {stageMatchingLeads.length === 0 && !isLoadingStageLeads ? (
+                  <p className="p-3 text-xs text-slate-400 italic text-center">Nenhum lead encontrado nesta etapa.</p>
+                ) : (
+                  stageMatchingLeads.map((l) => (
+                    <div key={l.id} className="p-2.5 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-bold text-slate-900 block truncate">
+                          {l.first_name} {l.last_name || ''}
+                        </span>
+                        <span className="text-[11px] text-slate-500 truncate block">
+                          {l.email || 'Sem email'} • {l.stage_name}
+                        </span>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                          l.is_eligible
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {l.is_eligible ? 'Elegível' : l.exclusion_reason || 'Ineligível'}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -352,7 +482,7 @@ export function AudienceSection({
                     ...filterDefinition,
                     course_id: courseId,
                     enrolled_course_id: courseId,
-                    course_session_id: undefined, // reset session when course changes
+                    course_session_id: undefined,
                   });
                 }}
                 className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:ring-1 focus:ring-[#08254f] outline-none"
@@ -387,132 +517,256 @@ export function AudienceSection({
               </select>
             </div>
           </div>
+
+          {/* Real leads matching selected course */}
+          {currentCourseId && (
+            <div className="pt-3 border-t border-slate-200 space-y-2">
+              <span className="text-[11px] font-bold text-slate-700 block">
+                Leads com interesse neste curso ({isLoadingCourseLeads ? 'carregando...' : courseMatchingLeads.length}):
+              </span>
+              <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                {courseMatchingLeads.length === 0 && !isLoadingCourseLeads ? (
+                  <p className="p-3 text-xs text-slate-400 italic text-center">Nenhum lead com interesse registrado neste curso.</p>
+                ) : (
+                  courseMatchingLeads.map((l) => (
+                    <div key={l.id} className="p-2.5 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-bold text-slate-900 block truncate">
+                          {l.first_name} {l.last_name || ''}
+                        </span>
+                        <span className="text-[11px] text-slate-500 truncate block">
+                          {l.email || 'Sem email'} • {l.stage_name || 'Sem etapa'}
+                        </span>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                          l.is_eligible
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {l.is_eligible ? 'Elegível' : l.exclusion_reason || 'Ineligível'}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* SUB-SECTION 3: Individual Leads Selection */}
+      {/* SUB-SECTION 3: REAL LEAD PICKER ("Leads Específicos") */}
       {mode === 'individual' && (
         <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 font-heading">
                 <Search className="w-4 h-4 text-blue-600" />
-                Buscar e Selecionar Leads Específicos
+                Leads Específicos do CRM
               </span>
-              <p className="text-[11px] text-slate-500">
-                Selecione os contatos reais individualmente. {selectedLeadIds.length} selecionado(s).
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Escolha os contatos individualmente na lista real abaixo. Apenas contatos elegíveis para email podem ser selecionados para envio.
               </p>
             </div>
 
-            {selectedLeadIds.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                {selectedLeadIds.length} lead{selectedLeadIds.length === 1 ? '' : 's'} selecionado{selectedLeadIds.length === 1 ? '' : 's'}
+              </span>
+
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedLeadsList([]);
-                  updateFilter('selected_lead_ids', undefined);
-                }}
-                className="text-xs font-semibold text-rose-600 hover:text-rose-800 transition-colors self-start sm:self-auto cursor-pointer"
+                onClick={handleSelectAllEligible}
+                disabled={disabled || realLeads.filter((l) => l.is_eligible).length === 0}
+                data-testid="select-all-eligible-btn"
+                className="text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
               >
-                Limpar seleção ({selectedLeadIds.length})
+                Selecionar todos os elegíveis
+              </button>
+
+              {selectedLeadIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearSelection}
+                  disabled={disabled}
+                  data-testid="clear-selection-btn"
+                  className="text-xs font-semibold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                >
+                  Limpar seleção
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Full-width Search Bar */}
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={leadSearchTerm}
+              onChange={(e) => setLeadSearchTerm(e.target.value)}
+              placeholder="Buscar por nome, email ou telefone..."
+              data-testid="real-lead-search-input"
+              className="w-full pl-9 pr-8 py-2 text-xs border border-slate-200 rounded-xl bg-white outline-none focus:ring-1 focus:ring-[#08254f] shadow-2xs"
+            />
+            {leadSearchTerm && (
+              <button
+                type="button"
+                onClick={() => setLeadSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {/* Search bar */}
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={leadSearchTerm}
-                onChange={(e) => setLeadSearchTerm(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleSearchLeads();
-                  }
-                }}
-                placeholder="Buscar por nome, email ou telefone..."
-                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-white outline-none focus:ring-1 focus:ring-[#08254f]"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleSearchLeads}
-              disabled={isSearchingLeads}
-              className="px-4 py-2 text-xs font-bold rounded-xl bg-[#08254f] text-white hover:bg-[#061d3d] transition-colors cursor-pointer shrink-0 disabled:opacity-50"
-            >
-              {isSearchingLeads ? 'Buscando...' : 'Buscar'}
-            </button>
-          </div>
-
-          {/* Search Results Dropdown/List */}
-          {searchResults.length > 0 && (
-            <div className="bg-white border border-slate-200 rounded-xl p-2 max-h-56 overflow-y-auto space-y-1 divide-y divide-slate-100">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 block pb-1">
-                Resultados da busca ({searchResults.length}):
+          {/* Real Leads Scrollable List */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+              <span>
+                {isLoadingRealLeads
+                  ? 'Carregando contatos do CRM...'
+                  : `${realLeads.length} lead${realLeads.length === 1 ? '' : 's'} encontrado${realLeads.length === 1 ? '' : 's'}`}
               </span>
-              {searchResults.map((lead) => {
+              <span className="text-[10px] text-slate-400">
+                Ineligíveis aparecem desabilitados com o motivo factual
+              </span>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-xl p-2 max-h-80 overflow-y-auto space-y-2">
+              {realLeads.length === 0 && !isLoadingRealLeads && (
+                <div className="p-6 text-center text-xs text-slate-400">
+                  Nenhum lead encontrado com o termo informado.
+                </div>
+              )}
+
+              {realLeads.map((lead) => {
                 const isSelected = selectedLeadIds.includes(lead.id);
                 return (
                   <div
                     key={lead.id}
-                    onClick={() => toggleLeadSelection(lead)}
-                    className={`p-2 rounded-lg flex items-center justify-between text-xs cursor-pointer transition-colors ${
-                      isSelected ? 'bg-blue-50/80 text-[#08254f]' : 'hover:bg-slate-50 text-slate-800'
+                    onClick={() => {
+                      if (lead.is_eligible) {
+                        toggleLeadSelection(lead);
+                      }
+                    }}
+                    className={`p-3 rounded-xl border transition-all text-left ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50/70 ring-1 ring-blue-500'
+                        : lead.is_eligible
+                        ? 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60 cursor-pointer'
+                        : 'border-slate-200 bg-slate-50/80 opacity-70 cursor-not-allowed'
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-start gap-3">
+                      {/* Checkbox */}
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={() => {}} // handled by div
-                        className="rounded text-blue-600 focus:ring-blue-500 shrink-0"
+                        disabled={!lead.is_eligible || disabled}
+                        data-testid={`lead-select-checkbox-${lead.id}`}
+                        onChange={() => {
+                          if (lead.is_eligible) {
+                            toggleLeadSelection(lead);
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed shrink-0"
                       />
-                      <div className="min-w-0">
-                        <span className="font-bold block truncate">
-                          {lead.first_name} {lead.last_name || ''}
-                        </span>
-                        <span className="text-[11px] text-slate-500 truncate block">
-                          {lead.email || 'Sem email'} • {lead.stage_name || 'Sem etapa'}
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="shrink-0 flex items-center gap-1.5">
-                      {lead.contact_preference === 'email' ? (
-                        <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-emerald-100 text-emerald-800">
-                          Email
-                        </span>
-                      ) : (
-                        <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-800">
-                          {lead.contact_preference || 'Sem canal'}
-                        </span>
-                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                          <span className="text-xs font-bold text-slate-900 truncate">
+                            {lead.first_name} {lead.last_name || ''}
+                          </span>
+
+                          {/* Email Eligibility Status Badge */}
+                          {lead.is_eligible ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 self-start sm:self-auto shrink-0">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Elegível para email
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-full bg-amber-100 text-amber-900 border border-amber-200 self-start sm:self-auto shrink-0"
+                              title={lead.exclusion_reason || 'Incompatível com envio de email'}
+                            >
+                              <XCircle className="w-3 h-3 text-amber-700" />
+                              Não elegível — {lead.exclusion_reason || 'Incompatível'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Contact details: email & phone */}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-[11px] text-slate-600">
+                          <span className="flex items-center gap-1.5">
+                            <Mail className="w-3 h-3 text-slate-400 shrink-0" />
+                            {lead.email || <span className="italic text-slate-400">Sem email</span>}
+                          </span>
+                          {lead.phone && (
+                            <span className="flex items-center gap-1.5">
+                              <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                              {lead.phone}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Badges: Preference, Stage, Course */}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          <span
+                            className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${
+                              lead.contact_preference === 'email'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            Preferência: {lead.contact_preference ? lead.contact_preference.toUpperCase() : 'Não informada'}
+                          </span>
+
+                          {lead.stage_name && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-800">
+                              Etapa: {lead.stage_name}
+                            </span>
+                          )}
+
+                          {lead.course_interest && (
+                            <span
+                              className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-slate-100 text-slate-700 truncate max-w-[220px]"
+                              title={lead.course_interest}
+                            >
+                              <GraduationCap className="w-3 h-3 inline mr-1 text-[#449bd5]" />
+                              {lead.course_interest}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          )}
+          </div>
 
-          {/* Selected Leads Chips */}
+          {/* Selected Leads Summary Chips */}
           {selectedLeadsList.length > 0 && (
-            <div className="space-y-1.5">
-              <span className="text-[11px] font-semibold text-slate-600 block">
-                Contatos selecionados para envio ({selectedLeadsList.length}):
+            <div className="space-y-2 pt-2 border-t border-slate-200">
+              <span className="text-xs font-bold text-slate-800 block">
+                Selecionados ({selectedLeadsList.length}):
               </span>
-              <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
+              <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 bg-white border border-slate-200 rounded-xl">
                 {selectedLeadsList.map((lead) => (
                   <span
                     key={lead.id}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-100/70 text-[#08254f] text-xs font-medium"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-100/80 text-[#08254f] text-xs font-semibold"
                   >
                     <span>{lead.first_name} {lead.last_name || ''}</span>
                     <button
                       type="button"
                       onClick={() => toggleLeadSelection(lead)}
-                      className="hover:text-red-700 cursor-pointer"
+                      data-testid={`remove-selected-lead-${lead.id}`}
+                      className="hover:text-red-700 cursor-pointer p-0.5"
+                      title="Remover lead"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -607,7 +861,11 @@ export function AudienceSection({
                 Selecionados
               </span>
               <p className="text-2xl font-black text-slate-900">
-                {isEstimating ? '...' : previewResult?.total_matched ?? 0}
+                {isEstimating
+                  ? '...'
+                  : mode === 'individual'
+                  ? selectedLeadIds.length
+                  : previewResult?.total_matched ?? 0}
               </p>
             </div>
 
@@ -647,7 +905,7 @@ export function AudienceSection({
 
             <button
               type="button"
-              onClick={() => previewResult && onOpenPreview(previewResult)}
+              onClick={() => previewResult && onOpenPreview?.(previewResult)}
               disabled={isEstimating || !previewResult}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-[#08254f] text-white hover:bg-[#061d3d] transition-colors cursor-pointer disabled:opacity-50"
             >

@@ -8,6 +8,8 @@ import { EmptyState } from '../../components/EmptyState';
 import { NewLeadModal } from './components/NewLeadModal';
 import { LeadProfileDrawer } from './components/LeadProfileDrawer';
 import { CsvImportModal } from './import/CsvImportModal';
+import { useAuth } from '../auth/AuthProvider';
+import { campaignAudienceService } from '../campaigns/services/campaign-audience-service';
 import type { Lead, PipelineStage, Tag, Course, CourseSession } from '../../types';
 import {
   formatSessionMonthYear,
@@ -33,6 +35,10 @@ import {
   ChevronUp,
   X,
   GraduationCap,
+  MoreVertical,
+  Trash2,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 
 const PAGE_SIZE = 15;
@@ -82,6 +88,21 @@ export function LeadsListPage() {
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+
+  // Lead Delete & Menu State
+  const { isAuthorized } = useAuth();
+  const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
+  const [isDeletingLead, setIsDeletingLead] = useState(false);
+  const [deleteLeadError, setDeleteLeadError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [activeMenuLeadId, setActiveMenuLeadId] = useState<string | null>(null);
+
+  // Close contextual menu when clicking outside
+  useEffect(() => {
+    const handleDocumentClick = () => setActiveMenuLeadId(null);
+    document.addEventListener('click', handleDocumentClick);
+    return () => document.removeEventListener('click', handleDocumentClick);
+  }, []);
 
   // 1. Fetch reference data (operational stages, active courses, sessions, tags)
   useEffect(() => {
@@ -140,7 +161,10 @@ export function LeadsListPage() {
           '*, lead_course_interests!inner(course_id, course_session_id, priority, course:courses(name), session:course_sessions(title, start_date))';
       }
 
-      let query = supabase.from('leads').select(selectClause, { count: 'exact' });
+      let query: any = supabase.from('leads').select(selectClause, { count: 'exact' });
+      if (typeof query?.is === 'function') {
+        query = query.is('deleted_at', null);
+      }
 
       // Primary Filter: Search term (name, email, phone)
       if (searchTerm.trim()) {
@@ -219,7 +243,7 @@ export function LeadsListPage() {
 
       if (fetchErr) throw fetchErr;
 
-      const loadedLeads = (data as unknown as Lead[]) || [];
+      const loadedLeads = (((data as unknown as Lead[]) || []).filter((l: any) => !l.deleted_at));
       if (sortBy !== 'lead_score') {
         loadedLeads.sort(compareLeadsNewestFirst);
       }
@@ -256,6 +280,35 @@ export function LeadsListPage() {
     sortOrder,
   ]);
 
+  const handleConfirmDeleteLead = async () => {
+    if (!leadToDelete || !isAuthorized) return;
+    setIsDeletingLead(true);
+    setDeleteLeadError(null);
+    try {
+      await campaignAudienceService.safeDeleteLead(leadToDelete.id);
+      if (selectedLeadId === leadToDelete.id) {
+        setSelectedLeadId(null);
+      }
+      setLeadToDelete(null);
+      setToastMessage('Lead excluído com sucesso.');
+      window.dispatchEvent(
+        new CustomEvent('lead_updated', {
+          detail: { leadId: leadToDelete.id, action: 'deleted' },
+        }),
+      );
+      window.dispatchEvent(
+        new CustomEvent('lead-updated', {
+          detail: { leadId: leadToDelete.id, action: 'deleted' },
+        }),
+      );
+      await fetchLeads();
+    } catch (err) {
+      setDeleteLeadError(err instanceof Error ? err.message : 'Falha ao excluir lead.');
+    } finally {
+      setIsDeletingLead(false);
+    }
+  };
+
   useEffect(() => {
     fetchLeads();
   }, [fetchLeads]);
@@ -272,6 +325,7 @@ export function LeadsListPage() {
     };
     window.addEventListener('leads-purged', handlePurged);
     window.addEventListener('lead-updated', handleUpdated);
+    window.addEventListener('lead_updated', handleUpdated);
     window.addEventListener('lead-created', handleCreated);
 
     if (typeof supabase?.channel === 'function' && import.meta.env.MODE !== 'test') {
@@ -376,6 +430,20 @@ export function LeadsListPage() {
       }
     >
       <div className="space-y-4">
+        {toastMessage && (
+          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between shadow-2xs">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              {toastMessage}
+            </span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="text-emerald-700 hover:text-emerald-900 cursor-pointer p-0.5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         {/* Top Controls Bar */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
@@ -649,15 +717,54 @@ export function LeadsListPage() {
                           </span>
                         )}
                       </div>
-                      {stage && (
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-full border shrink-0 ${getStageBadgeStyle(
-                            stage.code,
-                          )}`}
-                        >
-                          {stage.name}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {stage && (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-full border shrink-0 ${getStageBadgeStyle(
+                              stage.code,
+                            )}`}
+                          >
+                            {stage.name}
+                          </span>
+                        )}
+                        {isAuthorized && (
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMenuLeadId(activeMenuLeadId === lead.id ? null : lead.id);
+                              }}
+                              data-testid={`lead-actions-menu-${lead.id}`}
+                              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                              title="Mais opções"
+                              aria-label="Ações do lead"
+                            >
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </button>
+
+                            {activeMenuLeadId === lead.id && (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute right-0 top-full mt-1 w-36 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-30 animate-in fade-in zoom-in-95 duration-100 text-left"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveMenuLeadId(null);
+                                    setLeadToDelete(lead);
+                                  }}
+                                  data-testid={`delete-lead-menu-${lead.id}`}
+                                  className="w-full px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-medium cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Excluir lead</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* 2. Telefone & E-mail (Informacionais, display-only) */}
@@ -801,6 +908,7 @@ export function LeadsListPage() {
                       <th className="px-5 py-3.5">Contato</th>
                       <th className="px-5 py-3.5">Quem indicou?</th>
                       <th className="px-5 py-3.5">Data de Criação</th>
+                      <th className="px-5 py-3.5 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
@@ -942,6 +1050,43 @@ export function LeadsListPage() {
                           <td className="px-5 py-3.5 whitespace-nowrap text-slate-500 text-xs">
                             {new Date(lead.created_at).toLocaleDateString('pt-BR')}
                           </td>
+
+                          {/* 7. Ações */}
+                          <td className="px-5 py-3.5 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
+                            {isAuthorized && (
+                              <div className="relative inline-block text-left">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveMenuLeadId(activeMenuLeadId === lead.id ? null : lead.id)}
+                                  data-testid={`lead-actions-menu-${lead.id}`}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                                  title="Opções do lead"
+                                  aria-label="Ações do lead"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </button>
+
+                                {activeMenuLeadId === lead.id && (
+                                  <div
+                                    className="absolute right-0 top-full mt-1 w-36 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-30 animate-in fade-in zoom-in-95 duration-100 text-left"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveMenuLeadId(null);
+                                        setLeadToDelete(lead);
+                                      }}
+                                      data-testid={`delete-lead-menu-${lead.id}`}
+                                      className="w-full px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-medium cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <span>Excluir lead</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -998,6 +1143,76 @@ export function LeadsListPage() {
           onClose={() => setSelectedLeadId(null)}
           onLeadUpdated={fetchLeads}
         />
+
+        {/* Delete Lead Confirmation Modal */}
+        {leadToDelete && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs"
+          >
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-base font-bold text-slate-900 font-heading">
+                    Excluir lead?
+                  </h3>
+                  <div className="mt-2 text-xs text-slate-600 space-y-2">
+                    <div>
+                      <span className="text-slate-400 font-medium block">Lead:</span>
+                      <strong className="text-slate-900 font-bold text-sm">
+                        {[leadToDelete.first_name, leadToDelete.last_name].filter(Boolean).join(' ') || 'Contato sem nome'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-medium block">Email:</span>
+                      <span className="text-slate-800 font-medium">
+                        {leadToDelete.email || 'Não informado'}
+                      </span>
+                    </div>
+                    <p className="text-slate-500 pt-1">
+                      Este lead será removido das listas operacionais do CRM.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {deleteLeadError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium">
+                  {deleteLeadError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLeadToDelete(null);
+                    setDeleteLeadError(null);
+                  }}
+                  disabled={isDeletingLead}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteLead}
+                  disabled={isDeletingLead}
+                  data-testid="confirm-delete-lead-button"
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {isDeletingLead ? 'Excluindo...' : 'Excluir lead'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );

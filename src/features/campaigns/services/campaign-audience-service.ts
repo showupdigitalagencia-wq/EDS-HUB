@@ -23,6 +23,9 @@ export interface SearchedLead {
   is_eligible: boolean;
   exclusion_reason: string | null;
   is_suppressed?: boolean;
+  suppression_reason?: string | null;
+  course_interest?: string | null;
+  deleted_at?: string | null;
 }
 
 export interface OfficialCourseMaterial {
@@ -128,7 +131,8 @@ export const campaignAudienceService = {
     const { data: leads, error } = await supabase
       .from('leads')
       .select('id, first_name, last_name, email, phone_raw, phone_e164, source, contact_preference, pipeline_stage_id, lead_score, created_at, pipeline_stages(name, code)')
-      .in('id', leadIds);
+      .in('id', leadIds)
+      .is('deleted_at', null);
 
     if (error) {
       console.error('Failed to fetch specific leads for audience preview:', error);
@@ -277,19 +281,29 @@ export const campaignAudienceService = {
 
   /**
    * Search real leads by name, email, or phone with stage and preference info.
+   * Excludes soft-deleted leads and resolves course interests & suppression reasons.
    */
-  async searchLeads(query: string, limit = 25): Promise<SearchedLead[]> {
+  async searchLeads(
+    query = '',
+    limit = 50,
+    filters?: { stageIds?: string[]; courseId?: string; sessionId?: string },
+  ): Promise<SearchedLead[]> {
     const term = query.trim();
     let queryBuilder = supabase
       .from('leads')
-      .select('id, first_name, last_name, email, phone_raw, phone_e164, source, contact_preference, pipeline_stage_id, lead_score, created_at, pipeline_stages(name, code)')
+      .select('id, first_name, last_name, email, phone_raw, phone_e164, source, contact_preference, pipeline_stage_id, lead_score, created_at, course_interest, deleted_at, pipeline_stages(name, code), lead_course_interests(course_id, course_session_id, priority, course:courses(name), session:course_sessions(title))')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(limit);
 
     if (term) {
       queryBuilder = queryBuilder.or(
-        `first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,phone_raw.ilike.%${term}%`,
+        `first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,phone_raw.ilike.%${term}%,phone_e164.ilike.%${term}%`,
       );
+    }
+
+    if (filters?.stageIds && filters.stageIds.length > 0) {
+      queryBuilder = queryBuilder.in('pipeline_stage_id', filters.stageIds);
     }
 
     const { data, error } = await queryBuilder;
@@ -299,15 +313,19 @@ export const campaignAudienceService = {
     }
 
     // Check suppression for returned emails
-    const emails = (data || []).map((l) => l.email?.toLowerCase().trim()).filter((e): e is string => Boolean(e));
-    let suppressedSet = new Set<string>();
+    const emails = (data || []).map((l: any) => l.email?.toLowerCase().trim()).filter((e): e is string => Boolean(e));
+    const suppressionMap = new Map<string, string>();
     if (emails.length > 0) {
       const { data: supps } = await supabase
         .from('email_suppressions')
-        .select('normalized_email')
+        .select('normalized_email, reason')
         .in('normalized_email', emails);
       if (supps) {
-        suppressedSet = new Set(supps.map((s) => s.normalized_email));
+        supps.forEach((s: any) => {
+          if (s.normalized_email) {
+            suppressionMap.set(s.normalized_email.toLowerCase(), s.reason || 'manual');
+          }
+        });
       }
     }
 
@@ -316,26 +334,53 @@ export const campaignAudienceService = {
       const phone = l.phone_e164 || l.phone_raw || null;
       const stageName = l.pipeline_stages?.name || null;
       const stageCode = l.pipeline_stages?.code || null;
-      const isSuppressed = email ? suppressedSet.has(email.toLowerCase()) : false;
+      const normalizedEmail = email ? email.toLowerCase() : null;
+      const suppReason = normalizedEmail ? suppressionMap.get(normalizedEmail) : null;
+      const isSuppressed = Boolean(suppReason);
+
+      // Resolve course interest label
+      let courseLabel = l.course_interest || null;
+      const interests = l.lead_course_interests || [];
+      if (interests.length > 0) {
+        const sorted = [...interests].sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99));
+        const first = sorted[0];
+        const cName = first.course?.name || '';
+        const sTitle = first.session?.title || '';
+        courseLabel = cName ? (sTitle ? `${cName} • ${sTitle}` : cName) : courseLabel;
+      }
 
       let isEligible = true;
       let reason: string | null = null;
 
       if (l.source === 'test') {
         isEligible = false;
-        reason = 'TEST_SOURCE';
+        reason = 'Lead de Teste';
       } else if (!l.contact_preference || !l.contact_preference.trim()) {
         isEligible = false;
-        reason = 'NO_VALID_CONTACT_PREFERENCE';
+        reason = 'Sem canal definido';
       } else if (l.contact_preference !== 'email') {
         isEligible = false;
-        reason = 'CHANNEL_PREFERENCE_MISMATCH';
+        const prefLabel =
+          l.contact_preference === 'sms'
+            ? 'SMS'
+            : l.contact_preference === 'call'
+            ? 'Telefone'
+            : l.contact_preference === 'whatsapp'
+            ? 'WhatsApp'
+            : l.contact_preference;
+        reason = `Preferência: ${prefLabel}`;
       } else if (!email) {
         isEligible = false;
-        reason = 'MISSING_EMAIL';
+        reason = 'Sem email válido';
       } else if (isSuppressed) {
         isEligible = false;
-        reason = 'SUPPRESSED';
+        if (suppReason === 'complaint') {
+          reason = 'Spam / Complaint';
+        } else if (suppReason === 'hard_bounce') {
+          reason = 'Hard Bounce';
+        } else {
+          reason = 'Suprimido';
+        }
       }
 
       return {
@@ -353,6 +398,9 @@ export const campaignAudienceService = {
         is_eligible: isEligible,
         exclusion_reason: reason,
         is_suppressed: isSuppressed,
+        suppression_reason: suppReason,
+        course_interest: courseLabel,
+        deleted_at: l.deleted_at || null,
       };
     });
   },
@@ -646,4 +694,75 @@ export const campaignAudienceService = {
 
     return data || [];
   },
+
+  /**
+   * Safe Campaign Deletion:
+   * Protects send and deliverability history by soft-deleting campaigns and cancelling pending tasks.
+   */
+  async safeDeleteCampaign(campaignId: string): Promise<{ success: boolean; action: string; campaign_id?: string }> {
+    try {
+      const { data, error } = await supabase.rpc('safe_delete_campaign', {
+        p_campaign_id: campaignId,
+      });
+      if (error) {
+        console.warn('safe_delete_campaign RPC failed, executing direct soft-delete fallback:', error);
+        const { error: updateErr } = await supabase
+          .from('campaigns')
+          .update({
+            deleted_at: new Date().toISOString(),
+            status: 'cancelled',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', campaignId);
+        if (updateErr) throw updateErr;
+        return { success: true, action: 'soft_deleted', campaign_id: campaignId };
+      }
+      return data || { success: true, action: 'soft_deleted', campaign_id: campaignId };
+    } catch (err) {
+      console.error('Failed to safely delete campaign:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * Safe Lead Deletion:
+   * Protects audit history by soft-deleting leads, cancelling pending tasks, and archiving integration links.
+   */
+  async safeDeleteLead(leadId: string): Promise<{ success: boolean; lead_id: string }> {
+    try {
+      const { data, error } = await supabase.rpc('safe_delete_lead', {
+        p_lead_id: leadId,
+      });
+      if (error) {
+        console.warn('safe_delete_lead RPC failed, executing direct soft-delete fallback:', error);
+        const now = new Date().toISOString();
+        const { error: leadErr } = await supabase
+          .from('leads')
+          .update({ deleted_at: now, updated_at: now })
+          .eq('id', leadId);
+        if (leadErr) throw leadErr;
+
+        await supabase
+          .from('tasks')
+          .update({ status: 'cancelled', updated_at: now })
+          .eq('lead_id', leadId)
+          .eq('status', 'pending');
+
+        await supabase
+          .from('integration_entity_links')
+          .update({ status: 'archived', updated_at: now })
+          .eq('eds_entity_id', leadId);
+
+        return { success: true, lead_id: leadId };
+      }
+      return data || { success: true, lead_id: leadId };
+    } catch (err) {
+      console.error('Failed to safely delete lead:', err);
+      throw err;
+    }
+  },
 };
+
+export const CampaignAudienceService = campaignAudienceService;
+export const safeDeleteCampaign = campaignAudienceService.safeDeleteCampaign;
+export const safeDeleteLead = campaignAudienceService.safeDeleteLead;

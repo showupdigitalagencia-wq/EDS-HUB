@@ -17,7 +17,11 @@ import {
   Edit2,
   Kanban,
   ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../auth/AuthProvider';
+import { CampaignAudienceService } from '../../campaigns/services/campaign-audience-service';
 import { supabase } from '../../../lib/supabase';
 import { Tabs, type TabItem } from '../../../components/ui/Tabs';
 import { Badge } from '../../../components/ui/Badge';
@@ -43,6 +47,7 @@ export interface LeadProfileContentProps {
   leadId: string;
   initialLead?: Lead | null;
   onLeadUpdated?: () => void;
+  onLeadDeleted?: () => void;
   onOpenEditLead?: () => void;
   isStandalonePage?: boolean;
 }
@@ -53,9 +58,12 @@ export function LeadProfileContent({
   leadId,
   initialLead,
   onLeadUpdated,
+  onLeadDeleted,
   onOpenEditLead,
   isStandalonePage = false,
 }: LeadProfileContentProps) {
+  const { isAuthorized } = useAuth();
+  const navigate = useNavigate();
   const [lead, setLead] = useState<Lead | null>(initialLead || null);
   const [internalEditLeadOpen, setInternalEditLeadOpen] = useState(false);
   const handleOpenEdit = onOpenEditLead || (() => setInternalEditLeadOpen(true));
@@ -69,6 +77,37 @@ export function LeadProfileContent({
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('resumo');
+
+  // Safe delete lead state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleConfirmDeleteLead = async () => {
+    if (!lead) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await CampaignAudienceService.safeDeleteLead(lead.id);
+      if (!res.success) {
+        throw new Error('Falha ao excluir lead');
+      }
+      window.dispatchEvent(new CustomEvent('lead-updated', { detail: { leadId: lead.id } }));
+      window.dispatchEvent(new CustomEvent('lead_updated', { detail: { leadId: lead.id } }));
+      setIsDeleteModalOpen(false);
+      if (onLeadDeleted) {
+        onLeadDeleted();
+      } else if (onLeadUpdated) {
+        onLeadUpdated();
+      } else if (isStandalonePage) {
+        navigate('/leads', { state: { toast: 'Lead excluído com sucesso.' } });
+      }
+    } catch (err: any) {
+      setDeleteError(err?.message || 'Falha ao excluir lead.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Task modal
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -369,6 +408,18 @@ export function LeadProfileContent({
               <Edit2 className="h-3.5 w-3.5 text-[#449bd5]" />
               <span>Editar lead</span>
             </button>
+            {isAuthorized && (
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 rounded-xl transition-colors cursor-pointer"
+                title="Excluir lead"
+                data-testid="standalone-delete-lead-button"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                <span>Excluir lead</span>
+              </button>
+            )}
             {isLoading && (
               <span className="text-xs text-slate-400 animate-pulse font-medium">
                 Sincronizando...
@@ -932,6 +983,32 @@ export function LeadProfileContent({
               </Button>
             </form>
           </div>
+
+          {/* Zona de Perigo (Excluir lead) */}
+          {isAuthorized && (
+            <div className="bg-rose-50/40 border border-rose-200/80 rounded-2xl p-4 sm:p-5 mt-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-xs font-bold text-rose-950 font-heading uppercase tracking-wider flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-rose-600" />
+                    Zona de Perigo
+                  </h4>
+                  <p className="text-xs text-rose-700/80 mt-1 max-w-xl">
+                    Remover este lead das listas operacionais do CRM. O histórico factual de interações, mensagens e tarefas concluídas é preservado.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDeleteModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-rose-700 bg-white hover:bg-rose-50 border border-rose-300 rounded-xl transition-colors cursor-pointer shrink-0 shadow-2xs"
+                  data-testid="profile-delete-lead-button"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                  <span>Excluir lead</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1036,6 +1113,83 @@ export function LeadProfileContent({
             if (onLeadUpdated) onLeadUpdated();
           }}
         />
+      )}
+
+      {/* Delete Lead Confirmation Modal */}
+      {isDeleteModalOpen && lead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-red-100 text-red-600 shrink-0">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[#08254f] font-heading">
+                  Excluir lead?
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Confirmação de exclusão segura
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 text-xs space-y-1">
+              <div className="text-slate-500 font-medium">Lead:</div>
+              <div className="font-bold text-slate-900 text-sm">
+                {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Lead sem nome'}
+              </div>
+              {lead.email && (
+                <>
+                  <div className="text-slate-500 font-medium pt-1">Email:</div>
+                  <div className="font-mono text-slate-700">{lead.email}</div>
+                </>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Este lead será removido das listas operacionais do CRM.
+            </p>
+
+            {deleteError && (
+              <div className="text-xs text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-200">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setDeleteError(null);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDeleteLead}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-xl transition-colors cursor-pointer shadow-xs"
+                data-testid="confirm-delete-lead-button"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Excluir lead</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

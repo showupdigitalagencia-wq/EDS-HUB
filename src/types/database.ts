@@ -208,6 +208,7 @@ export interface Lead {
   lead_score_updated_at?: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface LeadIntakeEvent {
@@ -429,6 +430,7 @@ export interface Campaign {
   activated_at?: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface CampaignVersion {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
@@ -21,14 +21,19 @@ import {
   FileEdit,
   RotateCw,
   Bookmark,
+  X,
 } from 'lucide-react';
 
 export function CampaignsListPage() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(
+    (location.state as any)?.message || null,
+  );
   const [statusFilter, setStatusFilter] = useState('');
   const [channelFilter, setChannelFilter] = useState<string>('all');
 
@@ -47,7 +52,14 @@ export function CampaignsListPage() {
     setError(null);
 
     try {
-      let query = supabase.from('campaigns').select('*').order('created_at', { ascending: false });
+      let query: any = supabase
+        .from('campaigns')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (typeof query?.is === 'function') {
+        query = query.is('deleted_at', null);
+      }
       if (statusFilter) {
         query = query.eq('status', statusFilter);
       }
@@ -56,7 +68,8 @@ export function CampaignsListPage() {
       }
       const { data, error: err } = await query;
       if (err) throw err;
-      setCampaigns(data || []);
+      const active = (data || []).filter((c: any) => !c.deleted_at);
+      setCampaigns(active);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch campaigns');
     } finally {
@@ -261,6 +274,20 @@ export function CampaignsListPage() {
       }
     >
       <div className="space-y-6">
+        {toastMessage && (
+          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between shadow-2xs">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              {toastMessage}
+            </span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="text-emerald-700 hover:text-emerald-900 cursor-pointer p-0.5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
 
         {/* Content List */}

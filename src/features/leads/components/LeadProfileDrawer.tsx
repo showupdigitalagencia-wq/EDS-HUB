@@ -105,6 +105,10 @@ export function LeadProfileDrawer({
               fetchHeaderLead();
               if (onLeadUpdated) onLeadUpdated();
             }}
+            onLeadDeleted={() => {
+              onClose();
+              if (onLeadUpdated) onLeadUpdated();
+            }}
           />
         )}
       </Drawer>

@@ -162,6 +162,9 @@ export function PipelineKanbanPage() {
             if (typeof q?.eq === 'function') {
               q = q.eq('pipeline_stage_id', stg.id);
             }
+            if (typeof q?.is === 'function') {
+              q = q.is('deleted_at', null);
+            }
             if (typeof q?.order === 'function') {
               const o1 = q.order('source_created_at', { ascending: false, nullsFirst: false });
               if (o1 && typeof o1.order === 'function') {
@@ -180,7 +183,7 @@ export function PipelineKanbanPage() {
             // In unit tests where mock returns all leads without filtering by eq, filter by pipeline_stage_id
             const cards = (Array.isArray(rawCards) ? rawCards : [])
               .filter(
-                (l: any) => !l.pipeline_stage_id || l.pipeline_stage_id === stg.id
+                (l: any) => !l.deleted_at && (!l.pipeline_stage_id || l.pipeline_stage_id === stg.id)
               )
               .sort(compareLeadsNewestFirst);
 
@@ -282,6 +285,9 @@ export function PipelineKanbanPage() {
       if (typeof qMore?.eq === 'function') {
         qMore = qMore.eq('pipeline_stage_id', stageId);
       }
+      if (typeof qMore?.is === 'function') {
+        qMore = qMore.is('deleted_at', null);
+      }
       if (typeof qMore?.order === 'function') {
         const o1 = qMore.order('source_created_at', { ascending: false, nullsFirst: false });
         if (o1 && typeof o1.order === 'function') {
@@ -300,8 +306,9 @@ export function PipelineKanbanPage() {
       if (fetchErr) throw fetchErr;
 
       if (newCards && newCards.length > 0) {
+        const filteredNewCards = (newCards as Lead[]).filter((l) => !l.deleted_at);
         setLeadsByStage((prev) => {
-          const combined = [...(prev[stageId] || []), ...(newCards as Lead[])];
+          const combined = [...(prev[stageId] || []), ...filteredNewCards];
           const deduped = Array.from(new Map(combined.map((l) => [l.id, l])).values()).sort(compareLeadsNewestFirst);
           return {
             ...prev,
@@ -316,7 +323,7 @@ export function PipelineKanbanPage() {
 
         setLeadInterestsMap((prev) => {
           const next = { ...prev };
-          newCards.forEach((lead: any) => {
+          filteredNewCards.forEach((lead: any) => {
             next[lead.id] = extractCourseInterests(lead);
           });
           return next;
@@ -324,7 +331,7 @@ export function PipelineKanbanPage() {
 
         // Batch fetch deliverability for newly loaded cards
         try {
-          const newDelivMap = await batchFetchPipelineDeliverabilityHealth(newCards as Lead[]);
+          const newDelivMap = await batchFetchPipelineDeliverabilityHealth(filteredNewCards as Lead[]);
           setLeadDeliverabilityMap((prev) => ({ ...prev, ...newDelivMap }));
         } catch {}
       }
@@ -348,10 +355,16 @@ export function PipelineKanbanPage() {
     setIsSearching(true);
     try {
       const cleanTerm = term.trim();
-      const { data: searchResults, error: sErr } = await supabase
+      let searchQ: any = supabase
         .from('leads')
         .select('*, lead_course_interests(course_id, priority, notes, course:courses(name), session:course_sessions(title, start_date))')
-        .or(`first_name.ilike.%${cleanTerm}%,last_name.ilike.%${cleanTerm}%,email.ilike.%${cleanTerm}%,phone_raw.ilike.%${cleanTerm}%`)
+        .or(`first_name.ilike.%${cleanTerm}%,last_name.ilike.%${cleanTerm}%,email.ilike.%${cleanTerm}%,phone_raw.ilike.%${cleanTerm}%`);
+      
+      if (typeof searchQ?.is === 'function') {
+        searchQ = searchQ.is('deleted_at', null);
+      }
+
+      const { data: searchResults, error: sErr } = await searchQ
         .order('source_created_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
@@ -365,7 +378,8 @@ export function PipelineKanbanPage() {
       });
 
       const intMap: Record<string, FormattedCourseInterest[]> = {};
-      (searchResults || []).forEach((lead: any) => {
+      const validResults = (searchResults || []).filter((l: any) => !l.deleted_at);
+      validResults.forEach((lead: any) => {
         if (grouped[lead.pipeline_stage_id]) {
           grouped[lead.pipeline_stage_id].push(lead as Lead);
         } else if (stages[0]) {

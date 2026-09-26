@@ -44,6 +44,8 @@ import {
 import { ChangeLeadStageModal } from './components/ChangeLeadStageModal';
 import { moveLeadToAlumni } from '../courses/services/post-course-service';
 import { useSafeBackNavigation } from '../../hooks/useSafeBackNavigation';
+import { useAuth } from '../auth/AuthProvider';
+import { CampaignAudienceService } from '../campaigns/services/campaign-audience-service';
 
 export function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -51,6 +53,7 @@ export function LeadDetailPage() {
   const [searchParams] = useSearchParams();
   const highlightedTaskId = searchParams.get('taskId');
   const safeBack = useSafeBackNavigation('/leads');
+  const { isAuthorized } = useAuth();
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [stages, setStages] = useState<PipelineStage[]>([]);
@@ -63,6 +66,11 @@ export function LeadDetailPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Safe delete lead state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Edit Lead Info state
   const [isEditing, setIsEditing] = useState(false);
@@ -347,6 +355,27 @@ export function LeadDetailPage() {
     }
   };
 
+  // Safe lead deletion
+  const handleConfirmDeleteLead = async () => {
+    if (!lead) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await CampaignAudienceService.safeDeleteLead(lead.id);
+      if (!res.success) {
+        throw new Error('Falha ao excluir lead');
+      }
+      window.dispatchEvent(new CustomEvent('lead-updated', { detail: { leadId: lead.id } }));
+      window.dispatchEvent(new CustomEvent('lead_updated', { detail: { leadId: lead.id } }));
+      setIsDeleteModalOpen(false);
+      navigate('/leads', { state: { toast: 'Lead excluído com sucesso.' } });
+    } catch (err: any) {
+      setDeleteError(err?.message || 'Falha ao excluir lead.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout title="Perfil do Lead" backTo="/leads">
@@ -478,6 +507,18 @@ export function LeadDetailPage() {
                 >
                   <Save className="h-3.5 w-3.5" />
                   <span>Salvar Alterações</span>
+                </button>
+              )}
+              {isAuthorized && !isEditing && (
+                <button
+                  type="button"
+                  onClick={() => setIsDeleteModalOpen(true)}
+                  className="btn-secondary text-xs text-rose-700 hover:text-rose-800 hover:bg-rose-50 border-rose-200 py-1.5 px-2.5"
+                  title="Excluir lead"
+                  data-testid="header-delete-lead-button"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                  <span className="hidden sm:inline">Excluir</span>
                 </button>
               )}
             </div>
@@ -846,6 +887,32 @@ export function LeadDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Zona de Perigo: Excluir Lead */}
+        {isAuthorized && (
+          <div className="card-executive p-5 border-rose-200 bg-rose-50/30">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-xs font-bold text-rose-900 font-heading uppercase tracking-wider flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-rose-600" />
+                  Zona de Perigo
+                </h3>
+                <p className="text-xs text-rose-700/80 mt-1 max-w-xl">
+                  Remover este lead das listas operacionais do CRM. O histórico factual de tarefas concluídas, mensagens e deliverability será preservado.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-700 bg-white hover:bg-rose-50 border border-rose-300 rounded-xl transition-colors cursor-pointer shrink-0 shadow-2xs"
+                data-testid="detail-delete-lead-button"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                <span>Excluir lead</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Simplified Task Modal (Generic Task & Payment Reminder) */}
@@ -891,6 +958,83 @@ export function LeadDetailPage() {
           currentStageName={currentStage?.name}
           onStageUpdated={loadLeadData}
         />
+      )}
+
+      {/* Delete Lead Confirmation Modal */}
+      {isDeleteModalOpen && lead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-red-100 text-red-600 shrink-0">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[#08254f] font-heading">
+                  Excluir lead?
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Confirmação de exclusão segura
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 text-xs space-y-1">
+              <div className="text-slate-500 font-medium">Lead:</div>
+              <div className="font-bold text-slate-900 text-sm">
+                {fullName}
+              </div>
+              {emailDisplay && (
+                <>
+                  <div className="text-slate-500 font-medium pt-1">Email:</div>
+                  <div className="font-mono text-slate-700">{emailDisplay}</div>
+                </>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Este lead será removido das listas operacionais do CRM.
+            </p>
+
+            {deleteError && (
+              <div className="text-xs text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-200">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setDeleteError(null);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDeleteLead}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-xl transition-colors cursor-pointer shadow-xs"
+                data-testid="confirm-delete-lead-button"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Excluir lead</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </Layout>
   );
