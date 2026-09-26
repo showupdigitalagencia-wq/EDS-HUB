@@ -12,7 +12,13 @@ import { verifyAuth } from '../_shared/auth.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
 import { sendSms } from '../_shared/twilio-adapter.ts';
-import { resolveSafeFirstName, resolveSalutation } from '../_shared/salutation.ts';
+import {
+  resolveSafeFirstName,
+  resolveSalutation,
+  resolveZygomaticSalutation,
+  getApprovedZygomaticText,
+  getApprovedZygomaticHtml,
+} from '../_shared/salutation.ts';
 
 interface SendMessagePayload {
   lead_id: string;
@@ -98,7 +104,9 @@ Deno.serve(async (req) => {
       ? 'Zygomatic Implant Training'
       : ((lead as any).course_interest || 'Intensive Dental Implant Training');
 
+    const zygomaticSalutation = resolveZygomaticSalutation(lead);
     const renderVariables = (text: string) => text
+      .replace(/\{\{\s*salutation_line\s*\}\}/gi, zygomaticSalutation)
       .replace(/\{\{\s*salutation\s*\}\}/gi, safeSalutation || 'Doctor')
       .replace(/\{\{\s*first_name\s*\}\}/gi, safeFirstName)
       .replace(/\{\{\s*last_name\s*\}\}/gi, safeLastName)
@@ -310,7 +318,9 @@ Deno.serve(async (req) => {
       const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
       const replyTo = 'info@expdentalsolutions.com';
       const finalSubject = effectiveSubject;
-      const htmlBody = effectiveBody.includes('<p>') ? effectiveBody : `<p>${effectiveBody.replace(/\n/g, '<br/>')}</p>`;
+      const htmlBody = isZygomaticTpl
+        ? getApprovedZygomaticHtml(lead)
+        : (effectiveBody.includes('<p>') ? effectiveBody : `<p>${effectiveBody.replace(/\n/g, '<br/>')}</p>`);
 
       const headers: Record<string, string> = {};
       if (in_reply_to_provider_message_id) {

@@ -39,6 +39,7 @@ import { ManualEmailComposerModal } from './ManualEmailComposerModal';
 import { ManualSmsComposerModal } from './ManualSmsComposerModal';
 import { EditLeadModal } from './EditLeadModal';
 import { ChangeLeadStageModal } from './ChangeLeadStageModal';
+import { LeadFormSubmissionModal } from './LeadFormSubmissionModal';
 import { fetchLeadEmailHealth, type LeadEmailHealthResult } from '../../dashboard/services/deliverability-health-service';
 import { formatContactPreferenceLabel, getContactPreferenceBadgeClasses } from '../../../utils/contact-preference';
 import type { Lead, LeadActivity, Task, LeadNote, IncompleteEnrollment } from '../../../types';
@@ -77,6 +78,8 @@ export function LeadProfileContent({
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('resumo');
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [smsSentInfo, setSmsSentInfo] = useState<{ sentAt: string } | null>(null);
 
   // Safe delete lead state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -178,6 +181,14 @@ export function LeadProfileContent({
 
       setActivities(actData || []);
 
+      // Check for factual manual SMS sent activity
+      const smsConfirmedAct = (actData || []).find((a: any) => a.activity_type === 'sms_manual_confirmed');
+      if (smsConfirmedAct) {
+        setSmsSentInfo({ sentAt: smsConfirmedAct.created_at || (smsConfirmedAct.metadata as any)?.sent_at });
+      } else {
+        setSmsSentInfo(null);
+      }
+
       // 4. Fetch Tasks (for task list & summary)
       const { data: taskData } = await supabase
         .from('tasks')
@@ -231,9 +242,11 @@ export function LeadProfileContent({
     };
     window.addEventListener('tasks-updated', handleSync);
     window.addEventListener('lead-updated', handleSync);
+    window.addEventListener('sms-sent-confirmed', handleSync);
     return () => {
       window.removeEventListener('tasks-updated', handleSync);
       window.removeEventListener('lead-updated', handleSync);
+      window.removeEventListener('sms-sent-confirmed', handleSync);
     };
   }, [leadId, fetchLeadData]);
 
@@ -374,6 +387,16 @@ export function LeadProfileContent({
                 >
                   {formatContactPreferenceLabel(lead.contact_preference, { withPrefix: true })}
                 </span>
+                {smsSentInfo && (
+                  <span
+                    data-testid="profile-header-sms-sent-badge"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    title={smsSentInfo.sentAt ? `SMS enviado em ${new Date(smsSentInfo.sentAt).toLocaleString('pt-BR')}` : 'SMS enviado'}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span>SMS enviado</span>
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
                 {lead.phone_raw || lead.phone_e164 ? (
@@ -398,6 +421,16 @@ export function LeadProfileContent({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsFormModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#08254f] bg-slate-100 hover:bg-slate-200 border border-slate-200/80 rounded-xl transition-colors cursor-pointer"
+              title="Visualizar respostas e dados do formulário original deste lead"
+              data-testid="standalone-ver-formulario-lead-button"
+            >
+              <FileText className="h-3.5 w-3.5 text-[#449bd5]" />
+              <span>Ver formulário</span>
+            </button>
             <button
               type="button"
               onClick={handleOpenEdit}
@@ -577,16 +610,28 @@ export function LeadProfileContent({
               <h3 className="text-xs font-bold text-slate-700 font-heading uppercase tracking-wider">
                 Dados de Contato & Origem
               </h3>
-              <button
-                type="button"
-                onClick={handleOpenEdit}
-                className="text-xs font-semibold text-[#449bd5] hover:text-[#08254f] flex items-center gap-1 cursor-pointer transition-colors"
-                title="Editar dados cadastrais"
-                data-testid="card-edit-lead-button"
-              >
-                <Edit2 className="h-3 w-3" />
-                <span>Editar</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsFormModalOpen(true)}
+                  className="text-xs font-semibold text-[#08254f] hover:text-[#449bd5] flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200/80 cursor-pointer transition-colors"
+                  title="Visualizar respostas e dados do formulário original deste lead"
+                  data-testid="ver-formulario-lead-button"
+                >
+                  <FileText className="h-3.5 w-3.5 text-[#449bd5]" />
+                  <span>Ver formulário do lead</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenEdit}
+                  className="text-xs font-semibold text-[#449bd5] hover:text-[#08254f] flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Editar dados cadastrais"
+                  data-testid="card-edit-lead-button"
+                >
+                  <Edit2 className="h-3 w-3" />
+                  <span>Editar</span>
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
@@ -662,6 +707,28 @@ export function LeadProfileContent({
                 >
                   {formatContactPreferenceLabel(lead.contact_preference, { withPrefix: false })}
                 </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] mb-0.5">Status do SMS</span>
+                {smsSentInfo ? (
+                  <span
+                    data-testid="profile-sms-sent-value"
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    title={smsSentInfo.sentAt ? `SMS enviado em ${new Date(smsSentInfo.sentAt).toLocaleString('pt-BR')}` : 'SMS enviado'}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span>SMS enviado</span>
+                    {smsSentInfo.sentAt && (
+                      <span className="text-[11px] font-normal text-emerald-600">
+                        ({new Date(smsSentInfo.sentAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })})
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="text-slate-400 font-semibold italic text-xs">
+                    Nenhum SMS enviado
+                  </span>
+                )}
               </div>
               {lead.referred_by && (
                 <div className="flex items-center gap-1.5 text-slate-600 bg-slate-50 p-2 rounded-lg sm:col-span-2">
@@ -1191,6 +1258,14 @@ export function LeadProfileContent({
           </div>
         </div>
       )}
+
+      {/* Lead Form Submission Modal */}
+      <LeadFormSubmissionModal
+        isOpen={isFormModalOpen}
+        onClose={() => setIsFormModalOpen(false)}
+        leadId={lead.id}
+        leadName={`${lead.first_name || ''} ${lead.last_name || ''}`.trim()}
+      />
     </div>
   );
 }

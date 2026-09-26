@@ -9,7 +9,13 @@
 import { corsHeaders, corsResponse } from '../_shared/cors.ts';
 import { verifyAuth } from '../_shared/auth.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
-import { resolveSalutation } from '../_shared/salutation.ts';
+import {
+  resolveSalutation,
+  resolveSafeFirstName,
+  resolveZygomaticSalutation,
+  getApprovedZygomaticText,
+  getApprovedZygomaticHtml,
+} from '../_shared/salutation.ts';
 import { resolveEmailRecipients, escapeHtml } from '../_shared/email-utils.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
 import { sendSms } from '../_shared/twilio-adapter.ts';
@@ -1131,21 +1137,34 @@ async function handleEmailPreference(
   const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
   const replyTo = 'info@expdentalsolutions.com';
 
+  const isZygomatic = templateKey === 'zygomatic_course_details';
+  const zygomaticSalutation = resolveZygomaticSalutation(payload);
+
   const templateVars = {
     salutation,
+    salutation_line: zygomaticSalutation,
     first_name: resolveSafeFirstName(payload.first_name),
-    course_name: payload.course_interest || (templateKey === 'zygomatic_course_details' ? 'Zygomatic Implant Training' : 'Intensive Dental Implant Training'),
+    last_name: payload.last_name || '',
+    course_name: payload.course_interest || (isZygomatic ? 'Zygomatic Implant Training' : 'Intensive Dental Implant Training'),
     course_date_range: 'November 7–10, 2026',
     course_tuition: '$17,500',
   };
 
-  const subject = renderTemplate(template.subject_template || '', templateVars);
-  const body = renderTemplate(template.body_template, templateVars);
-  const escapedHtmlBody = renderTemplate(template.body_template, {
-    ...templateVars,
-    salutation: escapeHtml(templateVars.salutation),
-    first_name: escapeHtml(templateVars.first_name),
-  }).replace(/\n/g, '<br>');
+  const subject = isZygomatic
+    ? (template.subject_template || 'Zygomatic Course Details – Hands-On Training in Rio')
+    : renderTemplate(template.subject_template || '', templateVars);
+
+  const body = isZygomatic
+    ? getApprovedZygomaticText(payload)
+    : renderTemplate(template.body_template, templateVars);
+
+  const escapedHtmlBody = isZygomatic
+    ? getApprovedZygomaticHtml(payload)
+    : renderTemplate(template.body_template, {
+        ...templateVars,
+        salutation: escapeHtml(templateVars.salutation),
+        first_name: escapeHtml(templateVars.first_name),
+      }).replace(/\n/g, '<br>');
 
   // Attachment handling: Query template_attachments for this template
   const attachmentsToSend: Array<{ filename: string; content: string; contentType?: string }> = [];
@@ -1155,11 +1174,27 @@ async function handleEmailPreference(
     materialId: null as string | null,
   };
 
-  const { data: tmplAtt } = await db
+  let { data: tmplAtt } = await db
     .from('template_attachments')
     .select('is_required, display_name, material_id')
     .eq('template_key', templateKey)
     .maybeSingle();
+
+  // Fallback for zygomatic_course_details if material_id was not linked in template_attachments
+  if ((!tmplAtt || !tmplAtt.material_id) && isZygomatic) {
+    const { data: zygMat } = await db
+      .from('course_materials')
+      .select('id, title, file_name, storage_bucket, storage_path, content_type, is_active')
+      .ilike('file_name', '%zygomatic%')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (zygMat) {
+      tmplAtt = { is_required: true, display_name: zygMat.file_name, material_id: zygMat.id };
+    }
+  }
 
   if (tmplAtt && tmplAtt.material_id) {
     const { data: material } = await db
@@ -1185,7 +1220,7 @@ async function handleEmailPreference(
         const base64Content = btoa(binary);
 
         attachmentsToSend.push({
-          filename: material.file_name || 'Zygomatic Course Details.pdf',
+          filename: material.file_name || 'Zygomatic Course (2).pdf',
           content: base64Content,
           contentType: 'application/pdf',
         });
@@ -1195,7 +1230,7 @@ async function handleEmailPreference(
           filename: material.file_name,
           materialId: material.id,
         };
-      } else if (tmplAtt.is_required || templateKey === 'zygomatic_course_details') {
+      } else if (tmplAtt.is_required || isZygomatic) {
         return {
           sent: 0,
           failed: 1,

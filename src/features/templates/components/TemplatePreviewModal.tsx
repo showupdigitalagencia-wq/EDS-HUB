@@ -7,6 +7,7 @@ import {
   renderTemplateWithSampleData,
   calculateSmsSegments,
   SAMPLE_PREVIEW_DATA,
+  getApprovedZygomaticHtml,
 } from '../../../utils/template-variables';
 import type { EmailTemplate } from '../../../types';
 import {
@@ -32,6 +33,17 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
 
   const emailData = useMemo(() => {
     if (!template || channel !== 'email') return null;
+    const isZygomatic =
+      template.template_key === 'zygomatic_course_details' ||
+      (template.name?.toLowerCase().includes('zygomatic') && !template.name?.toLowerCase().includes('sms'));
+
+    if (isZygomatic) {
+      return {
+        subject: 'Zygomatic Course Details – Hands-On Training in Rio',
+        html: sanitizeHtml(getApprovedZygomaticHtml(SAMPLE_PREVIEW_DATA)),
+      };
+    }
+
     const rawSubject = getTemplateSubject(template) || template.name;
     const substitutedSubject = renderTemplateWithSampleData(rawSubject, 'global');
     const substitutedHtml = renderTemplateWithSampleData(template.html_template, 'global');

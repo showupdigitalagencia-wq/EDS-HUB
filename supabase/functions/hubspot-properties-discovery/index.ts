@@ -94,6 +94,198 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (body.action === 'check_lead_safety') {
+      const { data: messages } = await db.from('outbound_messages').select('*').eq('lead_id', body.lead_id);
+      const { data: activities } = await db.from('lead_activities').select('*').eq('lead_id', body.lead_id);
+      const { data: intakeEvents } = await db.from('lead_intake_events').select('*').eq('lead_id', body.lead_id);
+      const { data: lead } = await db.from('leads').select('*').eq('id', body.lead_id).single();
+      return new Response(
+        JSON.stringify({
+          success: true,
+          messagesCount: messages?.length || 0,
+          messages: messages || [],
+          activities: activities || [],
+          intakeEvents: intakeEvents || [],
+          lead,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (body.action === 'investigate_incident') {
+      // 1. Check forms
+      const { data: forms } = await db.from('forms').select('*');
+      
+      // 2. Check form submissions
+      const { data: formSubmissions } = await db
+        .from('form_submissions')
+        .select('*')
+        .order('submitted_at', { ascending: false })
+        .limit(100);
+
+      // 3. Check lead intake events
+      const { data: recentIntakeEvents } = await db
+        .from('lead_intake_events')
+        .select('id, source, external_event_id, status, lead_id, attempt_count, last_error, received_at')
+        .order('received_at', { ascending: false })
+        .limit(50);
+
+      // 4. Check integration connections
+      const { data: connection } = await db
+        .from('integration_connections')
+        .select('*')
+        .eq('provider', 'hubspot')
+        .single();
+
+      // 5. Check recent integration sync events
+      const { data: syncEvents } = await db
+        .from('integration_sync_events')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      // 6. Check recent leads in EDS (past 7 days)
+      const { data: recentLeads } = await db
+        .from('leads')
+        .select('id, first_name, last_name, email, phone_raw, phone_e164, source, source_detail, hubspot_contact_id, pipeline_stage_id, created_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      // 7. Query HubSpot API for recently created or modified contacts (all within last 14 days)
+      const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      let hsRecentContacts: any[] = [];
+      let hsTotalContacts = 0;
+
+      if (token) {
+        // Search contacts created since Sept 1, 2026
+        const createdFilterTime = Date.parse('2026-09-01T00:00:00.000Z');
+        let afterCursor: string | undefined = undefined;
+        do {
+          const bodyPayload: any = {
+            filterGroups: [
+              {
+                filters: [
+                  {
+                    propertyName: 'createdate',
+                    operator: 'GTE',
+                    value: String(createdFilterTime),
+                  },
+                ],
+              },
+            ],
+            properties: [
+              'firstname',
+              'lastname',
+              'email',
+              'phone',
+              'mobilephone',
+              'hs_lead_status',
+              'status_de_qualificacao',
+              'course_interest',
+              'curso_de_interesse',
+              'hs_analytics_source',
+              'hs_analytics_source_data_1',
+              'hs_analytics_source_data_2',
+              'createdate',
+              'lastmodifieddate',
+            ],
+            limit: 100,
+            sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+          };
+          if (afterCursor) bodyPayload.after = afterCursor;
+
+          const searchRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/search`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(bodyPayload),
+          });
+
+          if (searchRes.ok) {
+            const sData = await searchRes.json();
+            const results = sData.results || [];
+            hsRecentContacts.push(...results);
+            hsTotalContacts = sData.total || hsRecentContacts.length;
+            afterCursor = sData.paging?.next?.after;
+          } else {
+            break;
+          }
+        } while (afterCursor);
+      }
+
+      // Check which HubSpot recent contacts exist in EDS HUB
+      const hsMissingFromEds: any[] = [];
+      const hsPresentInEds: any[] = [];
+
+      for (const contact of hsRecentContacts) {
+        const contactId = String(contact.id);
+        const email = contact.properties?.email ? String(contact.properties.email).trim().toLowerCase() : null;
+        const phone = contact.properties?.phone || contact.properties?.mobilephone || null;
+
+        // Check in EDS by hubspot_contact_id or email
+        let matchQuery = db.from('leads').select('id, first_name, last_name, email, source, source_detail, pipeline_stage_id, created_at');
+        if (contactId && email) {
+          matchQuery = matchQuery.or(`hubspot_contact_id.eq.${contactId},email.ilike.${email}`);
+        } else if (contactId) {
+          matchQuery = matchQuery.eq('hubspot_contact_id', contactId);
+        } else if (email) {
+          matchQuery = matchQuery.ilike('email', email);
+        }
+
+        const { data: matchedLeads } = await matchQuery.limit(1);
+
+        if (matchedLeads && matchedLeads.length > 0) {
+          hsPresentInEds.push({
+            hs_id: contactId,
+            eds_lead_id: matchedLeads[0].id,
+            email: email,
+            name: `${contact.properties?.firstname || ''} ${contact.properties?.lastname || ''}`.trim(),
+            createdate: contact.properties?.createdate,
+            lastmodifieddate: contact.properties?.lastmodifieddate,
+            source: matchedLeads[0].source,
+          });
+        } else {
+          hsMissingFromEds.push({
+            hs_id: contactId,
+            email: email,
+            name: `${contact.properties?.firstname || ''} ${contact.properties?.lastname || ''}`.trim(),
+            phone: phone,
+            createdate: contact.properties?.createdate,
+            lastmodifieddate: contact.properties?.lastmodifieddate,
+            hs_analytics_source: contact.properties?.hs_analytics_source,
+            hs_analytics_source_data_1: contact.properties?.hs_analytics_source_data_1,
+            hs_analytics_source_data_2: contact.properties?.hs_analytics_source_data_2,
+            curso_de_interesse: contact.properties?.curso_de_interesse,
+            status_de_qualificacao: contact.properties?.status_de_qualificacao,
+          });
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          forms,
+          formSubmissionsCount: formSubmissions?.length || 0,
+          formSubmissions: formSubmissions || [],
+          recentIntakeEvents: recentIntakeEvents || [],
+          connection,
+          recentSyncEvents: syncEvents || [],
+          recentLeadsCount: recentLeads?.length || 0,
+          recentLeads: recentLeads || [],
+          hubspot_analysis: {
+            total_recent_in_hs: hsRecentContacts.length,
+            total_in_search: hsTotalContacts,
+            present_in_eds_count: hsPresentInEds.length,
+            missing_from_eds_count: hsMissingFromEds.length,
+            missing_contacts: hsMissingFromEds,
+          },
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (body.action === 'fix_sms_template') {
       const officialZygomaticSms = `Hello Dr.
 This is Natália from Expert Dental Solutions. Thank you for your interest in our Zygomatic Implant Training in Brazil.

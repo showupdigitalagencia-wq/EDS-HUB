@@ -9,7 +9,7 @@ import { corsHeaders, corsResponse } from '../_shared/cors.ts';
 import { verifyAuth } from '../_shared/auth.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
-import { resolveSalutation } from '../_shared/salutation.ts';
+import { resolveSalutation, resolveZygomaticSalutation } from '../_shared/salutation.ts';
 import { escapeHtml } from '../_shared/email-utils.ts';
 
 interface SendBatchPayload {
@@ -184,6 +184,48 @@ Deno.serve(async (req) => {
     let sentCount = 0;
     let failedCount = 0;
 
+    const isZygomaticCampaign =
+      (campaign.name && campaign.name.toLowerCase().includes('zygomatic')) ||
+      (campaign.subject && campaign.subject.toLowerCase().includes('zygomatic')) ||
+      (latestVersion?.html_snapshot && latestVersion.html_snapshot.toLowerCase().includes('zygomatic'));
+
+    let campaignAttachments: Array<{ filename: string; content: string; contentType?: string }> | undefined;
+
+    if (isZygomaticCampaign) {
+      const { data: material } = await db
+        .from('course_materials')
+        .select('id, file_name, storage_bucket, storage_path')
+        .ilike('file_name', '%zygomatic%')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (material) {
+        const { data: fileData } = await db.storage
+          .from(material.storage_bucket)
+          .download(material.storage_path);
+
+        if (fileData && fileData.size > 0) {
+          const arrayBuffer = await fileData.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          const chunkSize = 8192;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            const chunk = bytes.subarray(i, i + chunkSize);
+            binary += String.fromCharCode.apply(null, chunk as any);
+          }
+          const base64Content = btoa(binary);
+
+          campaignAttachments = [{
+            filename: material.file_name || 'Zygomatic Course (2).pdf',
+            content: base64Content,
+            contentType: 'application/pdf',
+          }];
+        }
+      }
+    }
+
     // 5. Send individually to each recipient in the batch
     for (const recipient of recipients) {
       // Re-check recipient status to prevent race conditions
@@ -232,6 +274,7 @@ Deno.serve(async (req) => {
         lead?.first_name || null,
         'Doc',
       );
+      const zygomaticSalutation = resolveZygomaticSalutation(lead);
 
       // Determine subject and HTML based on variant or base version
       let subject = campaign.subject;
@@ -247,11 +290,13 @@ Deno.serve(async (req) => {
       const lastName = lead?.last_name || '';
 
       subject = subject
+        .replace(/\{\{\s*salutation_line\s*\}\}/gi, zygomaticSalutation)
         .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
         .replace(/\{\{\s*last_name\s*\}\}/gi, lastName)
         .replace(/\{\{\s*salutation\s*\}\}/gi, salutation);
 
       html = html
+        .replace(/\{\{\s*salutation_line\s*\}\}/gi, escapeHtml(zygomaticSalutation))
         .replace(/\{\{\s*first_name\s*\}\}/gi, escapeHtml(firstName))
         .replace(/\{\{\s*last_name\s*\}\}/gi, escapeHtml(lastName))
         .replace(/\{\{\s*salutation\s*\}\}/gi, escapeHtml(salutation));
@@ -268,6 +313,7 @@ Deno.serve(async (req) => {
         html,
         replyTo,
         idempotencyKey,
+        attachments: campaignAttachments,
       });
 
       if (sendResult.success) {

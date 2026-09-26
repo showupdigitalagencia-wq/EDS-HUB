@@ -5,8 +5,20 @@
 // sample preview substitution with resolver parity, and encoding-aware SMS estimation.
 // =============================================================================
 
-import { resolveSalutation, resolveSafeFirstName } from './salutation';
-export { resolveCanonicalGreeting, resolveSafeFirstName, resolveSalutation } from './salutation';
+import {
+  resolveSalutation,
+  resolveSafeFirstName,
+  resolveZygomaticSalutation,
+} from './salutation';
+export {
+  resolveCanonicalGreeting,
+  resolveSafeFirstName,
+  resolveSafeLastName,
+  resolveSalutation,
+  resolveZygomaticSalutation,
+  getApprovedZygomaticText,
+  getApprovedZygomaticHtml,
+} from './salutation';
 
 export type TemplateChannel = 'email' | 'sms';
 
@@ -134,8 +146,10 @@ export function renderTemplateWithSampleData(
 
   // Parity with runtime resolveSalutation('Silva', 'Maria', 'Doc') -> "Silva"
   const salutation = resolveSalutation(SAMPLE_PREVIEW_DATA.last_name, SAMPLE_PREVIEW_DATA.first_name, 'Doc');
+  const zygomaticSalutation = resolveZygomaticSalutation(SAMPLE_PREVIEW_DATA);
 
   let output = text
+    .replace(/\{\{\s*salutation_line\s*\}\}/gi, zygomaticSalutation)
     .replace(/\{\{\s*salutation\s*\}\}/gi, salutation)
     .replace(/\{\{\s*first_name\s*\}\}/gi, SAMPLE_PREVIEW_DATA.first_name)
     .replace(/\{\{\s*course_name\s*\}\}/gi, SAMPLE_PREVIEW_DATA.course_name)
@@ -185,11 +199,13 @@ export function renderTemplateCentral(
 
   const safeFirstName = resolveSafeFirstName(leadVars?.first_name, 'Doctor');
   const safeSalutation = resolveSalutation(leadVars?.last_name, leadVars?.first_name, 'Doctor');
+  const zygomaticSalutation = resolveZygomaticSalutation(leadVars);
   const courseName = leadVars?.course_name || 'Zygomatic Implant Training';
   const courseDateRange = leadVars?.course_date_range || 'November 7–10, 2026';
   const courseTuition = leadVars?.course_tuition || '$17,500';
 
   let output = text
+    .replace(/\{\{\s*salutation_line\s*\}\}/gi, zygomaticSalutation)
     .replace(/\{\{\s*salutation\s*\}\}/gi, safeSalutation)
     .replace(/\{\{\s*first_name\s*\}\}/gi, safeFirstName)
     .replace(/\{\{\s*course_name\s*\}\}/gi, courseName)

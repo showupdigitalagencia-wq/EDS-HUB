@@ -51,6 +51,7 @@ export function PipelineKanbanPage() {
   const [leadInterestsMap, setLeadInterestsMap] = useState<Record<string, FormattedCourseInterest[]>>({});
   const [leadActivitiesMap, setLeadActivitiesMap] = useState<Record<string, string[]>>({});
   const [leadDeliverabilityMap, setLeadDeliverabilityMap] = useState<Record<string, LeadDeliverabilityInfo>>({});
+  const [leadSmsSentMap, setLeadSmsSentMap] = useState<Record<string, { sentAt: string; formattedDate?: string }>>({});
   const [totalLeads, setTotalLeads] = useState(0);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -219,7 +220,7 @@ export function PipelineKanbanPage() {
       if (allLoadedCards.length > 0) {
         const leadIds = allLoadedCards.map((l) => l.id);
         try {
-          const [interestsRes, activitiesRes, delivMap] = await Promise.all([
+          const [interestsRes, activitiesRes, delivMap, smsActivitiesRes] = await Promise.all([
             supabase
               .from('lead_course_interests')
               .select('lead_id, priority, course:courses(name), session:course_sessions(title, start_date)')
@@ -232,6 +233,12 @@ export function PipelineKanbanPage() {
               .in('activity_type', ['processing_failed', 'website_lead_suppressed', 'channel_skipped'])
               .order('created_at', { ascending: false }),
             batchFetchPipelineDeliverabilityHealth(allLoadedCards.slice(0, 100)),
+            supabase
+              .from('lead_activities')
+              .select('lead_id, created_at, metadata')
+              .in('lead_id', leadIds.slice(0, 100))
+              .eq('activity_type', 'sms_manual_confirmed')
+              .order('created_at', { ascending: false }),
           ]);
 
           if (interestsRes?.data && Array.isArray(interestsRes.data)) {
@@ -259,6 +266,20 @@ export function PipelineKanbanPage() {
           }
           if (delivMap) {
             setLeadDeliverabilityMap(delivMap);
+          }
+
+          if (smsActivitiesRes?.data && Array.isArray(smsActivitiesRes.data)) {
+            const smsMap: Record<string, { sentAt: string; formattedDate?: string }> = {};
+            smsActivitiesRes.data.forEach((row: any) => {
+              if (!smsMap[row.lead_id]) {
+                const sentAt = row.created_at || row.metadata?.sent_at;
+                smsMap[row.lead_id] = {
+                  sentAt,
+                  formattedDate: sentAt ? new Date(sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : undefined,
+                };
+              }
+            });
+            setLeadSmsSentMap((prev) => ({ ...prev, ...smsMap }));
           }
         } catch {}
       }
@@ -329,10 +350,31 @@ export function PipelineKanbanPage() {
           return next;
         });
 
-        // Batch fetch deliverability for newly loaded cards
+        // Batch fetch deliverability & SMS sent status for newly loaded cards
         try {
           const newDelivMap = await batchFetchPipelineDeliverabilityHealth(filteredNewCards as Lead[]);
           setLeadDeliverabilityMap((prev) => ({ ...prev, ...newDelivMap }));
+
+          const { data: smsRows } = await supabase
+            .from('lead_activities')
+            .select('lead_id, created_at, metadata')
+            .in('lead_id', filteredNewCards.map((c) => c.id))
+            .eq('activity_type', 'sms_manual_confirmed')
+            .order('created_at', { ascending: false });
+
+          if (smsRows && Array.isArray(smsRows)) {
+            const moreSmsMap: Record<string, { sentAt: string; formattedDate?: string }> = {};
+            smsRows.forEach((r: any) => {
+              if (!moreSmsMap[r.lead_id]) {
+                const sentAt = r.created_at || r.metadata?.sent_at;
+                moreSmsMap[r.lead_id] = {
+                  sentAt,
+                  formattedDate: sentAt ? new Date(sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : undefined,
+                };
+              }
+            });
+            setLeadSmsSentMap((prev) => ({ ...prev, ...moreSmsMap }));
+          }
         } catch {}
       }
     } catch (err) {
@@ -448,13 +490,28 @@ export function PipelineKanbanPage() {
     const handlePurged = () => void loadPipelineData();
     const handleUpdated = () => void loadPipelineData();
     const handleCreated = () => void loadPipelineData();
+    const handleSmsConfirmed = (e: any) => {
+      const leadId = e.detail?.leadId;
+      if (leadId) {
+        const sentAt = e.detail?.sentAt || new Date().toISOString();
+        setLeadSmsSentMap((prev) => ({
+          ...prev,
+          [leadId]: {
+            sentAt,
+            formattedDate: new Date(sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+          },
+        }));
+      }
+    };
     window.addEventListener('leads-purged', handlePurged);
     window.addEventListener('lead-updated', handleUpdated);
     window.addEventListener('lead-created', handleCreated);
+    window.addEventListener('sms-sent-confirmed', handleSmsConfirmed);
     return () => {
       window.removeEventListener('leads-purged', handlePurged);
       window.removeEventListener('lead-updated', handleUpdated);
       window.removeEventListener('lead-created', handleCreated);
+      window.removeEventListener('sms-sent-confirmed', handleSmsConfirmed);
     };
   }, [loadPipelineData]);
 
@@ -802,6 +859,7 @@ export function PipelineKanbanPage() {
                                   interests={interests}
                                   attentionState={attentionState}
                                   deliverabilityHealth={deliverabilityHealth}
+                                  smsSentInfo={leadSmsSentMap[lead.id] || null}
                                   stageCode={stage.code}
                                   stageName={stage.name}
                                   isDragging={isDragging}

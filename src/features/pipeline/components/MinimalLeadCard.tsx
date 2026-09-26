@@ -28,6 +28,7 @@ export interface MinimalLeadCardProps {
   interests?: FormattedCourseInterest[];
   attentionState?: OperationalAttentionState | null;
   deliverabilityHealth?: LeadDeliverabilityInfo | null;
+  smsSentInfo?: { sentAt: string; formattedDate?: string } | null;
   stageCode?: string | null;
   stageName?: string | null;
   isClosed?: boolean;
@@ -157,6 +158,7 @@ export function MinimalLeadCard({
   interests = [],
   attentionState,
   deliverabilityHealth,
+  smsSentInfo = null,
   stageCode,
   stageName,
   isClosed,
@@ -292,8 +294,8 @@ export function MinimalLeadCard({
         </div>
       )}
 
-      {/* Contact Preference Badge — Canonical preference indicator (ALWAYS VISIBLE & COEXISTS) */}
-      <div className="pt-1 flex items-center">
+      {/* Contact Preference Badge & Separate Factual SMS Sent Indicator */}
+      <div className="pt-1 flex items-center justify-between gap-1.5 flex-wrap">
         <span
           data-testid="contact-preference-badge"
           className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md border select-none max-w-full truncate ${
@@ -302,6 +304,20 @@ export function MinimalLeadCard({
         >
           {formatContactPreferenceLabel(lead.contact_preference)}
         </span>
+
+        {smsSentInfo && (
+          <span
+            data-testid="lead-card-sms-sent-badge"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 select-none shrink-0"
+            title={smsSentInfo.sentAt ? `SMS enviado em ${new Date(smsSentInfo.sentAt).toLocaleString('pt-BR')}` : 'SMS enviado'}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+            <span>SMS enviado</span>
+            {smsSentInfo.formattedDate && (
+              <span className="text-[9px] text-emerald-600 font-normal">({smsSentInfo.formattedDate})</span>
+            )}
+          </span>
+        )}
       </div>
 
       {/* Deliverability Health Indicator — Factual Delivery Status + Deliverability Risk (COEXISTS WITH PREFERENCE) */}

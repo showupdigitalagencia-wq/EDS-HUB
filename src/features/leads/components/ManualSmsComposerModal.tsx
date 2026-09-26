@@ -224,7 +224,12 @@ export function ManualSmsComposerModal({
         console.warn('[ManualSms] Non-fatal conversation update warning:', convErr);
       }
 
-      // 4. Notify parent to refresh timeline and lead state immediately
+      // 4. Notify app to refresh cards, timeline, and lead state immediately in realtime
+      window.dispatchEvent(
+        new CustomEvent('sms-sent-confirmed', {
+          detail: { leadId: lead.id, sentAt: new Date().toISOString() },
+        })
+      );
       if (onSmsRecorded) onSmsRecorded();
       onClose();
     } catch (err: any) {

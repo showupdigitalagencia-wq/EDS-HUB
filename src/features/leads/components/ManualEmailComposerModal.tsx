@@ -21,7 +21,12 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
-import { resolveSalutation, resolveSafeFirstName } from '../../../utils/salutation';
+import {
+  resolveSalutation,
+  resolveSafeFirstName,
+  resolveZygomaticSalutation,
+  getApprovedZygomaticText,
+} from '../../../utils/salutation';
 import { getTemplateSubject, getTemplateChannel } from '../../../utils/template-variables';
 import type { Lead, EmailTemplate } from '../../../types';
 
@@ -183,43 +188,50 @@ export function ManualEmailComposerModal({
       }
       setSelectedTemplateKey(tpl.template_key || (isZygomatic ? 'zygomatic_course_details' : null));
 
-      // Resolve variables with lead data safely using canonical rule
-      const firstName = resolveSafeFirstName(lead.first_name, 'Doctor');
-      const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doctor');
-      const lastName = lead.last_name ? lead.last_name.trim() : '';
-      const courseName = lead.course_interest || (isZygomatic ? 'Zygomatic Implant Training' : 'Intensive Dental Implant Training');
-      const courseDateRange = 'November 7–10, 2026';
-      const courseTuition = '$17,500';
+      if (isZygomatic) {
+        setSubject('Zygomatic Course Details – Hands-On Training in Rio');
+        setBody(getApprovedZygomaticText(lead));
+      } else {
+        // Resolve variables with lead data safely using canonical rule
+        const firstName = resolveSafeFirstName(lead.first_name, 'Doctor');
+        const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doctor');
+        const zygomaticSalutation = resolveZygomaticSalutation(lead);
+        const lastName = lead.last_name ? lead.last_name.trim() : '';
+        const courseName = lead.course_interest || 'Intensive Dental Implant Training';
+        const courseDateRange = 'November 7–10, 2026';
+        const courseTuition = '$17,500';
 
-      const replaceVars = (text: string) =>
-        text
-          .replace(/\{\{\s*salutation\s*\}\}/gi, salutation || 'Doctor')
-          .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
-          .replace(/\{\{\s*last_name\s*\}\}/gi, lastName)
-          .replace(/\{\{\s*course_name\s*\}\}/gi, courseName)
-          .replace(/\{\{\s*course_date_range\s*\}\}/gi, courseDateRange)
-          .replace(/\{\{\s*course_tuition\s*\}\}/gi, courseTuition)
-          .replace(/\{\{\s*[\w.]+\s*\}\}/g, ''); // Safe cleanup of any unmapped variables
+        const replaceVars = (text: string) =>
+          text
+            .replace(/\{\{\s*salutation_line\s*\}\}/gi, zygomaticSalutation)
+            .replace(/\{\{\s*salutation\s*\}\}/gi, salutation || 'Doctor')
+            .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
+            .replace(/\{\{\s*last_name\s*\}\}/gi, lastName)
+            .replace(/\{\{\s*course_name\s*\}\}/gi, courseName)
+            .replace(/\{\{\s*course_date_range\s*\}\}/gi, courseDateRange)
+            .replace(/\{\{\s*course_tuition\s*\}\}/gi, courseTuition)
+            .replace(/\{\{\s*[\w.]+\s*\}\}/g, ''); // Safe cleanup of any unmapped variables
 
-      // Subject snapshot
-      const templateSubject = getTemplateSubject(tpl) || tpl.name || '';
-      setSubject(replaceVars(templateSubject));
+        // Subject snapshot
+        const templateSubject = getTemplateSubject(tpl) || tpl.name || '';
+        setSubject(replaceVars(templateSubject));
 
-      // Body snapshot: prefer text_template, fallback to clean text from blocks
-      let rawBody = tpl.text_template || '';
-      if (!rawBody && tpl.content_json) {
-        if (Array.isArray(tpl.content_json)) {
-          rawBody = tpl.content_json
-            .map((b: any) => b.content?.text || b.content?.body || '')
-            .filter(Boolean)
-            .join('\n\n');
-        } else if (typeof tpl.content_json === 'object') {
-          const cj = tpl.content_json as any;
-          rawBody = cj.body || cj.text || '';
+        // Body snapshot: prefer text_template, fallback to clean text from blocks
+        let rawBody = tpl.text_template || '';
+        if (!rawBody && tpl.content_json) {
+          if (Array.isArray(tpl.content_json)) {
+            rawBody = tpl.content_json
+              .map((b: any) => b.content?.text || b.content?.body || '')
+              .filter(Boolean)
+              .join('\n\n');
+          } else if (typeof tpl.content_json === 'object') {
+            const cj = tpl.content_json as any;
+            rawBody = cj.body || cj.text || '';
+          }
         }
-      }
 
-      setBody(replaceVars(rawBody));
+        setBody(replaceVars(rawBody));
+      }
     } catch (err) {
       console.error('Failed to prepare template in composer:', err);
       setError('Não foi possível preparar o e-mail. Tente novamente.');
