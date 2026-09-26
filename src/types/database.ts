@@ -402,6 +402,7 @@ export interface EmailTemplate {
   html_template: string;
   text_template: string;
   is_active: boolean;
+  subject?: string | null;
   template_key?: string | null;
   has_attachment?: boolean;
   attachment_name?: string | null;
@@ -535,6 +536,16 @@ export interface AudienceFilterRule {
   value: any;
 }
 
+export interface CampaignAttachment {
+  filename: string;
+  size?: number;
+  type: string;
+  storage_path?: string;
+  material_id?: string | null;
+  course_id?: string | null;
+  source: 'official_material' | 'uploaded';
+}
+
 export interface AudienceFilterDefinition {
   version: number;
   operator: 'and';
@@ -552,6 +563,10 @@ export interface AudienceFilterDefinition {
   course_interest_id?: string | null;
   contact_preferences?: string[];
   rules?: AudienceFilterRule[];
+  mode?: 'all' | 'stage' | 'course' | 'individual';
+  course_id?: string | null;
+  course_session_id?: string | null;
+  selected_lead_ids?: string[];
 }
 
 export interface AudienceExclusionBreakdown {

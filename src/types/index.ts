@@ -110,6 +110,7 @@ export type {
   DailyOperationsQueueResponse,
   DailyOperationsFilter,
   SavedSegment,
+  CampaignAttachment,
   AudienceFilterDefinition,
   AudienceFilterRule,
   AudienceExclusionBreakdown,

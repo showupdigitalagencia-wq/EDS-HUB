@@ -5,11 +5,23 @@ import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { BlockEditor } from '../editor/BlockEditor';
-import { AudienceFilterBuilder } from './components/AudienceFilterBuilder';
+import { TemplatePickerModal } from './components/TemplatePickerModal';
+import { CampaignAttachmentSection } from './components/CampaignAttachmentSection';
+import { AudienceSection } from './components/AudienceSection';
+import { EmailPreviewSection } from './components/EmailPreviewSection';
+import { CampaignReviewSummaryCard } from './components/CampaignReviewSummaryCard';
 import { AudiencePreviewModal } from './components/AudiencePreviewModal';
 import { SavedSegmentsModal } from './components/SavedSegmentsModal';
-import { campaignAudienceService } from './services/campaign-audience-service';
-import { getTemplateChannel, getTemplateSubject, CAMPAIGN_SPECIFIC_VARIABLES } from '../../utils/template-variables';
+import { TemplatePreviewModal } from '../templates/components/TemplatePreviewModal';
+import {
+  campaignAudienceService,
+  type OfficialCourseMaterial,
+} from './services/campaign-audience-service';
+import {
+  getTemplateChannel,
+  getTemplateSubject,
+  CAMPAIGN_SPECIFIC_VARIABLES,
+} from '../../utils/template-variables';
 import type { EmailBlock } from '../editor/types';
 import type {
   Campaign,
@@ -20,6 +32,7 @@ import type {
   AudienceFilterDefinition,
   AudiencePreviewResult,
   EmailTemplate,
+  CampaignAttachment,
 } from '../../types';
 import {
   ArrowLeft,
@@ -32,26 +45,31 @@ import {
   Calendar,
   Layers,
   Users,
-  FlaskConical,
   RotateCw,
   History,
-  Check,
   ShieldCheck,
   XCircle,
-  PhoneCall,
-  MessageSquare,
   Sparkles,
   Eye,
   FileText,
+  Paperclip,
+  ChevronRight,
+  ChevronLeft,
 } from 'lucide-react';
 
-type TabType = 'editor' | 'audience' | 'ab_test' | 'versions' | 'send';
+export type CampaignSectionType =
+  | 'content'
+  | 'audience'
+  | 'attachment'
+  | 'sender'
+  | 'review'
+  | 'approval';
 
 export function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('editor');
+  const [activeSection, setActiveSection] = useState<CampaignSectionType>('content');
 
   // Loading & Action states
   const [isLoading, setIsLoading] = useState(true);
@@ -73,14 +91,20 @@ export function CampaignDetailPage() {
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
 
+  // Attachment
+  const [attachment, setAttachment] = useState<CampaignAttachment | null>(null);
+  const [suggestedMaterial, setSuggestedMaterial] = useState<OfficialCourseMaterial | null>(null);
+
   // Versions
   const [versions, setVersions] = useState<CampaignVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [showVersionsAudit, setShowVersionsAudit] = useState(false);
 
   // Audience & Segmentation 2.0
   const [filterDefinition, setFilterDefinition] = useState<AudienceFilterDefinition>({
     version: 1,
     operator: 'and',
+    mode: 'all',
   });
   const [campaignAudience, setCampaignAudience] = useState<CampaignAudience | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -99,10 +123,17 @@ export function CampaignDetailPage() {
   const [isPreparing, setIsPreparing] = useState(false);
   const [isActivatingCall, setIsActivatingCall] = useState(false);
 
-  // Template Library Loading & Lineage
+  // Template Library & Modals
   const [availableTemplates, setAvailableTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [loadedTemplate, setLoadedTemplate] = useState<EmailTemplate | null>(null);
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [isPreviewTemplateOpen, setIsPreviewTemplateOpen] = useState(false);
   const [loadedTemplateNotice, setLoadedTemplateNotice] = useState<string | null>(null);
+
+  // Reference data for review summary
+  const [allCourses, setAllCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [allStages, setAllStages] = useState<Array<{ id: string; name: string; code: string }>>([]);
 
   const loadCampaignData = useCallback(async () => {
     if (!id) return;
@@ -125,7 +156,7 @@ export function CampaignDetailPage() {
       setSubject(camp.subject || '');
       setPreviewText(camp.preview_text || '');
       setFromName(camp.from_name || 'Expert Dental Solutions');
-      setReplyTo(camp.reply_to || '');
+      setReplyTo(camp.reply_to || 'info@expdentalsolutions.com');
       setScheduledAt(camp.scheduled_at ? new Date(camp.scheduled_at).toISOString().slice(0, 16) : '');
 
       // 2. Fetch Versions
@@ -152,6 +183,11 @@ export function CampaignDetailPage() {
         setCampaignAudience(aud);
         if (aud.filter_definition && typeof aud.filter_definition === 'object') {
           setFilterDefinition(aud.filter_definition as AudienceFilterDefinition);
+        }
+        // Extract attachment from snapshot metadata if exists
+        const meta = aud.snapshot_metadata as Record<string, any> | undefined;
+        if (meta?.attachment) {
+          setAttachment(meta.attachment as CampaignAttachment);
         }
       }
 
@@ -183,21 +219,35 @@ export function CampaignDetailPage() {
       const recs = await campaignAudienceService.fetchCampaignRecipients(id, 100, 0);
       setRecipients(recs);
 
-      // 6. Fetch available Email Templates for the composer
-      const { data: tpls } = await supabase
-        .from('email_templates')
-        .select('*')
-        .eq('is_active', true)
-        .order('name', { ascending: true });
+      // 6. Fetch available Email Templates & reference data
+      const [tplsRes, coursesRes, stagesRes] = await Promise.all([
+        supabase.from('email_templates').select('*').eq('is_active', true).order('name', { ascending: true }),
+        supabase.from('courses').select('id, name, code').eq('active', true).order('sort_order', { ascending: true }),
+        supabase.from('pipeline_stages').select('id, name, code, sort_order').order('sort_order', { ascending: true }),
+      ]);
 
-      if (tpls) {
-        setAvailableTemplates(tpls.filter((t) => getTemplateChannel(t) === 'email'));
-      }
-      if (camp.template_id) {
-        setSelectedTemplateId(camp.template_id);
+      if (coursesRes.data) setAllCourses(coursesRes.data);
+      if (stagesRes.data) setAllStages(stagesRes.data);
+
+      if (tplsRes.data) {
+        const filteredTpls = tplsRes.data.filter((t) => getTemplateChannel(t) === 'email');
+        setAvailableTemplates(filteredTpls);
+
+        if (camp.template_id) {
+          setSelectedTemplateId(camp.template_id);
+          const found = filteredTpls.find((t) => t.id === camp.template_id);
+          if (found) {
+            setLoadedTemplate(found);
+            // Check associated official material
+            if (found.template_key) {
+              const mat = await campaignAudienceService.loadTemplateAttachment(found.template_key);
+              if (mat) setSuggestedMaterial(mat);
+            }
+          }
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load campaign');
+      setError(err instanceof Error ? err.message : 'Falha ao carregar dados da campanha');
     } finally {
       setIsLoading(false);
     }
@@ -207,8 +257,62 @@ export function CampaignDetailPage() {
     loadCampaignData();
   }, [loadCampaignData]);
 
+  // Handle template selection from modal
+  const handleSelectTemplate = async (tpl: EmailTemplate) => {
+    if (!tpl) return;
+    setLoadedTemplate(tpl);
+    setSelectedTemplateId(tpl.id);
+
+    const tplSub = getTemplateSubject(tpl);
+    if (tplSub) setSubject(tplSub);
+
+    if (tpl.description) setPreviewText(tpl.description);
+
+    let tplBlocks: EmailBlock[] = [];
+    const cj = tpl.content_json;
+    if (Array.isArray(cj)) {
+      tplBlocks = cj as EmailBlock[];
+    } else if (typeof cj === 'object' && cj !== null && Array.isArray((cj as { blocks?: unknown[] }).blocks)) {
+      tplBlocks = (cj as { blocks: EmailBlock[] }).blocks;
+    }
+
+    setBlocks(tplBlocks);
+    setHtmlContent(tpl.html_template || '');
+    setTextContent(tpl.text_template || '');
+
+    // Check associated official material
+    if (tpl.template_key) {
+      const mat = await campaignAudienceService.loadTemplateAttachment(tpl.template_key);
+      if (mat) {
+        setSuggestedMaterial(mat);
+        // Automatically suggest / attach if template indicates required attachment
+        if (tpl.has_attachment && !attachment) {
+          setAttachment({
+            filename: mat.file_name,
+            size: mat.file_size_bytes || undefined,
+            type: mat.content_type || 'application/pdf',
+            storage_path: mat.storage_path,
+            material_id: mat.id,
+            course_id: mat.course_id,
+            source: 'official_material',
+          });
+        }
+      }
+    } else if (tpl.attachment_name && !attachment) {
+      setAttachment({
+        filename: tpl.attachment_name,
+        type: 'application/pdf',
+        source: 'uploaded',
+      });
+    }
+
+    setLoadedTemplateNotice(
+      `Template "${tpl.name}" carregado com sucesso. O conteúdo está disponível para edição abaixo.`,
+    );
+  };
+
   // Save campaign details & create new version snapshot
-  const handleSaveCampaign = async () => {
+  const handleSaveCampaign = async (customSuccessNotice?: string) => {
     if (!campaign) return;
     setIsSaving(true);
     setError(null);
@@ -224,7 +328,7 @@ export function CampaignDetailPage() {
           subject: subject.trim(),
           preview_text: previewText.trim() || null,
           from_name: fromName.trim() || 'Expert Dental Solutions',
-          reply_to: replyTo.trim() || null,
+          reply_to: replyTo.trim() || 'info@expdentalsolutions.com',
           template_id: selectedTemplateId || campaign.template_id || null,
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
           updated_at: new Date().toISOString(),
@@ -251,13 +355,18 @@ export function CampaignDetailPage() {
 
       if (verErr) throw verErr;
 
-      // 3. Save audience filters in campaign_audiences
+      // 3. Save audience filters & snapshot metadata (including attachment)
+      const currentMeta = (campaignAudience?.snapshot_metadata as Record<string, any>) || {};
       await supabase.from('campaign_audiences').upsert(
         {
           campaign_id: campaign.id,
           saved_segment_id: campaignAudience?.saved_segment_id || null,
           filter_definition: filterDefinition,
           estimated_recipient_count: previewResult?.eligible_count ?? 0,
+          snapshot_metadata: {
+            ...currentMeta,
+            attachment: attachment || null,
+          },
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'campaign_id' },
@@ -266,7 +375,7 @@ export function CampaignDetailPage() {
       // 4. Save A/B variants if active
       if (hasABTest && channel === 'email') {
         if (variantAPercent + variantBPercent !== 100) {
-          throw new Error('A/B traffic percentages must sum to exactly 100%');
+          throw new Error('As porcentagens de tráfego do Teste A/B devem somar exatamente 100%');
         }
 
         await supabase.from('campaign_variants').upsert([
@@ -295,10 +404,22 @@ export function CampaignDetailPage() {
 
       setVersions([newVer, ...versions]);
       setSelectedVersionId(newVer.id);
-      setCampaign({ ...campaign, name, channel, subject, preview_text: previewText, from_name: fromName, reply_to: replyTo });
-      setSuccessMessage(`Campaign saved successfully! (Version ${nextVersionNumber} snapshot created)`);
+      setCampaign({
+        ...campaign,
+        name,
+        channel,
+        subject,
+        preview_text: previewText,
+        from_name: fromName,
+        reply_to: replyTo,
+      });
+
+      setSuccessMessage(
+        customSuccessNotice ||
+          `Campanha salva com sucesso! (Versão ${nextVersionNumber} registrada no histórico)`,
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error saving campaign');
+      setError(err instanceof Error ? err.message : 'Erro ao salvar campanha');
     } finally {
       setIsSaving(false);
     }
@@ -326,13 +447,21 @@ export function CampaignDetailPage() {
       if (upErr) throw upErr;
 
       setCampaign({ ...campaign, ...updatePayload });
-      setSuccessMessage(`Campaign status successfully changed to '${newStatus.replace('_', ' ')}'`);
+      const statusLabel =
+        newStatus === 'pending_approval'
+          ? 'Aguardando aprovação'
+          : newStatus === 'approved'
+          ? 'Aprovada'
+          : newStatus === 'draft'
+          ? 'Rascunho'
+          : newStatus;
+      setSuccessMessage(`Status da campanha alterado com sucesso para "${statusLabel}".`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error updating campaign status');
+      setError(err instanceof Error ? err.message : 'Erro ao atualizar status da campanha');
     }
   };
 
-  // Prepare Campaign Audience (FREEZE SNAPSHOT — DOES NOT CREATE TASKS OR SEND)
+  // Prepare Campaign Audience (FREEZE SNAPSHOT)
   const handlePrepareAudience = async () => {
     if (!campaign) return;
     setIsPreparing(true);
@@ -345,7 +474,7 @@ export function CampaignDetailPage() {
       );
 
       setSuccessMessage(
-        `Audience snapshot frozen! ${prepRes.recipients_materialized} contacts recorded (${prepRes.eligible_count} eligible, ${prepRes.excluded_count} safely excluded).`,
+        `Audiência congelada com sucesso! ${prepRes.recipients_materialized} contatos registrados (${prepRes.eligible_count} elegíveis, ${prepRes.excluded_count} excluídos por segurança).`,
       );
 
       // Refresh audience and recipients
@@ -355,13 +484,13 @@ export function CampaignDetailPage() {
       const recs = await campaignAudienceService.fetchCampaignRecipients(campaign.id, 100, 0);
       setRecipients(recs);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error preparing audience snapshot');
+      setError(err instanceof Error ? err.message : 'Erro ao preparar lista de destinatários');
     } finally {
       setIsPreparing(false);
     }
   };
 
-  // Activate Call Campaign (Explicit action: creates deduplicated tasks in public.tasks)
+  // Activate Call Campaign (Explicit action)
   const handleActivateCallCampaign = async () => {
     if (!campaign || campaign.channel !== 'call') return;
     setIsActivatingCall(true);
@@ -370,16 +499,15 @@ export function CampaignDetailPage() {
     try {
       const actRes = await campaignAudienceService.activateCallCampaign(campaign.id);
       setSuccessMessage(
-        `Call Campaign Activated! ${actRes.tasks_created} call tasks dispatched to Daily Operations (${actRes.tasks_skipped_idempotent} skipped as already pending).`,
+        `Campanha de Ligações Ativada! ${actRes.tasks_created} tarefas criadas em Operações Diárias.`,
       );
 
       setCampaign({ ...campaign, status: 'sent', activated_at: actRes.activated_at });
 
-      // Refresh recipients
       const recs = await campaignAudienceService.fetchCampaignRecipients(campaign.id, 100, 0);
       setRecipients(recs);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error activating call campaign');
+      setError(err instanceof Error ? err.message : 'Erro ao ativar campanha de ligações');
     } finally {
       setIsActivatingCall(false);
     }
@@ -403,320 +531,293 @@ export function CampaignDetailPage() {
 
   if (!campaign) return null;
 
-  const getStatusBadge = (status: CampaignStatus) => {
-    switch (status) {
-      case 'draft':
-        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700">Rascunho</span>;
-      case 'pending_approval':
-        return (
-          <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 flex items-center gap-1">
-            <Clock className="h-3 w-3" /> Pendente de Aprovação
-          </span>
-        );
-      case 'approved':
-        return (
-          <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" /> Aprovada
-          </span>
-        );
-      case 'scheduled':
-        return (
-          <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 flex items-center gap-1">
-            <Calendar className="h-3 w-3" /> Agendada
-          </span>
-        );
-      case 'sending':
-        return (
-          <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800 flex items-center gap-1">
-            <RotateCw className="h-3 w-3 animate-spin" /> Enviando
-          </span>
-        );
-      case 'sent':
-        return (
-          <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
-            <Check className="h-3 w-3" /> {campaign.channel === 'call' ? 'Ativada' : 'Enviada'}
-          </span>
-        );
-      default:
-        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700">{status}</span>;
-    }
-  };
+  // Selected names for Review Summary
+  const resolvedCourseName = allCourses.find(
+    (c) => c.id === (filterDefinition.course_id || filterDefinition.enrolled_course_id),
+  )?.name;
 
-  const getChannelBadge = (ch: 'email' | 'sms' | 'call') => {
-    switch (ch) {
-      case 'email':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-            <Mail className="h-3 w-3" /> Email
-          </span>
-        );
-      case 'sms':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
-            <MessageSquare className="h-3 w-3" /> SMS
-          </span>
-        );
-      case 'call':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <PhoneCall className="h-3 w-3" /> Call Campaign
-          </span>
-        );
-    }
-  };
+  const resolvedStageName =
+    filterDefinition.stages && filterDefinition.stages.length > 0
+      ? filterDefinition.stages
+          .map((codeOrId) => allStages.find((s) => s.code === codeOrId || s.id === codeOrId)?.name || codeOrId)
+          .join(', ')
+      : null;
 
-  const handleSelectTemplate = (tplId: string) => {
-    if (!tplId) return;
-    const tpl = availableTemplates.find((t) => t.id === tplId);
-    if (!tpl) return;
+  // Navigation Sections Configuration
+  const sections = [
+    { id: 'content' as const, label: '1. Conteúdo do Email', icon: Mail },
+    {
+      id: 'audience' as const,
+      label: `2. Quem vai receber? (${previewResult?.eligible_count ?? campaignAudience?.eligible_count ?? 0})`,
+      icon: Users,
+    },
+    { id: 'attachment' as const, label: '3. Anexo / PDF', icon: Paperclip },
+    { id: 'sender' as const, label: '4. Remetente & Canal', icon: ShieldCheck },
+    { id: 'review' as const, label: '5. Resumo da Campanha', icon: CheckCircle2 },
+    { id: 'approval' as const, label: '6. Aprovação & Envio', icon: Send },
+  ];
 
-    const tplSub = getTemplateSubject(tpl);
-    if (tplSub && !subject) {
-      setSubject(tplSub);
-    }
-
-    let tplBlocks: EmailBlock[] = [];
-    const cj = tpl.content_json;
-    if (Array.isArray(cj)) {
-      tplBlocks = cj as EmailBlock[];
-    } else if (typeof cj === 'object' && cj !== null && Array.isArray((cj as { blocks?: unknown[] }).blocks)) {
-      tplBlocks = (cj as { blocks: EmailBlock[] }).blocks;
-    }
-
-    setBlocks(tplBlocks);
-    setHtmlContent(tpl.html_template || '');
-    setTextContent(tpl.text_template || '');
-    setSelectedTemplateId(tpl.id);
-    setLoadedTemplateNotice(
-      `Conteúdo copiado a partir do template "${tpl.name}". As alterações pertencem exclusivamente ao snapshot desta campanha.`,
-    );
-  };
+  const currentSectionIndex = sections.findIndex((s) => s.id === activeSection);
 
   return (
     <Layout
       backTo="/campaigns"
       eyebrow="MARKETING & COMUNICAÇÃO"
       title={campaign.name}
-      subtitle={channel === 'email' ? 'Compositor & Gestão de Campanhas de Email' : 'Compositor & Gestão de Campanhas'}
+      subtitle="Criador e Gestão Simplificada de Campanhas de Email"
     >
-      <div className="space-y-6 max-w-7xl mx-auto pb-12">
-        {/* Top Breadcrumb & Status Action Bar */}
-        <div className="card-executive p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="space-y-6 max-w-7xl mx-auto pb-28">
+        {/* Top Header & Fast Action Bar */}
+        <div className="card-executive p-4 sm:p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3">
             <Link
               to="/campaigns"
-              className="p-2 rounded-xl border border-slate-200/80 text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
+              className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors shrink-0"
+              title="Voltar para lista de campanhas"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <ArrowLeft className="w-5 h-5" />
             </Link>
             <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-xl font-bold font-heading text-[#08254f]">{campaign.name}</h1>
-                {getStatusBadge(campaign.status)}
-                {getChannelBadge(campaign.channel)}
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-bold font-heading text-[#08254f] truncate">
+                  {campaign.name}
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                  {campaign.status === 'draft'
+                    ? 'Rascunho'
+                    : campaign.status === 'pending_approval'
+                    ? 'Aguardando Aprovação'
+                    : campaign.status === 'approved'
+                    ? 'Aprovada'
+                    : campaign.status === 'scheduled'
+                    ? 'Agendada'
+                    : campaign.status === 'sending'
+                    ? 'Enviando'
+                    : campaign.status === 'sent'
+                    ? 'Concluída'
+                    : campaign.status}
+                </span>
+                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700">
+                  Canal: Email
+                </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Created {new Date(campaign.created_at).toLocaleDateString()} • Snapshot:{' '}
-                {campaignAudience?.snapshot_frozen_at
-                  ? `Frozen on ${new Date(campaignAudience.snapshot_frozen_at).toLocaleDateString()}`
-                  : 'Dynamic Draft'}
+                Criada em {new Date(campaign.created_at).toLocaleDateString()} • Versão{' '}
+                {versions[0]?.version_number || 1}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleSaveCampaign()}
+              disabled={isSaving}
+              className="w-full sm:w-auto px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <Save className="w-3.5 h-3.5" />
+              {isSaving ? 'Salvando...' : 'Salvar rascunho'}
+            </button>
+
             {campaign.status === 'draft' && (
               <button
+                type="button"
                 onClick={() => handleTransitionStatus('pending_approval')}
-                className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-1.5 cursor-pointer font-heading"
+                className="w-full sm:w-auto px-4 py-2 text-xs font-bold rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer font-heading"
               >
-                <Clock className="h-3.5 w-3.5" /> Submeter para Aprovação
+                <Clock className="w-3.5 h-3.5" /> Enviar para aprovação
               </button>
             )}
 
-            {(campaign.status === 'draft' || campaign.status === 'pending_approval') && (
+            {campaign.status === 'pending_approval' && (
               <button
+                type="button"
                 onClick={() => handleTransitionStatus('approved')}
-                className="btn-secondary text-xs"
+                className="w-full sm:w-auto px-4 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer font-heading"
               >
-                <ShieldCheck className="h-3.5 w-3.5 text-[#449bd5]" /> Aprovar Campanha
+                <ShieldCheck className="w-3.5 h-3.5" /> Aprovar Campanha
               </button>
             )}
 
-            <button
-              onClick={handleSaveCampaign}
-              disabled={isSaving}
-              className="btn-crimson text-xs disabled:opacity-50"
-            >
-              <Save className="h-3.5 w-3.5" />
-              {isSaving ? 'Salvando...' : 'Salvar Versão (Snapshot)'}
-            </button>
+            {campaign.status === 'approved' && (
+              <button
+                type="button"
+                onClick={() => setActiveSection('approval')}
+                className="w-full sm:w-auto px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer font-heading"
+              >
+                <Send className="w-3.5 h-3.5" /> Agendar / Enviar Campanha
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Feedback alerts */}
+        {/* Feedback Alerts */}
         {error && (
-          <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 shrink-0" />
+          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs sm:text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
         {successMessage && (
-          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 shrink-0" />
+          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{successMessage}</span>
           </div>
         )}
 
-        {/* Campaign Header Settings Bar */}
-        <div className="card-executive p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-heading">
-              Configurações de Envio e Canal
-            </h2>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 font-medium">Canal:</span>
-              <select
-                disabled={campaign.status === 'sent'}
-                value={channel}
-                onChange={(e) => setChannel(e.target.value as 'email' | 'sms' | 'call')}
-                className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800"
-              >
-                <option value="email">Campanha de Email (Canal Automático)</option>
-                <option value="sms">SMS (Indisponível em Massa — Manual Assistido)</option>
-                <option value="call">Campanha de Ligações (Tarefas Manuais)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {channel === 'call' ? 'Objetivo da Ligação' : 'Linha de Assunto'}
-              </label>
-              <input
-                type="text"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder={channel === 'call' ? 'Ex: Follow-up Consulta VIP' : 'Ex: Convite para {{salutation}}'}
-                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {channel === 'call' ? 'Notas do Script de Ligação' : 'Texto de Pré-visualização'}
-              </label>
-              <input
-                type="text"
-                value={previewText}
-                onChange={(e) => setPreviewText(e.target.value)}
-                placeholder={channel === 'call' ? 'Foco nas vagas remanescentes...' : 'Texto do preheader no email...'}
-                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Nome do Remetente</label>
-              <input
-                type="text"
-                value={fromName}
-                onChange={(e) => setFromName(e.target.value)}
-                placeholder="Expert Dental Solutions"
-                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Responder Para (Opcional)</label>
-              <input
-                type="email"
-                value={replyTo}
-                onChange={(e) => setReplyTo(e.target.value)}
-                placeholder="contato@expdentalsolutions.com"
-                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-200 gap-2 bg-white px-4 pt-3 rounded-t-2xl overflow-x-auto">
-          {[
-            { id: 'editor', label: 'Editor de Conteúdo', icon: Mail, visible: channel === 'email' },
-            { id: 'audience', label: `Público (${campaignAudience?.eligible_count ?? '0'})`, icon: Users, visible: true },
-            { id: 'ab_test', label: 'Teste A/B', icon: FlaskConical, visible: channel === 'email' },
-            { id: 'versions', label: `Versões (${versions.length})`, icon: History, visible: true },
-            { id: 'send', label: channel === 'call' ? 'Ativar & Despachar' : 'Execução & Envio', icon: Send, visible: true },
-          ]
-            .filter((t) => t.visible)
-            .map((t) => (
+        {/* Reorganized Section Stepper / Pills */}
+        <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 overflow-x-auto shadow-2xs">
+          {sections.map((sec) => {
+            const isActive = activeSection === sec.id;
+            return (
               <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id as TabType)}
-                className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer shrink-0 font-heading ${
-                  activeTab === t.id
-                    ? 'border-[#08254f] text-[#08254f]'
-                    : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-200'
+                key={sec.id}
+                type="button"
+                onClick={() => setActiveSection(sec.id)}
+                className={`flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer shrink-0 font-heading ${
+                  isActive
+                    ? 'bg-[#08254f] text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
               >
-                <t.icon className="h-4 w-4" />
-                {t.label}
+                <sec.icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                <span>{sec.label}</span>
               </button>
-            ))}
+            );
+          })}
         </div>
 
-        {/* TAB 1: Visual Block Editor (Email only) */}
-        {activeTab === 'editor' && channel === 'email' && (
-          <div className="bg-white rounded-b-2xl border border-gray-200 shadow-xs p-6 space-y-5">
-            {/* Template Loader & Campaign Variable Chips */}
-            <div className="p-4 bg-slate-50/80 border border-slate-200 rounded-xl space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-[#08254f]" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#08254f] font-heading">
-                    Carregar a partir de Template da Biblioteca
-                  </span>
+        {/* SECTION 1: EMAIL CONTENT & TEMPLATE SELECTION */}
+        {activeSection === 'content' && (
+          <div className="space-y-6">
+            {/* Template Selector Banner & Loaded Template Card */}
+            <div className="card-executive p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <h3 className="text-sm font-bold text-[#08254f] flex items-center gap-2 font-heading">
+                    <FileText className="w-4 h-4 text-[#449bd5]" />
+                    Template do Email
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Escolha um template da biblioteca oficial para preencher o assunto, pré-cabeçalho, corpo e anexo.
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <select
-                    value={selectedTemplateId}
-                    onChange={(e) => handleSelectTemplate(e.target.value)}
-                    className="input-executive text-xs py-1.5 px-3 bg-white w-64"
+                  <button
+                    type="button"
+                    onClick={() => setIsTemplatePickerOpen(true)}
+                    className="w-full sm:w-auto px-4 py-2 text-xs font-bold rounded-xl bg-[#08254f] text-white hover:bg-[#061d3d] transition-colors shadow-2xs cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    <option value="">Selecione um template de email...</option>
-                    {availableTemplates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({t.category})
-                      </option>
-                    ))}
-                  </select>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {selectedTemplateId ? 'Trocar template' : 'Escolher template'}
+                  </button>
+
+                  {loadedTemplate && (
+                    <button
+                      type="button"
+                      onClick={() => setIsPreviewTemplateOpen(true)}
+                      className="w-full sm:w-auto px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Visualizar template
+                    </button>
+                  )}
                 </div>
               </div>
 
+              {/* Loaded Template Visual Card */}
+              {loadedTemplate ? (
+                <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-blue-950 font-heading">
+                        Template carregado: {loadedTemplate.name}
+                      </span>
+                      {loadedTemplate.category && (
+                        <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-blue-200/80 text-blue-900 capitalize">
+                          {loadedTemplate.category}
+                        </span>
+                      )}
+                      {(loadedTemplate.has_attachment || loadedTemplate.attachment_name) && (
+                        <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1">
+                          <Paperclip className="w-3 h-3 text-amber-700" />
+                          Material em PDF incluso ({loadedTemplate.attachment_name || 'Anexo'})
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-blue-800">
+                      As edições realizadas no assunto ou no editor abaixo pertencem exclusivamente a esta campanha.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
+                  Nenhum template selecionado ainda. Clique em &quot;Escolher template&quot; para carregar um modelo pronto ou componha diretamente no editor abaixo.
+                </div>
+              )}
+
               {loadedTemplateNotice && (
-                <div className="text-xs text-blue-800 bg-blue-50/80 p-2.5 rounded-lg border border-blue-200 flex items-center justify-between">
+                <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between">
                   <span>{loadedTemplateNotice}</span>
                   <button
                     type="button"
                     onClick={() => setLoadedTemplateNotice(null)}
-                    className="text-[10px] text-blue-600 hover:text-blue-900 font-bold ml-2 cursor-pointer"
+                    className="text-[10px] font-bold text-emerald-600 hover:text-emerald-900 ml-2"
                   >
                     ✕
                   </button>
                 </div>
               )}
+            </div>
 
-              {/* Campaign Variables Bar */}
-              <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 font-heading">
-                  <Sparkles className="w-3.5 h-3.5 text-[#449bd5]" /> Variáveis Disponíveis para Esta Campanha:
+            {/* Email Subject, Preheader & Variable Chips */}
+            <div className="card-executive p-5 space-y-4">
+              <h3 className="text-sm font-bold text-[#08254f] font-heading">
+                Assunto & Pré-cabeçalho
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Linha de Assunto
+                  </label>
+                  <input
+                    type="text"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Ex: Convite Especial para {{salutation}}"
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Texto de Pré-visualização (Preheader)
+                  </label>
+                  <input
+                    type="text"
+                    value={previewText}
+                    onChange={(e) => setPreviewText(e.target.value)}
+                    placeholder="Ex: Vagas remanescentes para a turma de Novembro..."
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Variable Chips */}
+              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-[#449bd5]" /> Inserir Variável no Assunto:
                 </span>
                 {CAMPAIGN_SPECIFIC_VARIABLES.map((v) => (
                   <button
                     key={v.key}
                     type="button"
                     onClick={() => setSubject((prev) => `${prev ? prev + ' ' : ''}${v.key}`)}
-                    className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 rounded text-xs font-mono text-[#08254f] transition-colors shadow-2xs cursor-pointer"
-                    title={`${v.description} — Clique para adicionar ao assunto`}
+                    className="px-2 py-0.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded text-xs font-mono text-[#08254f] transition-colors cursor-pointer shadow-2xs"
+                    title={`${v.description} — Clique para adicionar`}
                   >
                     {v.key}
                   </button>
@@ -724,362 +825,347 @@ export function CampaignDetailPage() {
               </div>
             </div>
 
-            <BlockEditor
-              initialBlocks={blocks}
-              onChange={(newBlocks, html, text) => {
-                setBlocks(newBlocks);
-                setHtmlContent(html);
-                setTextContent(text);
-              }}
+            {/* Visual Block Editor */}
+            <div className="card-executive p-5 space-y-4">
+              <h3 className="text-sm font-bold text-[#08254f] font-heading">
+                Editor Visual de Conteúdo
+              </h3>
+              <BlockEditor
+                initialBlocks={blocks}
+                onChange={(newBlocks, html, text) => {
+                  setBlocks(newBlocks);
+                  setHtmlContent(html);
+                  setTextContent(text);
+                }}
+              />
+            </div>
+
+            {/* Email Preview Section */}
+            <EmailPreviewSection
+              subject={subject}
+              previewText={previewText}
+              fromName={fromName}
+              replyTo={replyTo}
+              htmlContent={htmlContent}
+              attachment={attachment}
             />
           </div>
         )}
 
-        {/* TAB 2: Audience & Segmentation 2.0 */}
-        {activeTab === 'audience' && (
-          <div className="bg-white rounded-b-2xl border border-gray-200 shadow-xs p-6 space-y-6">
-            {/* Snapshot Immutability Banner */}
-            {campaignAudience?.snapshot_frozen_at ? (
-              <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full bg-blue-200 text-blue-900 text-xs font-bold">
-                      Audience Snapshot Frozen
-                    </span>
-                    <span className="text-xs text-blue-800">
-                      Prepared on {new Date(campaignAudience.snapshot_frozen_at).toLocaleString()}
-                    </span>
-                  </div>
-                  <p className="text-xs text-blue-700">
-                    This campaign has an immutable snapshot with {campaignAudience.eligible_count} eligible contacts and{' '}
-                    {campaignAudience.excluded_count} audit exclusions. Changes to Saved Segments will not alter this snapshot.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handlePrepareAudience}
-                  disabled={isPreparing || campaign.status === 'sent'}
-                  className="px-3.5 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
-                >
-                  <RotateCw className={`h-3.5 w-3.5 inline mr-1.5 ${isPreparing ? 'animate-spin' : ''}`} />
-                  {isPreparing ? 'Rebuilding...' : 'Rebuild / Refresh Snapshot'}
-                </button>
-              </div>
-            ) : (
-              <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                    <Sparkles className="h-4 w-4 text-amber-600" />
-                    Dynamic Audience Draft
-                  </span>
-                  <p className="text-xs text-amber-800">
-                    Criteria are evaluated dynamically. Click &quot;Prepare Audience&quot; to freeze an immutable snapshot before dispatch.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handlePrepareAudience}
-                  disabled={isPreparing}
-                  className="px-4 py-2 text-xs font-bold rounded-xl bg-gray-900 text-white hover:bg-black transition-colors shadow-xs cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  <Layers className="h-4 w-4" />
-                  {isPreparing ? 'Preparing Snapshot...' : 'Prepare Audience (Freeze Snapshot)'}
-                </button>
-              </div>
-            )}
-
-            {/* Visual Audience Filter Builder */}
-            <AudienceFilterBuilder
-              channel={channel}
-              filterDefinition={filterDefinition}
-              onChange={setFilterDefinition}
-              onOpenPreview={(prev) => {
-                setPreviewResult(prev);
-                setPreviewModalOpen(true);
-              }}
-              onOpenSavedSegments={() => setSavedSegmentsOpen(true)}
-              disabled={campaign.status === 'sent'}
-            />
-          </div>
+        {/* SECTION 2: AUDIENCE SELECTION */}
+        {activeSection === 'audience' && (
+          <AudienceSection
+            channel={channel}
+            filterDefinition={filterDefinition}
+            onChange={setFilterDefinition}
+            onOpenPreview={(prev) => {
+              setPreviewResult(prev);
+              setPreviewModalOpen(true);
+            }}
+            onOpenSavedSegments={() => setSavedSegmentsOpen(true)}
+            disabled={campaign.status === 'sent'}
+          />
         )}
 
-        {/* TAB 3: A/B Testing */}
-        {activeTab === 'ab_test' && channel === 'email' && (
-          <div className="bg-white rounded-b-2xl border border-gray-200 shadow-xs p-6 space-y-6">
-            <div className="flex items-center justify-between">
+        {/* SECTION 3: ATTACHMENT */}
+        {activeSection === 'attachment' && (
+          <CampaignAttachmentSection
+            attachment={attachment}
+            suggestedMaterial={suggestedMaterial}
+            onAttachFile={(att) => setAttachment(att)}
+            onRemoveAttachment={() => setAttachment(null)}
+            disabled={campaign.status === 'sent'}
+          />
+        )}
+
+        {/* SECTION 4: SENDER SETTINGS */}
+        {activeSection === 'sender' && (
+          <div className="card-executive p-5 space-y-5">
+            <div className="pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-[#08254f] font-heading">
+                Configurações do Remetente & Canal
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Defina o nome exibido na caixa de entrada e o endereço de resposta para a campanha.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <h3 className="text-base font-bold text-gray-900">A/B Testing Configuration</h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Split your campaign audience between two variations (A and B) to test subject lines.
-                </p>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Nome do Remetente
+                </label>
                 <input
-                  type="checkbox"
-                  checked={hasABTest}
-                  onChange={(e) => setHasABTest(e.target.checked)}
-                  className="rounded text-brand-600 focus:ring-brand-500"
+                  type="text"
+                  value={fromName}
+                  onChange={(e) => setFromName(e.target.value)}
+                  placeholder="Expert Dental Solutions"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
                 />
-                Enable A/B Test
-              </label>
-            </div>
-
-            {hasABTest && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
-                <div className="p-4 rounded-xl border border-sky-200 bg-sky-50/40 space-y-3">
-                  <span className="inline-block px-2 py-0.5 rounded text-xs font-black bg-sky-200 text-sky-900">
-                    Variant A
-                  </span>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Subject Line</label>
-                    <input
-                      type="text"
-                      value={variantASubject}
-                      onChange={(e) => setVariantASubject(e.target.value)}
-                      placeholder="Subject for Variant A"
-                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Traffic Percentage ({variantAPercent}%)
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={variantAPercent}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        setVariantAPercent(val);
-                        setVariantBPercent(100 - val);
-                      }}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl border border-purple-200 bg-purple-50/40 space-y-3">
-                  <span className="inline-block px-2 py-0.5 rounded text-xs font-black bg-purple-200 text-purple-900">
-                    Variant B
-                  </span>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Subject Line</label>
-                    <input
-                      type="text"
-                      value={variantBSubject}
-                      onChange={(e) => setVariantBSubject(e.target.value)}
-                      placeholder="Alternative Subject for Variant B"
-                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Traffic Percentage ({variantBPercent}%)
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={variantBPercent}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        setVariantBPercent(val);
-                        setVariantAPercent(100 - val);
-                      }}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* TAB 4: Version History */}
-        {activeTab === 'versions' && (
-          <div className="bg-white rounded-b-2xl border border-gray-200 shadow-xs p-6 space-y-4">
-            <h3 className="text-base font-bold text-gray-900">Campaign Version Snapshots</h3>
-            <p className="text-xs text-gray-500">
-              Immutable history of campaign content and settings. Previous versions are preserved for auditability.
-            </p>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Responder Para (Reply-To)
+                </label>
+                <input
+                  type="email"
+                  value={replyTo}
+                  onChange={(e) => setReplyTo(e.target.value)}
+                  placeholder="info@expdentalsolutions.com"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#08254f] outline-none"
+                />
+              </div>
+            </div>
 
-            <div className="divide-y divide-gray-100 border border-gray-200 rounded-xl overflow-hidden">
-              {versions.map((ver) => (
-                <div key={ver.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-gray-900">Version {ver.version_number}</span>
-                      {ver.id === selectedVersionId && (
-                        <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-brand-100 text-brand-700">
-                          Active in Editor
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5">Subject: {ver.subject}</p>
-                    <span className="text-[11px] text-gray-400">
-                      Saved {new Date(ver.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (Array.isArray(ver.content_json)) setBlocks(ver.content_json as EmailBlock[]);
-                      setSubject(ver.subject);
-                      setHtmlContent(ver.html_snapshot);
-                      setTextContent(ver.text_snapshot);
-                      setSelectedVersionId(ver.id);
-                      setActiveTab('editor');
-                    }}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 hover:bg-white text-gray-700 transition-colors cursor-pointer"
-                  >
-                    Restore to Editor
-                  </button>
-                </div>
-              ))}
+            {/* Canal de Envio: Proteção e Informação */}
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  Canal Oficial de Envio: Email (Automático em Massa)
+                </span>
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-100 text-emerald-800">
+                  Resend Integrado
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                O envio automático em massa no EDS HUB é restrito ao canal <strong>Email</strong>.
+                Disparos em lote via SMS e WhatsApp permanecem permanentemente desabilitados por conformidade com operadoras e proteção de spam.
+                Interações por SMS e WhatsApp devem ser realizadas individualmente no modo <em>Manual Assistido</em>.
+              </p>
             </div>
           </div>
         )}
 
-        {/* TAB 5: Execution & Delivery */}
-        {activeTab === 'send' && (
-          <div className="space-y-6">
-            {/* Call Campaign Dispatch View */}
-            {channel === 'call' ? (
-              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-6">
-                <div className="flex items-center gap-2.5">
-                  <PhoneCall className="h-5 w-5 text-emerald-600" />
-                  <div>
-                    <h3 className="text-base font-bold text-gray-900">Call Campaign Activation</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Call campaigns create deduplicated outbound calling tasks directly in the Daily Operations Command Center (`/work`).
-                    </p>
-                  </div>
-                </div>
+        {/* SECTION 5: REVIEW SUMMARY */}
+        {activeSection === 'review' && (
+          <CampaignReviewSummaryCard
+            templateName={loadedTemplate?.name || null}
+            subject={subject}
+            fromName={fromName}
+            fromEmail="info@expdentalsolutions.com"
+            totalMatched={previewResult?.total_matched ?? campaignAudience?.total_matched_count ?? 0}
+            eligibleCount={previewResult?.eligible_count ?? campaignAudience?.eligible_count ?? 0}
+            excludedCount={previewResult?.excluded_count ?? campaignAudience?.excluded_count ?? 0}
+            courseName={resolvedCourseName}
+            stageName={resolvedStageName}
+            sessionDate={filterDefinition.course_session_id ? 'Turma específica' : null}
+            attachment={attachment}
+            status={campaign.status}
+          />
+        )}
 
-                {!campaignAudience?.snapshot_frozen_at ? (
-                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-3">
-                    <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
-                    <div>
-                      <span className="font-bold">Audience Not Prepared</span>
-                      <p className="mt-0.5">
-                        Please go to the Audience tab and click &quot;Prepare Audience&quot; to freeze the snapshot before activating call tasks.
+        {/* SECTION 6: APPROVAL & EXECUTION */}
+        {activeSection === 'approval' && (
+          <div className="space-y-6">
+            {/* Status Flow Stepper */}
+            <div className="card-executive p-5 space-y-4">
+              <h3 className="text-sm font-bold text-[#08254f] font-heading">
+                Fluxo de Status da Campanha
+              </h3>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-center text-xs">
+                {[
+                  { key: 'draft', label: 'Rascunho' },
+                  { key: 'pending_approval', label: 'Aguardando Aprovação' },
+                  { key: 'approved', label: 'Aprovada' },
+                  { key: 'scheduled', label: 'Agendada' },
+                  { key: 'sending', label: 'Enviando' },
+                  { key: 'sent', label: 'Concluída' },
+                ].map((st, i) => {
+                  const isCurrent = campaign.status === st.key;
+                  return (
+                    <div
+                      key={st.key}
+                      className={`p-3 rounded-xl border flex flex-col items-center justify-center gap-1 ${
+                        isCurrent
+                          ? 'border-[#08254f] bg-blue-50/70 font-bold text-[#08254f] ring-1 ring-[#08254f]'
+                          : 'border-slate-200 bg-slate-50/50 text-slate-500'
+                      }`}
+                    >
+                      <span className="text-[10px] text-slate-400 font-mono">0{i + 1}</span>
+                      <span className="truncate w-full">{st.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Status Action Cards */}
+              <div className="pt-2">
+                {campaign.status === 'draft' && (
+                  <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-amber-600" />
+                        Campanha em Rascunho
+                      </span>
+                      <p className="text-xs text-amber-900">
+                        Quando o conteúdo e a audiência estiverem revisados, envie para aprovação da equipe.
                       </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => handleTransitionStatus('pending_approval')}
+                      className="w-full sm:w-auto px-4 py-2.5 text-xs font-bold rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-colors shadow-2xs cursor-pointer shrink-0"
+                    >
+                      Enviar para aprovação
+                    </button>
                   </div>
-                ) : campaign.status === 'sent' ? (
-                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-                    <div>
-                      <span className="font-bold">Call Campaign Is Active</span>
-                      <p className="mt-0.5">
-                        Tasks were generated on {new Date(campaign.activated_at || campaign.updated_at).toLocaleString()}. You can view and process them in the Work Queue.
+                )}
+
+                {campaign.status === 'pending_approval' && (
+                  <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-blue-700" />
+                        Aguardando Aprovação
+                      </span>
+                      <p className="text-xs text-blue-900">
+                        A campanha está pronta para aprovação formal antes da liberação do agendamento ou disparo.
                       </p>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleTransitionStatus('draft')}
+                        className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        Voltar para rascunho
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleTransitionStatus('approved')}
+                        className="px-4 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-2xs cursor-pointer"
+                      >
+                        Aprovar Campanha
+                      </button>
+                    </div>
                   </div>
-                ) : (
-                  <div className="p-5 rounded-xl border border-emerald-200 bg-emerald-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                      <span className="font-bold text-xs text-emerald-950 block">Ready for Call Activation</span>
-                      <p className="text-xs text-emerald-800 mt-0.5">
-                        {campaignAudience.eligible_count} eligible call contacts ready. Activating will schedule deduplicated call tasks for each lead.
+                )}
+
+                {campaign.status === 'approved' && (
+                  <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/70 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          Campanha Aprovada
+                        </span>
+                        <p className="text-xs text-emerald-900">
+                          A campanha foi aprovada e está pronta para agendamento ou envio imediato.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleTransitionStatus('draft')}
+                          className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                        >
+                          Voltar para rascunho
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handlePrepareAudience}
+                          disabled={isPreparing}
+                          className="px-4 py-2 text-xs font-bold rounded-xl bg-[#08254f] text-white hover:bg-[#061d3d] transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Layers className="w-3.5 h-3.5" />
+                          {isPreparing ? 'Congelando lista...' : 'Preparar Audiência'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Scheduler Input */}
+                    <div className="p-3.5 bg-white rounded-xl border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-purple-600 shrink-0" />
+                        <span className="text-xs font-bold text-slate-700">
+                          Agendar Disparo:
+                        </span>
+                        <input
+                          type="datetime-local"
+                          value={scheduledAt}
+                          onChange={(e) => setScheduledAt(e.target.value)}
+                          className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg outline-none"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!scheduledAt) {
+                            alert('Selecione uma data e horário válidos para agendamento.');
+                            return;
+                          }
+                          await handleSaveCampaign();
+                          await handleTransitionStatus('scheduled');
+                        }}
+                        className="px-4 py-1.5 text-xs font-bold rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition-colors cursor-pointer shadow-2xs"
+                      >
+                        Confirmar Agendamento
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {campaign.status === 'scheduled' && (
+                  <div className="p-4 rounded-xl border border-purple-200 bg-purple-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-purple-600" />
+                        Campanha Agendada
+                      </span>
+                      <p className="text-xs text-purple-900">
+                        Disparo programado para{' '}
+                        <strong>{scheduledAt ? new Date(scheduledAt).toLocaleString() : 'Data programada'}</strong>.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleTransitionStatus('approved')}
+                      className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-purple-200 bg-white text-purple-800 hover:bg-purple-50 transition-colors cursor-pointer"
+                    >
+                      Cancelar agendamento
+                    </button>
+                  </div>
+                )}
+
+                {campaign.channel === 'call' && campaign.status === 'approved' && (
+                  <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        Pronto para Ativação de Ligações
+                      </span>
+                      <p className="text-xs text-emerald-900">
+                        Cria tarefas deduplicadas de chamada diretamente na Central de Operações Diárias.
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={handleActivateCallCampaign}
                       disabled={isActivatingCall}
-                      className="px-4 py-2.5 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+                      className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs cursor-pointer shrink-0"
                     >
-                      <PhoneCall className="h-4 w-4" />
-                      {isActivatingCall ? 'Activating Tasks...' : 'Activate Call Campaign'}
+                      {isActivatingCall ? 'Ativando tarefas...' : 'Ativar Tarefas de Ligação'}
                     </button>
                   </div>
                 )}
               </div>
-            ) : channel === 'sms' ? (
-              /* SMS Bulk Disabled & Manual Assistido View */
-              <div className="bg-amber-50/70 p-6 rounded-2xl border border-amber-200 shadow-xs space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-2.5 bg-amber-100 rounded-xl text-amber-800 shrink-0">
-                    <MessageSquare className="h-5 w-5" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-amber-950 font-heading">
-                        SMS em Massa Indisponível — Manual Assistido Apenas
-                      </h3>
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-200/80 text-amber-900 uppercase tracking-wider">
-                        Disparo em Massa Bloqueado
-                      </span>
-                    </div>
-                    <p className="text-xs text-amber-900/90 leading-relaxed">
-                      O envio automatizado de SMS em massa está permanentemente desabilitado no EDS HUB. Não há provedores de SMS em lote habilitados (Twilio não é utilizado).
-                    </p>
-                    <p className="text-xs text-amber-850 leading-relaxed">
-                      Para interagir por SMS com leads com preferência por SMS, utilize exclusivamente o recurso de <strong>SMS Manual Assistido</strong> no Inbox ou via WhatsApp Web na tela de cada lead.
-                    </p>
-                  </div>
-                </div>
+            </div>
 
-                <div className="p-3.5 bg-white/90 rounded-xl border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                  <span className="text-slate-600">
-                    Contatos identificados com preferência por SMS neste segmento: <strong className="text-slate-900">{campaignAudience?.eligible_count ?? 0}</strong>
-                  </span>
-                  <span className="text-amber-800 font-semibold flex items-center gap-1.5">
-                    <ShieldCheck className="h-4 w-4 text-amber-600" />
-                    Proteção de Canal Ativa
-                  </span>
-                </div>
-              </div>
-            ) : (
-              /* Email Provider Execution View */
-              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-6">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-gray-900 font-heading">Execução & Entrega da Campanha de Email</h3>
-                    <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      Canal Automático: Email
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                    O canal oficial para disparos em massa é exclusivamente o Email. A audiência é filtrada por preferência estrita de contato (leads com preferência por SMS, Telefone, WhatsApp ou Não Informada são excluídos por segurança).
-                  </p>
-                </div>
-
-                {/* Safe Preview Section */}
-                <div className="p-4 rounded-xl border border-slate-200/80 bg-slate-50/50 space-y-3">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2 text-[#08254f]">
-                      <Eye className="h-4 w-4 text-[#449bd5]" />
-                      <span className="text-xs font-bold text-slate-800 font-heading">Pré-visualização da Mensagem</span>
-                    </div>
-                    <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Validação Canônica Ativa
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Visualize a renderização real do template de email e verifique as tags de substituição sem envio de mensagens para redes externas.
-                  </p>
-                  <div className="p-4 bg-white rounded-xl border border-slate-200 text-xs max-h-72 overflow-y-auto">
-                    <div className="mb-2 pb-2 border-b border-slate-100 text-slate-500">
-                      <strong>Assunto:</strong> {subject || '(Sem assunto)'}
-                    </div>
-                    <div
-                      className="prose prose-sm max-w-none text-slate-800"
-                      dangerouslySetInnerHTML={{ __html: htmlContent || '<p class="text-slate-400 italic">Nenhum conteúdo adicionado ao editor.</p>' }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Materialized Recipients & Audit Table */}
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+            {/* Materialized Recipients Table */}
+            <div className="card-executive p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-sm font-bold text-gray-900">Materialized Audience Snapshot ({recipients.length})</h4>
-                  <p className="text-xs text-gray-500">
-                    Auditable list of eligible recipients and safely excluded contacts preserved at preparation time.
+                  <h4 className="text-sm font-bold text-[#08254f] font-heading">
+                    Lista Materializada de Destinatários ({recipients.length})
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Registro imutável dos contatos congelados para auditoria e disparo.
                   </p>
                 </div>
                 <button
@@ -1088,63 +1174,55 @@ export function CampaignDetailPage() {
                     const recs = await campaignAudienceService.fetchCampaignRecipients(campaign.id, 100, 0);
                     setRecipients(recs);
                   }}
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
-                  title="Refresh recipients"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+                  title="Atualizar lista"
                 >
-                  <RotateCw className="h-3.5 w-3.5" />
+                  <RotateCw className="w-3.5 h-3.5" />
                 </button>
               </div>
 
               {recipients.length === 0 ? (
-                <div className="p-8 text-center text-xs text-gray-400 italic">
-                  No audience snapshot materialized yet. Click &quot;Prepare Audience&quot; in the Audience tab to freeze the snapshot.
+                <div className="p-8 text-center text-xs text-slate-400 italic">
+                  Nenhum destinatário congelado ainda. Clique em &quot;Preparar Audiência&quot; acima para registrar os contatos para disparo.
                 </div>
               ) : (
-                <div className="border border-gray-200 rounded-xl overflow-hidden text-xs">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50 text-gray-600 font-semibold">
+                <div className="border border-slate-200 rounded-xl overflow-x-auto text-xs">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50 text-slate-600 font-semibold">
                       <tr>
-                        <th className="px-3.5 py-2.5 text-left">Destination</th>
-                        <th className="px-3.5 py-2.5 text-left">Channel</th>
-                        <th className="px-3.5 py-2.5 text-left">Eligibility & Exclusion Audit</th>
+                        <th className="px-3.5 py-2.5 text-left">Destino</th>
+                        <th className="px-3.5 py-2.5 text-left">Canal</th>
+                        <th className="px-3.5 py-2.5 text-left">Elegibilidade & Auditoria</th>
                         <th className="px-3.5 py-2.5 text-left">Status</th>
-                        <th className="px-3.5 py-2.5 text-left">Prepared At</th>
+                        <th className="px-3.5 py-2.5 text-left">Data</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100 bg-white">
+                    <tbody className="divide-y divide-slate-100 bg-white">
                       {recipients.map((r) => (
-                        <tr key={r.id} className="hover:bg-gray-50/70">
-                          <td className="px-3.5 py-2 font-medium text-gray-900">
-                            {r.email || r.phone_e164 || 'No destination'}
+                        <tr key={r.id} className="hover:bg-slate-50/70">
+                          <td className="px-3.5 py-2 font-medium text-slate-900">
+                            {r.email || r.phone_e164 || 'Sem destino'}
                           </td>
-                          <td className="px-3.5 py-2 uppercase font-bold text-[10px] text-gray-600">
+                          <td className="px-3.5 py-2 uppercase font-bold text-[10px] text-slate-600">
                             {r.channel}
                           </td>
                           <td className="px-3.5 py-2">
                             {r.is_eligible ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">
-                                <CheckCircle2 className="h-3 w-3" /> Eligible
+                                <CheckCircle2 className="w-3 h-3" /> Elegível
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px]">
-                                <XCircle className="h-3 w-3" /> {r.exclusion_reason || 'Excluded'}
+                                <XCircle className="w-3 h-3" /> {r.exclusion_reason || 'Excluído'}
                               </span>
                             )}
                           </td>
                           <td className="px-3.5 py-2">
-                            <span
-                              className={`px-2 py-0.5 rounded-full font-semibold text-[10px] ${
-                                r.status === 'sent'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : r.status === 'skipped'
-                                    ? 'bg-gray-100 text-gray-600'
-                                    : 'bg-amber-100 text-amber-800'
-                              }`}
-                            >
+                            <span className="px-2 py-0.5 rounded-full font-semibold text-[10px] bg-slate-100 text-slate-700 capitalize">
                               {r.status}
                             </span>
                           </td>
-                          <td className="px-3.5 py-2 text-gray-500 text-[11px]">
+                          <td className="px-3.5 py-2 text-slate-500 text-[11px]">
                             {new Date(r.prepared_at).toLocaleString()}
                           </td>
                         </tr>
@@ -1154,9 +1232,156 @@ export function CampaignDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Collapsible Version History & Audit */}
+            <div className="card-executive p-4">
+              <button
+                type="button"
+                onClick={() => setShowVersionsAudit(!showVersionsAudit)}
+                className="w-full flex items-center justify-between text-xs font-bold text-slate-700 hover:text-slate-900 cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-[#449bd5]" />
+                  Auditoria & Histórico de Versões ({versions.length} versões registradas)
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {showVersionsAudit ? 'Ocultar' : 'Expandir'}
+                </span>
+              </button>
+
+              {showVersionsAudit && (
+                <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
+                  <p className="text-xs text-slate-500 mb-3">
+                    Histórico imutável de todas as versões salvas para auditoria. Você pode restaurar qualquer versão anterior para o editor.
+                  </p>
+                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden text-xs">
+                    {versions.map((ver) => (
+                      <div
+                        key={ver.id}
+                        className="p-3 flex items-center justify-between hover:bg-slate-50 transition-colors"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900">Versão {ver.version_number}</span>
+                            {ver.id === selectedVersionId && (
+                              <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-100 text-blue-800">
+                                Ativa no Editor
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5 truncate max-w-md">
+                            Assunto: {ver.subject}
+                          </p>
+                          <span className="text-[10px] text-slate-400">
+                            Salva em {new Date(ver.created_at).toLocaleString()}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (Array.isArray(ver.content_json)) setBlocks(ver.content_json as EmailBlock[]);
+                            setSubject(ver.subject);
+                            setHtmlContent(ver.html_snapshot);
+                            setTextContent(ver.text_snapshot);
+                            setSelectedVersionId(ver.id);
+                            setActiveSection('content');
+                            setSuccessMessage(`Versão ${ver.version_number} restaurada para o editor.`);
+                          }}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+                        >
+                          Restaurar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
+
+        {/* Sticky Bottom Navigation Bar for Mobile and Desktop */}
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-3 shadow-lg">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <button
+              type="button"
+              disabled={currentSectionIndex === 0}
+              onClick={() => {
+                if (currentSectionIndex > 0) {
+                  setActiveSection(sections[currentSectionIndex - 1].id);
+                }
+              }}
+              className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Anterior</span>
+            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleSaveCampaign()}
+                disabled={isSaving}
+                className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Save className="w-3.5 h-3.5" />
+                {isSaving ? 'Salvando...' : 'Salvar'}
+              </button>
+
+              {currentSectionIndex < sections.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSection(sections[currentSectionIndex + 1].id);
+                  }}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-[#08254f] text-white hover:bg-[#061d3d] transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Próximo Passo</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (campaign.status === 'draft') handleTransitionStatus('pending_approval');
+                    else if (campaign.status === 'pending_approval') handleTransitionStatus('approved');
+                    else if (campaign.status === 'approved') handlePrepareAudience();
+                  }}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>
+                    {campaign.status === 'draft'
+                      ? 'Submeter para Aprovação'
+                      : campaign.status === 'pending_approval'
+                      ? 'Aprovar Campanha'
+                      : 'Preparar Audiência'}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Template Picker Modal */}
+      <TemplatePickerModal
+        isOpen={isTemplatePickerOpen}
+        onClose={() => setIsTemplatePickerOpen(false)}
+        templates={availableTemplates}
+        selectedTemplateId={selectedTemplateId}
+        onSelectTemplate={handleSelectTemplate}
+      />
+
+      {/* Template Preview Modal */}
+      {loadedTemplate && (
+        <TemplatePreviewModal
+          isOpen={isPreviewTemplateOpen}
+          onClose={() => setIsPreviewTemplateOpen(false)}
+          template={loadedTemplate}
+        />
+      )}
 
       {/* Audience Preview Modal */}
       {previewResult && (
@@ -1178,9 +1403,13 @@ export function CampaignDetailPage() {
           setCampaignAudience((prev) =>
             prev
               ? { ...prev, saved_segment_id: seg.id }
-              : ({ campaign_id: campaign.id, saved_segment_id: seg.id, filter_definition: seg.filter_definition } as CampaignAudience),
+              : ({
+                  campaign_id: campaign.id,
+                  saved_segment_id: seg.id,
+                  filter_definition: seg.filter_definition,
+                } as CampaignAudience),
           );
-          setSuccessMessage(`Applied saved segment "${seg.name}"`);
+          setSuccessMessage(`Segmento salvo "${seg.name}" aplicado com sucesso.`);
         }}
       />
     </Layout>
