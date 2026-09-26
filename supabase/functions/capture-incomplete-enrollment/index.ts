@@ -258,6 +258,25 @@ Deno.serve(async (req) => {
     );
   }
 
+  // Supplementary push notification for incomplete enrollment
+  if (txResult && txResult.success && txResult.lead_id) {
+    try {
+      const leadName = `${sanitized.first_name || ''} ${sanitized.last_name || ''}`.trim() || 'Novo lead';
+      await db.functions.invoke('send-push-notification', {
+        body: {
+          event_type: 'incomplete_registration',
+          event_id: txResult.lead_id,
+          idempotency_key: `incomplete_reg_${txResult.attempt_id || txResult.lead_id}_${Date.now()}`,
+          title: 'Inscrição não concluída',
+          body: `${leadName} precisa de acompanhamento.`,
+          deep_link: `/leads/${txResult.lead_id}`,
+        },
+      });
+    } catch (pushErr) {
+      console.warn('[capture-incomplete-enrollment] Push notification notice:', pushErr);
+    }
+  }
+
   return new Response(
     JSON.stringify({
       success: true,

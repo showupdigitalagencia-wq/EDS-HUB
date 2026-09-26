@@ -235,6 +235,22 @@ Deno.serve(async (req) => {
         metadata: { provider: 'resend', bounce_type: data.bounce?.type || 'hard_bounce', occurred_at: occurredAt },
       });
     }
+
+    // Non-blocking critical deliverability notification for hard bounce
+    try {
+      await db.functions.invoke('send-push-notification', {
+        body: {
+          event_type: 'deliverability_critical',
+          event_id: outboundLeadId || providerMessageId || providerEventId,
+          idempotency_key: `bounce_${providerEventId}`,
+          title: 'Alerta de Entregabilidade',
+          body: `E-mail para ${recipientEmail} rejeitado permanentemente (Hard Bounce).`,
+          deep_link: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversations` : '/reports',
+        },
+      });
+    } catch (pushErr) {
+      console.warn('[resend-event-webhook] Critical deliverability push notice:', pushErr);
+    }
   } else if (isComplained) {
     if (outboundMessageId) {
       await db
@@ -289,6 +305,22 @@ Deno.serve(async (req) => {
         summary: 'Destinatário reportou e-mail como spam',
         metadata: { provider: 'resend', occurred_at: occurredAt },
       });
+    }
+
+    // Non-blocking critical deliverability notification for spam complaint
+    try {
+      await db.functions.invoke('send-push-notification', {
+        body: {
+          event_type: 'deliverability_critical',
+          event_id: outboundLeadId || providerMessageId || providerEventId,
+          idempotency_key: `complaint_${providerEventId}`,
+          title: 'Alerta de Entregabilidade',
+          body: `E-mail para ${recipientEmail} reportado como spam (Reclamação).`,
+          deep_link: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversations` : '/reports',
+        },
+      });
+    } catch (pushErr) {
+      console.warn('[resend-event-webhook] Critical deliverability complaint push notice:', pushErr);
     }
   } else if (isFailed) {
     if (outboundMessageId) {

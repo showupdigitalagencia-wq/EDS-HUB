@@ -844,7 +844,7 @@ Deno.serve(async (req) => {
       })
       .eq('id', intakeEventId);
 
-    // Supplementary non-blocking push notification for new lead
+    // Supplementary non-blocking push notification for new lead & preferences
     if (actionSucceeded && leadId) {
       try {
         const leadName = `${payload.first_name || ''} ${payload.last_name || ''}`.trim() || 'Novo interessado';
@@ -859,6 +859,21 @@ Deno.serve(async (req) => {
             deep_link: `/leads/${leadId}`,
           },
         });
+
+        // Supplementary notification if lead prefers SMS
+        const prefClean = payload.contact_preference ? String(payload.contact_preference).trim().toLowerCase() : '';
+        if (prefClean === 'sms') {
+          await db.functions.invoke('send-push-notification', {
+            body: {
+              event_type: 'sms_preference',
+              event_id: leadId,
+              idempotency_key: `sms_pref_${leadId}_${Date.now()}`,
+              title: 'Lead aguardando contato por SMS',
+              body: `${leadName} prefere contato por SMS.`,
+              deep_link: `/leads/${leadId}`,
+            },
+          });
+        }
       } catch (pushErr) {
         console.warn('[process-lead-intake] Supplementary push notification notice:', pushErr);
       }

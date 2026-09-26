@@ -357,6 +357,34 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Supplementary push notification for inbound email reply
+    if (rpcResult && (rpcResult as any).success && (rpcResult as any).lead_id) {
+      try {
+        const { data: leadData } = await db
+          .from('leads')
+          .select('id, first_name, last_name')
+          .eq('id', (rpcResult as any).lead_id)
+          .maybeSingle();
+
+        const leadName = leadData
+          ? `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim()
+          : fromAddress;
+
+        await db.functions.invoke('send-push-notification', {
+          body: {
+            event_type: 'inbound_email',
+            event_id: (rpcResult as any).inbound_message_id || (rpcResult as any).lead_id,
+            idempotency_key: `inbound_${(rpcResult as any).inbound_message_id || Date.now()}`,
+            title: 'Nova resposta recebida',
+            body: `${leadName} respondeu ao seu e-mail.`,
+            deep_link: `/leads/${(rpcResult as any).lead_id}?tab=conversations`,
+          },
+        });
+      } catch (pushErr) {
+        console.warn('[inbound-email-webhook] Push notification notice:', pushErr);
+      }
+    }
+
     return new Response(JSON.stringify(rpcResult), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
