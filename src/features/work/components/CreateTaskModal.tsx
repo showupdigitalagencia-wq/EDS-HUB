@@ -123,6 +123,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           taskId: createdTaskId || targetLeadId,
           taskTitle: title.trim(),
           leadId: targetLeadId,
+          leadName: displayName || undefined,
+          description: description.trim() || undefined,
         }).catch(() => {});
       }
 

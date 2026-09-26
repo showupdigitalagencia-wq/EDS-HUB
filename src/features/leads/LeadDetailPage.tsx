@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
@@ -44,6 +44,8 @@ import { useSafeBackNavigation } from '../../hooks/useSafeBackNavigation';
 export function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const highlightedTaskId = searchParams.get('taskId');
   const safeBack = useSafeBackNavigation('/leads');
 
   const [lead, setLead] = useState<Lead | null>(null);
@@ -676,6 +678,7 @@ export function LeadDetailPage() {
             {/* 1. Tasks Section */}
             <LeadTaskList
               tasks={tasks}
+              highlightedTaskId={highlightedTaskId}
               onOpenCreateTask={() => {
                 setTaskModalMode('generic');
                 setIsTaskModalOpen(true);

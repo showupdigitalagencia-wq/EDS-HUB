@@ -11,6 +11,7 @@
 // =============================================================================
 
 import { supabase } from '../../../lib/supabase';
+import { buildTaskDueNotification } from '../utils/task-notification-format';
 
 export interface TaskReminderResult {
   taskId: string;
@@ -136,14 +137,13 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
         ? `${leadInfo.first_name || ''} ${leadInfo.last_name || ''}`.trim()
         : null;
 
-      const title = 'Tarefa pendente';
-      const body = leadName
-        ? `${task.title} — ${leadName}`
-        : (task.title || 'Lembrete de tarefa');
-
-      const deepLink = task.lead_id
-        ? `/leads?leadId=${task.lead_id}&taskId=${task.id}`
-        : `/work?taskId=${task.id}`;
+      const notificationContent = buildTaskDueNotification({
+        taskId: task.id,
+        taskTitle: task.title,
+        leadId: task.lead_id,
+        leadName,
+        description: task.description,
+      });
 
       // Dispatch Web Push via send-push-notification edge function
       try {
@@ -154,9 +154,11 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
               event_type: 'task_due',
               event_id: task.id,
               idempotency_key: idempotencyKey,
-              title,
-              body,
-              deep_link: deepLink,
+              title: notificationContent.title,
+              body: notificationContent.body,
+              deep_link: notificationContent.deepLink,
+              task_id: task.id,
+              lead_id: task.lead_id || undefined,
               target_user_ids: targetUserIds,
             },
           }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CheckCircle2, Clock, Plus, Calendar } from 'lucide-react';
 import type { Task } from '../../../types';
 import { deriveIsOverdue, completeCrmTask } from '../../work/services/work-queue-service';
@@ -7,6 +7,7 @@ interface LeadTaskListProps {
   tasks: Task[];
   onOpenCreateTask: () => void;
   onTaskUpdated: () => void;
+  highlightedTaskId?: string | null;
 }
 
 export function formatTaskTypeLabel(type: string): string {
@@ -46,10 +47,22 @@ export function LeadTaskList({
   tasks,
   onOpenCreateTask,
   onTaskUpdated,
+  highlightedTaskId,
 }: LeadTaskListProps) {
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
   const [successFeedback, setSuccessFeedback] = useState<string | null>(null);
   const [errorFeedback, setErrorFeedback] = useState<string | null>(null);
+
+  // Auto-scroll to highlighted task when deep-linked
+  useEffect(() => {
+    if (highlightedTaskId) {
+      const cleanTarget = highlightedTaskId.replace(/^task:/i, '').trim();
+      const el = document.getElementById(`task-${cleanTarget}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [highlightedTaskId, tasks]);
 
   const pendingTasks = tasks
     .filter((t) => t.status !== 'completed')
@@ -153,12 +166,20 @@ export function LeadTaskList({
                   const isPayment = task.task_type === 'payment';
                   const cleanTaskId = task.id.replace(/^task:/i, '').trim();
                   const isCompleting = completingTaskId === cleanTaskId;
+                  const isHighlighted = Boolean(
+                    highlightedTaskId &&
+                      (cleanTaskId === highlightedTaskId.replace(/^task:/i, '').trim() ||
+                        task.id === highlightedTaskId)
+                  );
 
                   return (
                     <div
                       key={task.id}
+                      id={`task-${cleanTaskId}`}
                       className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 ${
-                        isPayment
+                        isHighlighted
+                          ? 'bg-blue-50/80 border-[#1b7dbf] ring-2 ring-[#1b7dbf]/40 shadow-sm'
+                          : isPayment
                           ? 'bg-amber-50/40 border-amber-200/70'
                           : isOverdue
                           ? 'bg-rose-50/40 border-rose-200/80'
@@ -179,6 +200,11 @@ export function LeadTaskList({
                           <span className="text-xs font-bold text-[#08254f]">
                             {task.title}
                           </span>
+                          {isHighlighted && (
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-[#1b7dbf] text-white rounded">
+                              Destacada
+                            </span>
+                          )}
                           {isOverdue && (
                             <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-rose-100 text-rose-700 border border-rose-200 rounded">
                               Atrasada

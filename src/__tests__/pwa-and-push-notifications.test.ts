@@ -411,9 +411,9 @@ describe('EDS HUB — PWA + Push Notifications Suite', () => {
         body: expect.objectContaining({
           event_type: 'task_due',
           event_id: taskId,
-          title: 'Tarefa pendente',
-          body: 'Ligar para John Smith.',
-          deep_link: '/work',
+          title: 'Ligar para John Smith.',
+          body: 'Tarefa agendada para agora.',
+          deep_link: `/work?taskId=${taskId}`,
         }),
       });
     });

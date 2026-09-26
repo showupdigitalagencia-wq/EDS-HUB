@@ -1,17 +1,23 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { Loader2, Lock, Mail, ShieldCheck } from 'lucide-react';
 import edsLogo from '../../assets/eds-logo.png';
 
 export function LoginPage() {
   const { signIn, isAuthorized, isLoading: authLoading } = useAuth();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // If already authenticated and authorized, redirect to home
+  const fromLocation = (location.state as any)?.from;
+  const from = fromLocation?.pathname
+    ? `${fromLocation.pathname}${fromLocation.search || ''}`
+    : '/';
+
+  // If already authenticated and authorized, redirect to intended target or home
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#08254f]">
@@ -21,7 +27,7 @@ export function LoginPage() {
   }
 
   if (isAuthorized) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={from} replace />;
   }
 
   const handleSubmit = async (e: FormEvent) => {

@@ -96,6 +96,8 @@ export function LeadTaskModal({
           taskId: taskRes?.task_id || leadId,
           taskTitle: title,
           leadId,
+          leadName: leadName || undefined,
+          description: note.trim() || undefined,
         }).catch(() => {});
       }
 

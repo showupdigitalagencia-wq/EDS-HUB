@@ -805,6 +805,7 @@ export function LeadProfileContent({
         <LeadTaskModal
           isOpen={isTaskModalOpen}
           leadId={lead.id}
+          leadName={`${lead.first_name || ''} ${lead.last_name || ''}`.trim() || undefined}
           mode={taskModalMode === 'payment' ? 'payment' : 'generic'}
           onClose={() => setIsTaskModalOpen(false)}
           onTaskCreated={handleLeadRefresh}

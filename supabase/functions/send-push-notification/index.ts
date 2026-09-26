@@ -25,6 +25,9 @@ interface SendPushRequest {
   target_user_ids?: string[];
   target_subscription_ids?: string[];
   action?: string;
+  task_id?: string;
+  lead_id?: string;
+  data?: Record<string, any>;
 }
 
 // Maps system event types to user notification preference columns
@@ -196,6 +199,9 @@ async function sendPushInternal(supabase: any, payload: SendPushRequest) {
     };
   }
 
+  const resolvedTaskId = payload.task_id || (event_type === 'task_due' ? event_id : undefined);
+  const resolvedLeadId = payload.lead_id || undefined;
+
   const pushPayloadJson = JSON.stringify({
     title: sanitizedTitle,
     body: sanitizedBody,
@@ -205,11 +211,17 @@ async function sendPushInternal(supabase: any, payload: SendPushRequest) {
     url: deep_link,
     event_type: event_type,
     event_id: event_id || null,
+    task_id: resolvedTaskId,
+    lead_id: resolvedLeadId,
     data: {
       url: deep_link,
+      deep_link: deep_link,
       eventType: event_type,
       eventId: event_id || null,
+      taskId: resolvedTaskId,
+      leadId: resolvedLeadId,
       badgeCount: typeof badge_count === 'number' ? badge_count : undefined,
+      ...(payload.data || {}),
     },
   });
 
@@ -419,6 +431,52 @@ async function sendPushInternal(supabase: any, payload: SendPushRequest) {
   };
 }
 
+// Helper functions for contextual task notification formatting
+function formatContextualTaskTitle(taskTitle?: string | null, leadName?: string | null): string {
+  const cleanTitle = (taskTitle || '').trim();
+  const cleanLeadName = (leadName || '').trim();
+
+  if (!cleanLeadName) {
+    return cleanTitle || 'Tarefa pendente';
+  }
+  if (!cleanTitle) {
+    return cleanLeadName;
+  }
+
+  const titleLower = cleanTitle.toLowerCase();
+  const leadLower = cleanLeadName.toLowerCase();
+  const firstName = cleanLeadName.split(/\s+/)[0]?.toLowerCase();
+
+  // Deduplicate if lead name or first name already present in task title
+  if (
+    titleLower.includes(leadLower) ||
+    (firstName && firstName.length > 2 && titleLower.includes(firstName))
+  ) {
+    return cleanTitle;
+  }
+
+  // Canonical safe format: [Task title] — [Lead name]
+  return `${cleanTitle} — ${cleanLeadName}`;
+}
+
+function formatContextualTaskBody(description?: string | null): string {
+  const cleanDesc = (description || '').trim();
+  if (cleanDesc) {
+    return cleanDesc.length > 240 ? `${cleanDesc.slice(0, 237)}...` : cleanDesc;
+  }
+  return 'Tarefa agendada para agora.';
+}
+
+function buildTaskDeepLink(taskId?: string | null, leadId?: string | null): string {
+  const cleanTaskId = (taskId || '').trim();
+  const cleanLeadId = (leadId || '').trim();
+
+  if (cleanLeadId) {
+    return cleanTaskId ? `/leads/${cleanLeadId}?taskId=${cleanTaskId}` : `/leads/${cleanLeadId}`;
+  }
+  return cleanTaskId ? `/work?taskId=${cleanTaskId}` : '/work';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -433,9 +491,22 @@ Deno.serve(async (req) => {
       const nowIso = new Date().toISOString();
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 
+      // Fetch pending tasks due up to now with lead relationship
       const { data: dueTasks, error: dueErr } = await supabase
         .from('tasks')
-        .select('id, title, status, due_at, lead_id')
+        .select(`
+          id,
+          title,
+          description,
+          status,
+          due_at,
+          lead_id,
+          leads (
+            id,
+            first_name,
+            last_name
+          )
+        `)
         .eq('status', 'pending')
         .not('due_at', 'is', null)
         .lte('due_at', nowIso)
@@ -448,6 +519,30 @@ Deno.serve(async (req) => {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
+
+      // Collect lead IDs for batch fallback resolution if relationship isn't joined
+      const missingLeadIds = Array.from(
+        new Set(
+          (dueTasks || [])
+            .filter((t: any) => t.lead_id && !t.leads)
+            .map((t: any) => t.lead_id)
+        )
+      ) as string[];
+
+      const leadMap = new Map<string, { first_name?: string; last_name?: string }>();
+      if (missingLeadIds.length > 0) {
+        try {
+          const { data: leadsData } = await supabase
+            .from('leads')
+            .select('id, first_name, last_name')
+            .in('id', missingLeadIds);
+          for (const l of (leadsData || [])) {
+            leadMap.set(l.id, l);
+          }
+        } catch (_leadErr) {
+          console.warn('[check_due_tasks] Fallback lead query notice:', _leadErr);
+        }
       }
 
       let checkedCount = 0;
@@ -464,15 +559,28 @@ Deno.serve(async (req) => {
 
         if (existing) continue;
 
+        // Resolve real lead name
+        const rawLead = (t as any).leads || (t.lead_id ? leadMap.get(t.lead_id) : undefined);
+        const leadObj = Array.isArray(rawLead) ? rawLead[0] : rawLead;
+        const leadName = leadObj
+          ? `${leadObj.first_name || ''} ${leadObj.last_name || ''}`.trim()
+          : null;
+
+        const contextualTitle = formatContextualTaskTitle(t.title, leadName);
+        const contextualBody = formatContextualTaskBody(t.description);
+        const deepLink = buildTaskDeepLink(t.id, t.lead_id);
+
         // Dispatches task_due in-process directly to APNs / Web Push
         try {
           const pushResult = await sendPushInternal(supabase, {
             event_type: 'task_due',
             event_id: t.id,
             idempotency_key: idKey,
-            title: 'Tarefa pendente',
-            body: t.title || 'Lembrete de tarefa',
-            deep_link: t.lead_id ? `/leads/${t.lead_id}` : '/work',
+            title: contextualTitle,
+            body: contextualBody,
+            deep_link: deepLink,
+            task_id: t.id,
+            lead_id: t.lead_id || undefined,
           });
 
           if (pushResult && pushResult.body && pushResult.body.dispatched_count > 0) {

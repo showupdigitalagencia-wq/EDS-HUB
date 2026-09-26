@@ -8,7 +8,7 @@
 // 4. Safe App Shell Management (Zero CRM Data Caching)
 // =============================================================================
 
-const CACHE_NAME = 'eds-hub-shell-v7';
+const CACHE_NAME = 'eds-hub-shell-v8';
 const SHELL_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -120,7 +120,15 @@ self.addEventListener('push', (event) => {
             data.event_id ||
             (data.data && data.data.eventId) ||
             null;
-          const uniqueTag = `${eventType}_${eventId || Date.now()}`;
+          const taskId =
+            data.task_id ||
+            (data.data && (data.data.taskId || data.data.task_id)) ||
+            (eventType === 'task_due' ? eventId : null);
+          const leadId =
+            data.lead_id ||
+            (data.data && (data.data.leadId || data.data.lead_id)) ||
+            null;
+          const uniqueTag = `${eventType}_${eventId || taskId || Date.now()}`;
 
           payload = {
             title: data.title || payload.title,
@@ -128,8 +136,11 @@ self.addEventListener('push', (event) => {
             tag: uniqueTag,
             data: {
               url: targetDeepLink,
+              deep_link: targetDeepLink,
               event_type: eventType,
               event_id: eventId,
+              task_id: taskId,
+              lead_id: leadId,
             },
           };
 
@@ -200,24 +211,36 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+  const data = event.notification.data || {};
+  const targetUrl = data.deep_link || data.url || '/';
   const fullTargetUrl = new URL(targetUrl, self.location.origin).href;
 
   event.waitUntil(
     self.clients
       .matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clientList) => {
-        // If an existing window client is already open, focus it and navigate
+      .then(async (clientList) => {
+        // If an existing window client is already open, focus it and tell it to navigate
         for (const client of clientList) {
           if ('focus' in client) {
-            client.focus();
-            if ('navigate' in client) {
-              return client.navigate(fullTargetUrl);
+            await client.focus();
+            // 1. Post message to React Router for immediate seamless in-app navigation
+            client.postMessage({
+              type: 'NAVIGATE_TO_URL',
+              url: targetUrl,
+              data,
+            });
+            // 2. Also attempt client.navigate if supported by browser/PWA engine
+            if ('navigate' in client && typeof client.navigate === 'function') {
+              try {
+                await client.navigate(fullTargetUrl);
+              } catch (_navErr) {
+                // Ignore navigation error as postMessage already handles client navigation
+              }
             }
             return;
           }
         }
-        // Otherwise open a new window
+        // Otherwise open a new window directly at destination
         if (self.clients.openWindow) {
           return self.clients.openWindow(fullTargetUrl);
         }

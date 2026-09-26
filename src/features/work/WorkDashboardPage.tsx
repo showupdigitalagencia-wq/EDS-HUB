@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../../components/Layout';
 import {
   Calendar,
@@ -32,6 +33,8 @@ import type {
 } from '../../types/database';
 
 export const WorkDashboardPage: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const highlightedTaskId = searchParams.get('taskId');
   const [kpis, setKpis] = useState<DailyOperationsDashboardKpis | null>(null);
   const [activeTab, setActiveTab] = useState<string>('today');
   const [subFilter, setSubFilter] = useState<string | null>(null);
@@ -124,6 +127,17 @@ export const WorkDashboardPage: React.FC = () => {
       window.removeEventListener('lead-updated', handleSync);
     };
   }, [loadKpis, loadQueue]);
+
+  // Auto-scroll to highlighted task when deep-linked
+  useEffect(() => {
+    if (highlightedTaskId && items.length > 0) {
+      const cleanTarget = highlightedTaskId.replace(/^task:/i, '').trim();
+      const el = document.getElementById(`work-item-${cleanTarget}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [highlightedTaskId, items]);
 
   // Quick Action Handlers
   const handleCompleteTask = async (taskId: string) => {
@@ -606,16 +620,26 @@ export const WorkDashboardPage: React.FC = () => {
             ) : (
               items.map((item) => {
                 const cleanId = (item.context_id || item.id).replace(/^task:/i, '').trim();
+                const isHighlighted = Boolean(
+                  highlightedTaskId &&
+                    (cleanId === highlightedTaskId.replace(/^task:/i, '').trim() ||
+                      item.id === highlightedTaskId)
+                );
                 return (
-                  <WorkItemCard
+                  <div
                     key={item.id}
-                    item={item}
-                    isCompleting={completingTaskId === cleanId}
-                    onCompleteTask={handleCompleteTask}
-                    onRescheduleTask={handleOpenReschedule}
-                    onCreateTaskForLead={handleOpenCreateForLead}
-                    onSelectLead={setSelectedLeadId}
-                  />
+                    id={`work-item-${cleanId}`}
+                    className={isHighlighted ? 'ring-2 ring-[#1b7dbf] rounded-2xl shadow-sm transition-all' : ''}
+                  >
+                    <WorkItemCard
+                      item={item}
+                      isCompleting={completingTaskId === cleanId}
+                      onCompleteTask={handleCompleteTask}
+                      onRescheduleTask={handleOpenReschedule}
+                      onCreateTaskForLead={handleOpenCreateForLead}
+                      onSelectLead={setSelectedLeadId}
+                    />
+                  </div>
                 );
               })
             )}

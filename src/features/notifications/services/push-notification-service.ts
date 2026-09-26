@@ -6,6 +6,7 @@
 // =============================================================================
 
 import { supabase } from '../../../lib/supabase';
+import { buildTaskDueNotification } from '../utils/task-notification-format';
 
 export interface PushNotificationPreferences {
   id?: string;
@@ -804,20 +805,25 @@ export async function notifyIncompleteRegistration(params: {
 
 /**
  * Event E: Task Due / Overdue
- * Example: "Tarefa pendente" - "Ligar para John Smith."
+ * Contextual task push identifying task action and lead.
+ * Example: "Ligar — Maria Silva"
  */
 export async function notifyTaskDue(params: {
   taskId: string;
   taskTitle: string;
   leadId?: string;
+  leadName?: string;
+  description?: string;
 }) {
+  const content = buildTaskDueNotification(params);
+
   return dispatchPushNotification({
     event_type: 'task_due',
     event_id: params.taskId,
     idempotency_key: `task_${params.taskId}_${Date.now()}`,
-    title: 'Tarefa pendente',
-    body: params.taskTitle,
-    deep_link: '/work',
+    title: content.title,
+    body: content.body,
+    deep_link: content.deepLink,
   });
 }
 

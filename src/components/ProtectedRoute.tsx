@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../features/auth/AuthProvider';
 import { Loader2, ShieldAlert } from 'lucide-react';
 
@@ -13,6 +13,7 @@ import { Loader2, ShieldAlert } from 'lucide-react';
  */
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, appUser, isLoading, isAuthorized, signOut } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -25,9 +26,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Not authenticated at all → redirect to login
+  // Not authenticated at all → redirect to login preserving intended target
   if (!session) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   // Authenticated but not in app_user → access denied

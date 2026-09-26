@@ -1,10 +1,31 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider } from './features/auth/AuthProvider';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
 import { startTaskReminderScheduler } from './features/notifications/services/task-reminder-service';
+
+function ServiceWorkerNavigationListener() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'NAVIGATE_TO_URL' && event.data.url) {
+        navigate(event.data.url);
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage);
+    };
+  }, [navigate]);
+
+  return null;
+}
 
 // Static route page imports for bulletproof stability
 import { LoginPage } from './features/auth/LoginPage';
@@ -47,6 +68,7 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
+          <ServiceWorkerNavigationListener />
           <PwaUpdatePrompt />
           <Routes>
               {/* Public routes */}

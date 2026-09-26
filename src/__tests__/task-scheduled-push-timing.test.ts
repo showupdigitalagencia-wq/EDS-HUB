@@ -165,13 +165,16 @@ describe('Task Push Timing & Reminder Scheduling Specification', () => {
       expect(eqMock).toHaveBeenCalledWith('status', 'pending');
       expect(notMock).toHaveBeenCalledWith('due_at', 'is', null);
 
-      // Verify push invocation with 'Tarefa pendente'
+      // Verify push invocation with contextual title, body, and deep_link
       expect(supabase.functions.invoke).toHaveBeenCalledWith('send-push-notification', {
         body: expect.objectContaining({
           event_type: 'task_due',
           event_id: 'task-1',
-          title: 'Tarefa pendente',
-          body: 'Ligar para Dra. Claudia — Claudia Menezes',
+          title: 'Ligar para Dra. Claudia',
+          body: 'Apresentar turma de Março',
+          deep_link: '/leads/lead-123?taskId=task-1',
+          task_id: 'task-1',
+          lead_id: 'lead-123',
           idempotency_key: `task_reminder_task-1_${mockTasks[0].due_at}`,
         }),
       });
@@ -500,26 +503,33 @@ describe('Task Push Timing & Reminder Scheduling Specification', () => {
 
     it('verifies closed-app push payload contains all self-contained fields for display', () => {
       const payload = {
-        title: 'Tarefa pendente',
-        body: 'Ligar para Dra. Claudia — Claudia Menezes',
+        title: 'Ligar — Dra. Claudia',
+        body: 'Apresentar turma de Março',
         icon: '/pwa-192x192.png',
         badge: '/favicon.png',
-        deep_link: '/work',
-        url: '/work',
+        deep_link: '/leads/lead-123?taskId=task-123',
+        url: '/leads/lead-123?taskId=task-123',
         event_type: 'task_due',
         event_id: 'task-123',
+        task_id: 'task-123',
+        lead_id: 'lead-123',
         data: {
-          url: '/work',
+          url: '/leads/lead-123?taskId=task-123',
+          deep_link: '/leads/lead-123?taskId=task-123',
           eventType: 'task_due',
           eventId: 'task-123',
+          taskId: 'task-123',
+          leadId: 'lead-123',
         },
       };
 
       // Service worker can build visible notification solely from push payload
-      expect(payload.title).toBeDefined();
-      expect(payload.body).toBeDefined();
+      expect(payload.title).toBe('Ligar — Dra. Claudia');
+      expect(payload.body).toBe('Apresentar turma de Março');
       expect(payload.event_type).toBe('task_due');
-      expect(payload.data.url).toBe('/work');
+      expect(payload.task_id).toBe('task-123');
+      expect(payload.lead_id).toBe('lead-123');
+      expect(payload.data.url).toBe('/leads/lead-123?taskId=task-123');
     });
   });
 });
