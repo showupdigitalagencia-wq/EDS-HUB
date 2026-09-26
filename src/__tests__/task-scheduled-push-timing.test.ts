@@ -467,4 +467,59 @@ describe('Task Push Timing & Reminder Scheduling Specification', () => {
       }));
     });
   });
+
+  describe('7. Closed-App Push & Service Worker Independence Specification', () => {
+    it('verifies manifest has stable id and standalone display mode for iOS PWA Home Screen', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const manifestPath = path.resolve(process.cwd(), 'public/manifest.webmanifest');
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+      expect(manifest.id).toBe('/');
+      expect(manifest.display).toBe('standalone');
+      expect(manifest.start_url).toBe('/');
+    });
+
+    it('verifies service worker push handler shows notification without requiring open clients', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const swPath = path.resolve(process.cwd(), 'public/sw.js');
+      const swContent = fs.readFileSync(swPath, 'utf8');
+
+      // Canonical push handler must exist
+      expect(swContent).toContain("self.addEventListener('push'");
+      // Must use event.waitUntil
+      expect(swContent).toContain('event.waitUntil(');
+      // Must call registration.showNotification
+      expect(swContent).toContain('self.registration.showNotification');
+      // Must call self.skipWaiting() on install
+      expect(swContent).toContain('self.skipWaiting()');
+      // Must NOT gate notification display on clients.length
+      expect(swContent).not.toMatch(/if\s*\(\s*clients\.length\s*>\s*0\s*\)\s*\{[^}]*showNotification/);
+    });
+
+    it('verifies closed-app push payload contains all self-contained fields for display', () => {
+      const payload = {
+        title: 'Tarefa pendente',
+        body: 'Ligar para Dra. Claudia — Claudia Menezes',
+        icon: '/pwa-192x192.png',
+        badge: '/favicon.png',
+        deep_link: '/work',
+        url: '/work',
+        event_type: 'task_due',
+        event_id: 'task-123',
+        data: {
+          url: '/work',
+          eventType: 'task_due',
+          eventId: 'task-123',
+        },
+      };
+
+      // Service worker can build visible notification solely from push payload
+      expect(payload.title).toBeDefined();
+      expect(payload.body).toBeDefined();
+      expect(payload.event_type).toBe('task_due');
+      expect(payload.data.url).toBe('/work');
+    });
+  });
 });

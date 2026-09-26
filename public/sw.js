@@ -2,13 +2,13 @@
 // EDS HUB — Production-Safe Service Worker
 // =============================================================================
 // Responsibilities:
-// 1. Web Push Notification Ingestion & Display
+// 1. Web Push Notification Ingestion & Display (Works when closed / background)
 // 2. Notification Click & Deep Link Routing
 // 3. Platform App Badge Synchronization
 // 4. Safe App Shell Management (Zero CRM Data Caching)
 // =============================================================================
 
-const CACHE_NAME = 'eds-hub-shell-v6';
+const CACHE_NAME = 'eds-hub-shell-v7';
 const SHELL_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -20,8 +20,11 @@ const SHELL_ASSETS = [
   '/favicon.png',
 ];
 
-// --- 1. Installation & Activation ---
+// --- 1. Installation & Immediate Activation ---
 self.addEventListener('install', (event) => {
+  // Activate immediately so new push handler takes effect on installed PWA
+  self.skipWaiting();
+
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(SHELL_ASSETS).catch((err) => {
@@ -86,85 +89,111 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// --- 3. Push Event Handling ---
+// --- 3. Push Event Handling (Canonical Background & Closed-App Delivery) ---
+// Guarantees delivery when EDS HUB is closed, backgrounded, or phone is locked.
+// Does NOT depend on active React state, open tabs, or client window.
 self.addEventListener('push', (event) => {
   console.info('[SW] Web push event received at', new Date().toISOString());
 
-  let payload = {
-    title: 'Notificação — EDS HUB',
-    body: 'Novo alerta operacional recebido.',
-    icon: '/pwa-192x192.png',
-    badge: '/favicon.png',
-    data: { url: '/' },
-  };
-
-  if (event.data) {
-    try {
-      const data = event.data.json();
-      const targetDeepLink = data.deep_link || data.url || (data.data && (data.data.url || data.data.deep_link)) || '/';
-      const eventType = data.event_type || (data.data && data.data.eventType) || 'eds-crm-alert';
-      const eventId = data.event_id || (data.data && data.data.eventId) || null;
-      const uniqueTag = `${eventType}_${eventId || Date.now()}`;
-
-      payload = {
-        title: data.title || payload.title,
-        body: data.body || payload.body,
-        icon: data.icon || '/pwa-192x192.png',
-        badge: data.badge || '/favicon.png',
-        tag: uniqueTag,
-        data: {
-          url: targetDeepLink,
-          event_type: eventType,
-          event_id: eventId,
-        },
+  // Wrap the entire lifecycle in event.waitUntil to guarantee iOS process stays alive
+  event.waitUntil(
+    (async () => {
+      let payload = {
+        title: 'Notificação — EDS HUB',
+        body: 'Novo alerta operacional recebido.',
+        data: { url: '/' },
       };
 
-      // App Badge API support (e.g. unread count on mobile home screen)
-      const badgeNum = typeof data.badge_count === 'number'
-        ? data.badge_count
-        : (data.data && typeof data.data.badgeCount === 'number' ? data.data.badgeCount : null);
-      if (badgeNum !== null && 'setAppBadge' in navigator) {
-        navigator.setAppBadge(badgeNum).catch(() => {});
+      if (event.data) {
+        try {
+          const data = event.data.json();
+          const targetDeepLink =
+            data.deep_link ||
+            data.url ||
+            (data.data && (data.data.url || data.data.deep_link)) ||
+            '/';
+          const eventType =
+            data.event_type ||
+            (data.data && data.data.eventType) ||
+            'eds-crm-alert';
+          const eventId =
+            data.event_id ||
+            (data.data && data.data.eventId) ||
+            null;
+          const uniqueTag = `${eventType}_${eventId || Date.now()}`;
+
+          payload = {
+            title: data.title || payload.title,
+            body: data.body || payload.body,
+            tag: uniqueTag,
+            data: {
+              url: targetDeepLink,
+              event_type: eventType,
+              event_id: eventId,
+            },
+          };
+
+          // App Badge API support (e.g. unread count on mobile home screen)
+          const badgeNum =
+            typeof data.badge_count === 'number'
+              ? data.badge_count
+              : data.data && typeof data.data.badgeCount === 'number'
+              ? data.data.badgeCount
+              : null;
+          if (badgeNum !== null && 'setAppBadge' in navigator) {
+            navigator.setAppBadge(badgeNum).catch(() => {});
+          }
+        } catch (err) {
+          console.warn('[SW] Failed to parse push payload as JSON, using text fallback:', err);
+          payload.body = event.data.text() || payload.body;
+        }
       }
-    } catch (err) {
-      console.warn('[SW] Failed to parse push payload as JSON, using text fallback:', err);
-      payload.body = event.data.text();
-    }
-  }
 
-  // Notify any active foreground windows of the push event (for diagnostic UI)
-  self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-    for (const client of clients) {
-      client.postMessage({
-        type: 'PUSH_NOTIFICATION_RECEIVED',
-        title: payload.title,
+      // Base notification options supported across all browsers including iOS WebKit
+      const options = {
         body: payload.body,
+        tag: payload.tag,
         data: payload.data,
-      });
-    }
-  }).catch(() => {});
+      };
 
-  // Construct options safely for iOS Safari and cross-browser support
-  const fullOptions = {
-    body: payload.body,
-    data: payload.data,
-    tag: payload.tag,
-  };
+      // Add icon and badge with fully qualified URLs
+      try {
+        if (self.location && self.location.origin) {
+          options.icon = new URL('/pwa-192x192.png', self.location.origin).href;
+          options.badge = new URL('/favicon.png', self.location.origin).href;
+        }
+      } catch (_urlErr) {
+        // Fallback without extra images
+      }
 
-  if (payload.icon) fullOptions.icon = payload.icon;
-  if (payload.badge) fullOptions.badge = payload.badge;
+      // 1. Display notification unconditionally (independent of any open window)
+      try {
+        await self.registration.showNotification(payload.title, options);
+      } catch (showErr) {
+        console.warn('[SW] showNotification with full options failed, falling back to minimal options:', showErr);
+        await self.registration.showNotification(payload.title, {
+          body: payload.body,
+          data: payload.data,
+        });
+      }
 
-  // Critical for iOS Safari: Call showNotification within event.waitUntil with minimal fallback
-  const displayPromise = self.registration.showNotification(payload.title, fullOptions)
-    .catch((err) => {
-      console.warn('[SW] showNotification with full options failed, falling back to minimal options:', err);
-      return self.registration.showNotification(payload.title, {
-        body: payload.body,
-        data: payload.data,
-      });
-    });
-
-  event.waitUntil(displayPromise);
+      // 2. Opportunistically notify any active foreground windows (for live UI update)
+      // Open clients are completely optional and NEVER gate notification display
+      try {
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of clients) {
+          client.postMessage({
+            type: 'PUSH_NOTIFICATION_RECEIVED',
+            title: payload.title,
+            body: payload.body,
+            data: payload.data,
+          });
+        }
+      } catch (_clientErr) {
+        // Safe to ignore when app is closed
+      }
+    })()
+  );
 });
 
 // --- 4. Notification Click & Deep Link Navigation ---
