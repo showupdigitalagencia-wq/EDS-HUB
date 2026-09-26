@@ -71,8 +71,11 @@ export function isLeadClosed(
   return false;
 }
 
-import { formatContactPreferenceLabel } from '../../../utils/contact-preference';
-export { formatContactPreferenceLabel };
+import {
+  formatContactPreferenceLabel,
+  getContactPreferenceBadgeClasses,
+} from '../../../utils/contact-preference';
+export { formatContactPreferenceLabel, getContactPreferenceBadgeClasses };
 
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -289,7 +292,19 @@ export function MinimalLeadCard({
         </div>
       )}
 
-      {/* Deliverability Health Indicator — Factual Delivery Status + Deliverability Risk */}
+      {/* Contact Preference Badge — Canonical preference indicator (ALWAYS VISIBLE & COEXISTS) */}
+      <div className="pt-1 flex items-center">
+        <span
+          data-testid="contact-preference-badge"
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md border select-none max-w-full truncate ${
+            getContactPreferenceBadgeClasses(lead.contact_preference).badge
+          }`}
+        >
+          {formatContactPreferenceLabel(lead.contact_preference)}
+        </span>
+      </div>
+
+      {/* Deliverability Health Indicator — Factual Delivery Status + Deliverability Risk (COEXISTS WITH PREFERENCE) */}
       {!isClosedLead && deliverabilityHealth && (
         <div className="pt-0.5 flex flex-wrap items-center gap-1.5">
           {/* 1. Factual Delivery Status Badge */}
@@ -341,24 +356,6 @@ export function MinimalLeadCard({
           )}
         </div>
       )}
-
-      {/* Contact Preference Badge — Compact, non-intrusive operational indicator */}
-      <div className="pt-0.5">
-        <span
-          data-testid="contact-preference-badge"
-          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md border select-none max-w-full truncate ${
-            (lead.contact_preference || '').toLowerCase() === 'email'
-              ? 'bg-blue-50/80 text-blue-700 border-blue-200/80'
-              : (lead.contact_preference || '').toLowerCase() === 'sms'
-              ? 'bg-purple-50/80 text-purple-700 border-purple-200/80'
-              : (lead.contact_preference || '').toLowerCase() === 'whatsapp'
-              ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/80'
-              : 'bg-slate-50 text-slate-500 border-slate-200/80'
-          }`}
-        >
-          {formatContactPreferenceLabel(lead.contact_preference)}
-        </span>
-      </div>
 
       {/* 4. Course Interests (Up to 3, formatted: Course • Month Year) */}
       <div className="space-y-1 pt-1 border-t border-slate-100/80">

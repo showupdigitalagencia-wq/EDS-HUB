@@ -1001,7 +1001,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
       phone_e164: payload.phone && payload.phone.startsWith('+') ? payload.phone : null,
       contact_preference: dbContactPreference,
       pipeline_stage_id: captureStage!.id,
-      source_created_at: payload.source_created_at || null,
+      source_created_at: payload.source_created_at || new Date().toISOString(),
     })
     .select('id')
     .single();

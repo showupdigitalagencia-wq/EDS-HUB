@@ -9,11 +9,16 @@ import { NewLeadModal } from './components/NewLeadModal';
 import { LeadProfileDrawer } from './components/LeadProfileDrawer';
 import { CsvImportModal } from './import/CsvImportModal';
 import type { Lead, PipelineStage, Tag, Course, CourseSession } from '../../types';
-import { formatSessionMonthYear, formatContactPreferenceLabel } from '../pipeline/components/MinimalLeadCard';
+import {
+  formatSessionMonthYear,
+  formatContactPreferenceLabel,
+  getContactPreferenceBadgeClasses,
+} from '../pipeline/components/MinimalLeadCard';
 import {
   batchFetchPipelineDeliverabilityHealth,
   type LeadDeliverabilityInfo,
 } from '../dashboard/services/deliverability-health-service';
+import { compareLeadsNewestFirst } from '../../lib/lead-sorting';
 import {
   Plus,
   Upload,
@@ -211,6 +216,9 @@ export function LeadsListPage() {
       if (fetchErr) throw fetchErr;
 
       const loadedLeads = (data as unknown as Lead[]) || [];
+      if (sortBy !== 'lead_score') {
+        loadedLeads.sort(compareLeadsNewestFirst);
+      }
       setLeads(loadedLeads);
       setTotalCount(count || 0);
 
@@ -255,8 +263,12 @@ export function LeadsListPage() {
     const handleUpdated = () => {
       fetchLeads();
     };
+    const handleCreated = () => {
+      fetchLeads();
+    };
     window.addEventListener('leads-purged', handlePurged);
     window.addEventListener('lead-updated', handleUpdated);
+    window.addEventListener('lead-created', handleCreated);
 
     if (typeof supabase?.channel === 'function' && import.meta.env.MODE !== 'test') {
       const channel = supabase
@@ -273,6 +285,7 @@ export function LeadsListPage() {
       return () => {
         window.removeEventListener('leads-purged', handlePurged);
         window.removeEventListener('lead-updated', handleUpdated);
+        window.removeEventListener('lead-created', handleCreated);
         supabase.removeChannel(channel);
       };
     }
@@ -280,6 +293,7 @@ export function LeadsListPage() {
     return () => {
       window.removeEventListener('leads-purged', handlePurged);
       window.removeEventListener('lead-updated', handleUpdated);
+      window.removeEventListener('lead-created', handleCreated);
     };
   }, [fetchLeads]);
 
@@ -689,13 +703,7 @@ export function LeadsListPage() {
                       <span
                         data-testid="contact-card-preference-badge"
                         className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md border select-none max-w-full truncate ${
-                          (lead.contact_preference || '').toLowerCase() === 'email'
-                            ? 'bg-blue-50/80 text-blue-700 border-blue-200/80'
-                            : (lead.contact_preference || '').toLowerCase() === 'sms'
-                            ? 'bg-purple-50/80 text-purple-700 border-purple-200/80'
-                            : (lead.contact_preference || '').toLowerCase() === 'whatsapp'
-                            ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/80'
-                            : 'bg-slate-50 text-slate-500 border-slate-200/80'
+                          getContactPreferenceBadgeClasses(lead.contact_preference).badge
                         }`}
                       >
                         {formatContactPreferenceLabel(lead.contact_preference)}
@@ -900,13 +908,7 @@ export function LeadsListPage() {
                                 <span
                                   data-testid="lead-table-contact-preference"
                                   className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md border select-none max-w-full truncate ${
-                                    (lead.contact_preference || '').toLowerCase() === 'email'
-                                      ? 'bg-blue-50/80 text-blue-700 border-blue-200/80'
-                                      : (lead.contact_preference || '').toLowerCase() === 'sms'
-                                      ? 'bg-purple-50/80 text-purple-700 border-purple-200/80'
-                                      : (lead.contact_preference || '').toLowerCase() === 'whatsapp'
-                                      ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/80'
-                                      : 'bg-slate-50 text-slate-500 border-slate-200/80'
+                                    getContactPreferenceBadgeClasses(lead.contact_preference).badge
                                   }`}
                                 >
                                   {formatContactPreferenceLabel(lead.contact_preference)}

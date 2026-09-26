@@ -17,6 +17,87 @@ import { corsHeaders, corsResponse } from '../_shared/cors.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { verifyResendSignature } from '../_shared/webhook-verifier.ts';
 
+/**
+ * Dispatches critical deliverability alerts:
+ * 1. Creates guaranteed in-app notification logs in push_notification_logs for active admin users.
+ * 2. Invokes send-push-notification with exact lead name and deep link.
+ * 3. Enforces idempotency and captures any errors so failures are visible in audit logs.
+ */
+async function dispatchCriticalDeliverabilityAlert(
+  db: any,
+  params: {
+    eventType: 'complaint' | 'bounce';
+    providerEventId: string;
+    providerMessageId?: string;
+    leadId: string | null;
+    recipientEmail: string;
+    leadName: string | null;
+    title: string;
+    body: string;
+    deepLink: string;
+  }
+): Promise<{ inAppCount: number; pushSuccess: boolean; pushError?: string }> {
+  let inAppCount = 0;
+  let pushSuccess = false;
+  let pushError: string | undefined;
+
+  // 1. Guaranteed in-app notification inserted into push_notification_logs for active admin users
+  try {
+    const { data: users } = await db
+      .from('app_user')
+      .select('user_id')
+      .eq('is_active', true);
+
+    const targetUserIds = (users || []).map((u: { user_id: string }) => u.user_id);
+    for (const uid of targetUserIds) {
+      const { error: logErr } = await db.from('push_notification_logs').upsert(
+        {
+          user_id: uid,
+          subscription_id: null,
+          event_type: 'deliverability_critical',
+          event_id: params.leadId || params.providerMessageId || params.providerEventId,
+          idempotency_key: `${params.eventType}_${params.providerEventId}_user_${uid}`,
+          title: params.title,
+          body: params.body,
+          deep_link: params.deepLink,
+          status: 'sent',
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: 'idempotency_key' }
+      );
+      if (!logErr) inAppCount++;
+    }
+  } catch (inAppErr) {
+    console.error('[resend-event-webhook] Error creating in-app deliverability log:', inAppErr);
+  }
+
+  // 2. Real-time Mobile Push dispatch via send-push-notification
+  try {
+    const pushRes = await db.functions.invoke('send-push-notification', {
+      body: {
+        event_type: 'deliverability_critical',
+        event_id: params.leadId || params.providerMessageId || params.providerEventId,
+        idempotency_key: `${params.eventType}_${params.providerEventId}`,
+        title: params.title,
+        body: params.body,
+        deep_link: params.deepLink,
+      },
+    });
+
+    if (pushRes.error) {
+      pushError = String(pushRes.error);
+      console.error('[resend-event-webhook] Critical mobile push dispatch error:', pushRes.error);
+    } else {
+      pushSuccess = true;
+    }
+  } catch (pErr: any) {
+    pushError = pErr?.message || String(pErr);
+    console.error('[resend-event-webhook] Critical mobile push invocation error:', pErr);
+  }
+
+  return { inAppCount, pushSuccess, pushError };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return corsResponse();
@@ -141,6 +222,48 @@ Deno.serve(async (req) => {
   if (!recipientEmail) {
     recipientEmail = 'unknown@expdentalsolutions.com';
   }
+
+  // Fallback correlation: If outboundMessageId or outboundLeadId not resolved via providerMessageId,
+  // correlate by recipient email against the most recent outbound message and leads table
+  if (recipientEmail && recipientEmail !== 'unknown@expdentalsolutions.com') {
+    if (!outboundMessageId || !outboundLeadId) {
+      const { data: recentOutbound } = await db
+        .from('outbound_messages')
+        .select('id, lead_id')
+        .eq('recipient', recipientEmail)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (recentOutbound) {
+        if (!outboundMessageId) outboundMessageId = recentOutbound.id;
+        if (!outboundLeadId && recentOutbound.lead_id) outboundLeadId = recentOutbound.lead_id;
+      }
+    }
+
+    if (!outboundLeadId) {
+      const { data: leadMatch } = await db
+        .from('leads')
+        .select('id, first_name, last_name')
+        .eq('email', recipientEmail)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (leadMatch) {
+        outboundLeadId = leadMatch.id;
+      }
+    }
+  }
+
+  // Operational metadata accumulator for email_provider_event_logs
+  const operationalMetadata: Record<string, any> = {
+    event_type: eventType,
+    occurred_at: occurredAt,
+    svix_id: svixId,
+    matched_outbound: Boolean(outboundMessageId),
+    matched_lead: Boolean(outboundLeadId),
+  };
 
   // 6. Process Specific Factual Event Types
   const isDelivered = eventType === 'email.delivered';
@@ -411,34 +534,37 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Non-blocking critical deliverability notification for hard bounce
-      try {
-        let leadName: string | null = null;
-        if (outboundLeadId) {
-          const { data: leadRec } = await db
-            .from('leads')
-            .select('first_name, last_name')
-            .eq('id', outboundLeadId)
-            .maybeSingle();
-          if (leadRec) {
-            leadName = [leadRec.first_name, leadRec.last_name].filter(Boolean).join(' ') || null;
-          }
+      // Critical deliverability alert for hard bounce (In-app + Mobile Push)
+      let leadName: string | null = null;
+      if (outboundLeadId) {
+        const { data: leadRec } = await db
+          .from('leads')
+          .select('first_name, last_name')
+          .eq('id', outboundLeadId)
+          .maybeSingle();
+        if (leadRec) {
+          leadName = [leadRec.first_name, leadRec.last_name].filter(Boolean).join(' ') || null;
         }
+      }
 
-        await db.functions.invoke('send-push-notification', {
-          body: {
-            event_type: 'deliverability_critical',
-            event_id: outboundLeadId || providerMessageId || providerEventId,
-            idempotency_key: `bounce_${providerEventId}`,
-            title: leadName ? `Hard bounce — ${leadName}` : 'Alerta de Entregabilidade: Hard Bounce',
-            body: leadName
-              ? 'O endereço rejeitou permanentemente o email. Novos envios foram bloqueados.'
-              : `E-mail para ${recipientEmail} rejeitado permanentemente (Hard Bounce).`,
-            deep_link: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversas` : '/reports',
-          },
-        });
-      } catch (pushErr) {
-        console.warn('[resend-event-webhook] Critical deliverability push notice:', pushErr);
+      const alertResult = await dispatchCriticalDeliverabilityAlert(db, {
+        eventType: 'bounce',
+        providerEventId,
+        providerMessageId,
+        leadId: outboundLeadId,
+        recipientEmail,
+        leadName,
+        title: leadName ? `Hard bounce — ${leadName}` : 'Alerta de Entregabilidade: Hard Bounce',
+        body: leadName
+          ? 'O endereço rejeitou permanentemente o email. Novos envios foram bloqueados.'
+          : `E-mail para ${recipientEmail} rejeitado permanentemente (Hard Bounce).`,
+        deepLink: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversas` : '/reports',
+      });
+
+      operationalMetadata.alert_in_app_count = alertResult.inAppCount;
+      operationalMetadata.alert_push_success = alertResult.pushSuccess;
+      if (alertResult.pushError) {
+        operationalMetadata.alert_push_error = alertResult.pushError;
       }
     }
   } else if (isComplained) {
@@ -497,34 +623,37 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Non-blocking critical deliverability notification for spam complaint
-    try {
-      let leadName: string | null = null;
-      if (outboundLeadId) {
-        const { data: leadRec } = await db
-          .from('leads')
-          .select('first_name, last_name')
-          .eq('id', outboundLeadId)
-          .maybeSingle();
-        if (leadRec) {
-          leadName = [leadRec.first_name, leadRec.last_name].filter(Boolean).join(' ') || null;
-        }
+    // Critical deliverability alert for spam complaint (In-app + Mobile Push)
+    let leadName: string | null = null;
+    if (outboundLeadId) {
+      const { data: leadRec } = await db
+        .from('leads')
+        .select('first_name, last_name')
+        .eq('id', outboundLeadId)
+        .maybeSingle();
+      if (leadRec) {
+        leadName = [leadRec.first_name, leadRec.last_name].filter(Boolean).join(' ') || null;
       }
+    }
 
-      await db.functions.invoke('send-push-notification', {
-        body: {
-          event_type: 'deliverability_critical',
-          event_id: outboundLeadId || providerMessageId || providerEventId,
-          idempotency_key: `complaint_${providerEventId}`,
-          title: leadName ? `Spam detectado — ${leadName}` : 'Alerta de Entregabilidade: Spam',
-          body: leadName
-            ? 'O email deste lead foi marcado como spam e os próximos envios foram bloqueados.'
-            : `E-mail para ${recipientEmail} reportado como spam (Reclamação).`,
-          deep_link: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversas` : '/reports',
-        },
-      });
-    } catch (pushErr) {
-      console.warn('[resend-event-webhook] Critical deliverability complaint push notice:', pushErr);
+    const alertResult = await dispatchCriticalDeliverabilityAlert(db, {
+      eventType: 'complaint',
+      providerEventId,
+      providerMessageId,
+      leadId: outboundLeadId,
+      recipientEmail,
+      leadName,
+      title: leadName ? `Spam detectado — ${leadName}` : 'Alerta de Entregabilidade: Spam',
+      body: leadName
+        ? 'O email deste lead foi marcado como spam e os próximos envios foram bloqueados.'
+        : `E-mail para ${recipientEmail} reportado como spam (Reclamação).`,
+      deepLink: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversas` : '/reports',
+    });
+
+    operationalMetadata.alert_in_app_count = alertResult.inAppCount;
+    operationalMetadata.alert_push_success = alertResult.pushSuccess;
+    if (alertResult.pushError) {
+      operationalMetadata.alert_push_error = alertResult.pushError;
     }
   } else if (isSuppressed) {
     if (outboundMessageId) {
@@ -654,12 +783,6 @@ Deno.serve(async (req) => {
 
   // 7. Persist Event to email_provider_event_logs
   // Store operational metadata only — no API keys, no auth headers, no full email bodies
-  const operationalMetadata: Record<string, any> = {
-    event_type: eventType,
-    occurred_at: occurredAt,
-    svix_id: svixId,
-  };
-
   if (isBounced && data.bounce) {
     operationalMetadata.bounce_type = data.bounce.type || 'unknown';
   }

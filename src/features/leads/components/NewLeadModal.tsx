@@ -169,6 +169,9 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
       }
 
       onLeadCreated();
+      try {
+        window.dispatchEvent(new CustomEvent('lead-created', { detail: data }));
+      } catch {}
       onClose();
     } catch (err: any) {
       setError(err?.message || 'Falha ao criar o lead.');

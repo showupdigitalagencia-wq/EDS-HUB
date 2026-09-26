@@ -21,6 +21,7 @@ import {
   batchFetchPipelineDeliverabilityHealth,
   type LeadDeliverabilityInfo,
 } from '../dashboard/services/deliverability-health-service';
+import { compareLeadsNewestFirst } from '../../lib/lead-sorting';
 
 const OPERATIONAL_STAGE_CODES = [
   'capture',
@@ -162,18 +163,26 @@ export function PipelineKanbanPage() {
               q = q.eq('pipeline_stage_id', stg.id);
             }
             if (typeof q?.order === 'function') {
-              q = q.order('source_created_at', { ascending: false, nullsFirst: false });
+              const o1 = q.order('source_created_at', { ascending: false, nullsFirst: false });
+              if (o1 && typeof o1.order === 'function') {
+                const o2 = o1.order('created_at', { ascending: false });
+                q = (o2 && typeof o2.order === 'function') ? o2.order('id', { ascending: false }) : (o2 || o1);
+              } else {
+                q = o1;
+              }
             }
-            if (typeof q?.range === 'function') {
+            if (q && typeof q?.range === 'function') {
               q = q.range(0, STAGE_PAGE_SIZE - 1);
             }
 
             const res = await q;
             const rawCards = res?.data || [];
             // In unit tests where mock returns all leads without filtering by eq, filter by pipeline_stage_id
-            const cards = (Array.isArray(rawCards) ? rawCards : []).filter(
-              (l: any) => !l.pipeline_stage_id || l.pipeline_stage_id === stg.id
-            );
+            const cards = (Array.isArray(rawCards) ? rawCards : [])
+              .filter(
+                (l: any) => !l.pipeline_stage_id || l.pipeline_stage_id === stg.id
+              )
+              .sort(compareLeadsNewestFirst);
 
             initialCardsMap[stg.id] = cards as Lead[];
             allLoadedCards.push(...(cards as Lead[]));
@@ -267,22 +276,38 @@ export function PipelineKanbanPage() {
       const from = currentPage * STAGE_PAGE_SIZE;
       const to = from + STAGE_PAGE_SIZE - 1;
 
-      const { data: newCards, error: fetchErr } = await supabase
+      let qMore: any = supabase
         .from('leads')
-        .select('*, lead_course_interests(course_id, priority, notes, course:courses(name), session:course_sessions(title, start_date))')
-        .eq('pipeline_stage_id', stageId)
-        .order('source_created_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false })
-        .range(from, to);
+        .select('*, lead_course_interests(course_id, priority, notes, course:courses(name), session:course_sessions(title, start_date))');
+      if (typeof qMore?.eq === 'function') {
+        qMore = qMore.eq('pipeline_stage_id', stageId);
+      }
+      if (typeof qMore?.order === 'function') {
+        const o1 = qMore.order('source_created_at', { ascending: false, nullsFirst: false });
+        if (o1 && typeof o1.order === 'function') {
+          const o2 = o1.order('created_at', { ascending: false });
+          qMore = (o2 && typeof o2.order === 'function') ? o2.order('id', { ascending: false }) : (o2 || o1);
+        } else {
+          qMore = o1;
+        }
+      }
+      if (qMore && typeof qMore?.range === 'function') {
+        qMore = qMore.range(from, to);
+      }
+
+      const { data: newCards, error: fetchErr } = await qMore;
 
       if (fetchErr) throw fetchErr;
 
       if (newCards && newCards.length > 0) {
-        setLeadsByStage((prev) => ({
-          ...prev,
-          [stageId]: [...(prev[stageId] || []), ...(newCards as Lead[])],
-        }));
+        setLeadsByStage((prev) => {
+          const combined = [...(prev[stageId] || []), ...(newCards as Lead[])];
+          const deduped = Array.from(new Map(combined.map((l) => [l.id, l])).values()).sort(compareLeadsNewestFirst);
+          return {
+            ...prev,
+            [stageId]: deduped,
+          };
+        });
 
         setStagePageMap((prev) => ({
           ...prev,
@@ -329,6 +354,7 @@ export function PipelineKanbanPage() {
         .or(`first_name.ilike.%${cleanTerm}%,last_name.ilike.%${cleanTerm}%,email.ilike.%${cleanTerm}%,phone_raw.ilike.%${cleanTerm}%`)
         .order('source_created_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
         .limit(100);
 
       if (sErr) throw sErr;
@@ -346,6 +372,11 @@ export function PipelineKanbanPage() {
           grouped[stages[0].id].push(lead as Lead);
         }
         intMap[lead.id] = extractCourseInterests(lead);
+      });
+
+      // Sort each stage strictly in newest-first order
+      Object.keys(grouped).forEach((stgId) => {
+        grouped[stgId].sort(compareLeadsNewestFirst);
       });
 
       setLeadsByStage(grouped);
@@ -376,7 +407,7 @@ export function PipelineKanbanPage() {
     void loadPipelineData();
   }, [loadPipelineData]);
 
-  // Realtime updates: subscribe to public.leads changes
+  // Realtime updates: subscribe to public.leads changes and reload pipeline in newest-first order
   useEffect(() => {
     if (typeof supabase?.channel !== 'function') return;
     if (import.meta.env.MODE === 'test') return;
@@ -387,8 +418,8 @@ export function PipelineKanbanPage() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'leads' },
         () => {
-          // Re-sync atomic counts and data on remote change
-          void loadStageCountsAndStages();
+          // Re-sync full pipeline data and atomic counts on remote change
+          void loadPipelineData();
         }
       )
       .subscribe();
@@ -396,17 +427,20 @@ export function PipelineKanbanPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [loadStageCountsAndStages]);
+  }, [loadPipelineData]);
 
   // Event listeners for internal updates
   useEffect(() => {
     const handlePurged = () => void loadPipelineData();
     const handleUpdated = () => void loadPipelineData();
+    const handleCreated = () => void loadPipelineData();
     window.addEventListener('leads-purged', handlePurged);
     window.addEventListener('lead-updated', handleUpdated);
+    window.addEventListener('lead-created', handleCreated);
     return () => {
       window.removeEventListener('leads-purged', handlePurged);
       window.removeEventListener('lead-updated', handleUpdated);
+      window.removeEventListener('lead-created', handleCreated);
     };
   }, [loadPipelineData]);
 
@@ -456,7 +490,11 @@ export function PipelineKanbanPage() {
 
     const newGrouped = { ...leadsByStage };
     newGrouped[currentStageId] = newGrouped[currentStageId].filter((l) => l.id !== leadId);
-    newGrouped[targetStageId] = [{ ...movedLead, pipeline_stage_id: targetStageId }, ...(newGrouped[targetStageId] || [])];
+    const targetCards = [
+      { ...movedLead, pipeline_stage_id: targetStageId },
+      ...(newGrouped[targetStageId] || []).filter((l) => l.id !== leadId),
+    ].sort(compareLeadsNewestFirst);
+    newGrouped[targetStageId] = targetCards;
 
     setLeadsByStage(newGrouped);
     setStageCounts((prev) => ({
