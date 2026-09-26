@@ -289,16 +289,24 @@ export function MinimalLeadCard({
         </div>
       )}
 
-      {/* Deliverability Health Indicator — Compact Operational Signal (Only for active / open leads) */}
+      {/* Deliverability Health Indicator — Factual Delivery Status + Deliverability Risk */}
       {!isClosedLead && deliverabilityHealth && (
-        <div className="pt-0.5">
+        <div className="pt-0.5 flex flex-wrap items-center gap-1.5">
+          {/* 1. Factual Delivery Status Badge */}
           <div
             role="status"
-            aria-label={`Saúde do e-mail: ${deliverabilityHealth.label}`}
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors select-none max-w-full truncate cursor-pointer ${deliverabilityHealth.badgeClass}`}
-            title={deliverabilityHealth.description}
+            aria-label={`Status factual do e-mail: ${deliverabilityHealth.factualStatus?.label || deliverabilityHealth.label}`}
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors select-none max-w-full truncate cursor-pointer ${
+              deliverabilityHealth.factualStatus?.badgeClass || deliverabilityHealth.badgeClass
+            }`}
+            title={
+              deliverabilityHealth.risk?.reasons && deliverabilityHealth.risk.reasons.length > 0
+                ? `${deliverabilityHealth.description}\nMotivos:\n• ${deliverabilityHealth.risk.reasons.join('\n• ')}`
+                : deliverabilityHealth.description
+            }
             data-testid="deliverability-health-badge"
             data-status={deliverabilityHealth.status}
+            data-factual-status={deliverabilityHealth.factualStatus?.status}
             onClick={(e) => {
               if (onDeliverabilityClick) {
                 e.stopPropagation();
@@ -306,9 +314,31 @@ export function MinimalLeadCard({
               }
             }}
           >
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${deliverabilityHealth.dotColor}`} />
-            <span className="truncate">{deliverabilityHealth.label}</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                deliverabilityHealth.factualStatus?.dotColor || deliverabilityHealth.dotColor
+              }`}
+            />
+            <span className="truncate">
+              {deliverabilityHealth.factualStatus?.label || deliverabilityHealth.label}
+            </span>
           </div>
+
+          {/* 2. Deliverability Risk Badge (Separated from Factual Status) */}
+          {deliverabilityHealth.risk && deliverabilityHealth.risk.level !== 'sem_historico' && (
+            <span
+              data-testid="deliverability-risk-badge"
+              data-risk={deliverabilityHealth.risk.level}
+              className={`inline-flex items-center px-1.5 py-0.5 text-[9px] font-semibold rounded-md border select-none transition-colors ${deliverabilityHealth.risk.badgeClass}`}
+              title={
+                deliverabilityHealth.risk.reasons.length > 0
+                  ? `Risco ${deliverabilityHealth.risk.label}:\n• ${deliverabilityHealth.risk.reasons.join('\n• ')}`
+                  : `Risco de entregabilidade: ${deliverabilityHealth.risk.label}`
+              }
+            >
+              Risco: {deliverabilityHealth.risk.label}
+            </span>
+          )}
         </div>
       )}
 

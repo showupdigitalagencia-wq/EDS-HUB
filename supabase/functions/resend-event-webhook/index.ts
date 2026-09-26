@@ -413,13 +413,27 @@ Deno.serve(async (req) => {
 
       // Non-blocking critical deliverability notification for hard bounce
       try {
+        let leadName: string | null = null;
+        if (outboundLeadId) {
+          const { data: leadRec } = await db
+            .from('leads')
+            .select('first_name, last_name')
+            .eq('id', outboundLeadId)
+            .maybeSingle();
+          if (leadRec) {
+            leadName = [leadRec.first_name, leadRec.last_name].filter(Boolean).join(' ') || null;
+          }
+        }
+
         await db.functions.invoke('send-push-notification', {
           body: {
             event_type: 'deliverability_critical',
             event_id: outboundLeadId || providerMessageId || providerEventId,
             idempotency_key: `bounce_${providerEventId}`,
-            title: 'Alerta de Entregabilidade',
-            body: `E-mail para ${recipientEmail} rejeitado permanentemente (Hard Bounce).`,
+            title: leadName ? `Hard bounce — ${leadName}` : 'Alerta de Entregabilidade: Hard Bounce',
+            body: leadName
+              ? 'O endereço rejeitou permanentemente o email. Novos envios foram bloqueados.'
+              : `E-mail para ${recipientEmail} rejeitado permanentemente (Hard Bounce).`,
             deep_link: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversas` : '/reports',
           },
         });
@@ -485,13 +499,27 @@ Deno.serve(async (req) => {
 
     // Non-blocking critical deliverability notification for spam complaint
     try {
+      let leadName: string | null = null;
+      if (outboundLeadId) {
+        const { data: leadRec } = await db
+          .from('leads')
+          .select('first_name, last_name')
+          .eq('id', outboundLeadId)
+          .maybeSingle();
+        if (leadRec) {
+          leadName = [leadRec.first_name, leadRec.last_name].filter(Boolean).join(' ') || null;
+        }
+      }
+
       await db.functions.invoke('send-push-notification', {
         body: {
           event_type: 'deliverability_critical',
           event_id: outboundLeadId || providerMessageId || providerEventId,
           idempotency_key: `complaint_${providerEventId}`,
-          title: 'Alerta de Entregabilidade',
-          body: `E-mail para ${recipientEmail} reportado como spam (Reclamação).`,
+          title: leadName ? `Spam detectado — ${leadName}` : 'Alerta de Entregabilidade: Spam',
+          body: leadName
+            ? 'O email deste lead foi marcado como spam e os próximos envios foram bloqueados.'
+            : `E-mail para ${recipientEmail} reportado como spam (Reclamação).`,
           deep_link: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversas` : '/reports',
         },
       });

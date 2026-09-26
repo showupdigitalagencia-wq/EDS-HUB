@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Edit2,
   Kanban,
+  ShieldCheck,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Tabs, type TabItem } from '../../../components/ui/Tabs';
@@ -548,15 +549,27 @@ export function LeadProfileContent({
                 )}
               </div>
               <div>
-                <div className="flex items-center gap-2 mb-0.5">
+                <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
                   <span className="text-slate-400 block text-[11px]">E-mail</span>
                   {emailHealth && emailHealth.status !== 'sem_historico' && (
-                    <span
-                      className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded-md border ${emailHealth.badgeClass}`}
-                      title={emailHealth.details}
-                    >
-                      {emailHealth.label}
-                    </span>
+                    <>
+                      <span
+                        className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded-md border ${
+                          emailHealth.factualStatus?.badgeClass || emailHealth.badgeClass
+                        }`}
+                        title={emailHealth.details}
+                      >
+                        {emailHealth.factualStatus?.label || emailHealth.label}
+                      </span>
+                      {emailHealth.risk && emailHealth.risk.level !== 'sem_historico' && (
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 text-[9px] font-semibold rounded-md border ${emailHealth.risk.badgeClass}`}
+                          title={emailHealth.risk.reasons.join(', ')}
+                        >
+                          Risco: {emailHealth.risk.label}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
                 {lead.email ? (
@@ -600,6 +613,151 @@ export function LeadProfileContent({
               )}
             </div>
           </div>
+
+          {/* Entregabilidade de E-mail & Proteção de Reputação Card */}
+          {lead.email && emailHealth && (
+            <div
+              data-testid="lead-email-deliverability-detail"
+              className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-700 font-heading uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldCheck className="h-4 w-4 text-[#449bd5]" />
+                  <span>Entregabilidade & Reputação</span>
+                </h3>
+                {emailHealth.factualStatus && (
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-md border ${emailHealth.factualStatus.badgeClass}`}
+                    >
+                      {emailHealth.factualStatus.label}
+                    </span>
+                    {emailHealth.risk && emailHealth.risk.level !== 'sem_historico' && (
+                      <span
+                        className={`inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold rounded-md border ${emailHealth.risk.badgeClass}`}
+                      >
+                        Risco: {emailHealth.risk.label}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 text-xs">
+                {/* Current status */}
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex flex-col justify-between">
+                  <span className="text-[10px] text-slate-400 font-medium uppercase">Status Atual</span>
+                  <span className="font-bold text-slate-800 mt-1">
+                    {emailHealth.factualStatus?.label || emailHealth.label || 'Sem histórico recente'}
+                  </span>
+                </div>
+
+                {/* Deliverability risk */}
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex flex-col justify-between">
+                  <span className="text-[10px] text-slate-400 font-medium uppercase">Risco de Entregabilidade</span>
+                  <span className={`font-bold mt-1 ${emailHealth.risk?.color || 'text-slate-700'}`}>
+                    {emailHealth.risk ? emailHealth.risk.label : 'Sem histórico'}
+                  </span>
+                </div>
+
+                {/* Suppression */}
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex flex-col justify-between">
+                  <span className="text-[10px] text-slate-400 font-medium uppercase">Supressão</span>
+                  <span className="mt-1">
+                    {emailHealth.suppression?.isActive ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800">
+                        ATIVA ({emailHealth.suppression.reason})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                        INATIVA
+                      </span>
+                    )}
+                  </span>
+                </div>
+
+                {/* Automation eligibility */}
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex flex-col justify-between">
+                  <span className="text-[10px] text-slate-400 font-medium uppercase">Envio por Automação</span>
+                  <span className="mt-1">
+                    {emailHealth.automationAllowed === false ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800">
+                        BLOQUEADO
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                        PERMITIDO
+                      </span>
+                    )}
+                  </span>
+                </div>
+
+                {/* Timestamps */}
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] text-slate-400 font-medium uppercase block">Última entrega confirmada</span>
+                  <span className="font-semibold text-slate-700 mt-1 block">
+                    {emailHealth.lastSuccessfulDelivery
+                      ? new Date(emailHealth.lastSuccessfulDelivery).toLocaleString('pt-BR')
+                      : '—'}
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] text-slate-400 font-medium uppercase block">Última falha / problema</span>
+                  <span className="font-semibold text-slate-700 mt-1 block">
+                    {emailHealth.lastFailure
+                      ? new Date(emailHealth.lastFailure).toLocaleString('pt-BR')
+                      : '—'}
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] text-slate-400 font-medium uppercase block">Última abertura detectada</span>
+                  <span className="font-semibold text-slate-700 mt-1 block">
+                    {emailHealth.lastOpenDetected
+                      ? new Date(emailHealth.lastOpenDetected).toLocaleString('pt-BR')
+                      : '—'}
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] text-slate-400 font-medium uppercase block">Último clique detectado</span>
+                  <span className="font-semibold text-slate-700 mt-1 block">
+                    {emailHealth.lastClickDetected
+                      ? new Date(emailHealth.lastClickDetected).toLocaleString('pt-BR')
+                      : '—'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Reason / Explanation */}
+              {emailHealth.risk?.reasons && emailHealth.risk.reasons.length > 0 && (
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                  <span className="text-[10px] text-slate-400 font-medium uppercase block mb-1">
+                    Justificativa Factual
+                  </span>
+                  <ul className="list-disc list-inside space-y-0.5 text-slate-700 font-medium">
+                    {emailHealth.risk.reasons.map((r, idx) => (
+                      <li key={idx}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Spam Risk & Disclaimer */}
+              <div className="p-2 rounded-xl bg-slate-50/80 border border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
+                <span>
+                  Risco de spam estimado:{' '}
+                  <strong className="text-slate-700">
+                    {emailHealth.spamRisk?.label || 'Baixo'}
+                  </strong>
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  (Não infere pasta de destino sem sinal do provedor)
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* 3. Cursos de Interesse Card */}
           <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
