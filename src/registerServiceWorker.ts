@@ -49,11 +49,15 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
       });
     }, 20 * 60 * 1000);
 
-    // 4. Also check for updates when window gains focus
+    // 4. Also check for updates when window gains focus or device goes online
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         registration.update().catch(() => {});
       }
+    });
+
+    window.addEventListener('online', () => {
+      registration.update().catch(() => {});
     });
 
     return registration;

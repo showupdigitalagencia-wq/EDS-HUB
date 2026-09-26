@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../features/auth/AuthProvider';
-import { Loader2, ShieldAlert } from 'lucide-react';
+import { Loader2, ShieldAlert, RefreshCw } from 'lucide-react';
 
 /**
  * Protects routes from unauthenticated or unauthorized users.
@@ -12,7 +12,7 @@ import { Loader2, ShieldAlert } from 'lucide-react';
  * Note: This is UX protection only. The real security is RLS in PostgreSQL.
  */
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { session, appUser, isLoading, isAuthorized, signOut } = useAuth();
+  const { session, appUser, isLoading, isAuthorized, appUserError, retryLoadAppUser, signOut } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -31,8 +31,42 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Authenticated but not in app_user → access denied
+  // Authenticated but not authorized
   if (!appUser || !isAuthorized) {
+    // If it's a transient network issue loading workspace profile, show retry rather than permanent lockout
+    if (appUserError === 'network') {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-surface-50 px-4">
+          <div className="text-center max-w-md">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber-50 mb-4 text-amber-600">
+              <ShieldAlert className="h-7 w-7 text-amber-600" />
+            </div>
+            <h1 className="text-xl font-semibold text-gray-900 mb-2">Não foi possível carregar o sistema</h1>
+            <p className="text-sm text-gray-500 mb-6">
+              Login realizado com sucesso, mas houve uma oscilação na conexão ao inicializar suas permissões de trabalho.
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                id="retry-workspace-load"
+                onClick={retryLoadAppUser}
+                className="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] bg-[#08254f] px-4 py-2 text-sm font-medium text-white hover:bg-[#061e40] cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Tentar novamente
+              </button>
+              <button
+                id="unauthorized-logout"
+                onClick={signOut}
+                className="rounded-[var(--radius-button)] bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 cursor-pointer"
+              >
+                Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-50 px-4">
         <div className="text-center max-w-md">
@@ -41,7 +75,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           </div>
           <h1 className="text-xl font-semibold text-gray-900 mb-2">Acesso Negado</h1>
           <p className="text-sm text-gray-500 mb-6">
-            Sua conta não possui autorização para acessar o EDS HUB. 
+            Sua conta não possui autorização ativa para acessar o EDS HUB. 
             Por favor, entre em contato com o administrador.
           </p>
           <button

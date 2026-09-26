@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from './AuthProvider';
-import { Loader2, Lock, Mail, ShieldCheck } from 'lucide-react';
+import { useAuth, type AuthErrorType } from './AuthProvider';
+import { Loader2, Lock, Mail, ShieldCheck, RefreshCw } from 'lucide-react';
 import edsLogo from '../../assets/eds-logo.png';
 
 export function LoginPage() {
@@ -10,6 +10,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<AuthErrorType>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fromLocation = (location.state as any)?.from;
@@ -30,14 +31,16 @@ export function LoginPage() {
     return <Navigate to={from} replace />;
   }
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
     setError(null);
+    setErrorType(null);
     setIsSubmitting(true);
 
-    const { error: signInError } = await signIn(email, password);
-    if (signInError) {
-      setError(signInError);
+    const result = await signIn(email, password);
+    if (result.error) {
+      setError(result.error);
+      setErrorType(result.errorType || 'auth');
     }
     setIsSubmitting(false);
   };
@@ -136,9 +139,21 @@ export function LoginPage() {
             {error && (
               <div
                 id="login-error"
-                className="rounded-lg bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs text-red-700 font-medium"
+                className="rounded-lg bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs text-red-700 font-medium space-y-2"
               >
-                {error}
+                <div>{error}</div>
+                {(errorType === 'network' || errorType === 'workspace') && (
+                  <button
+                    type="button"
+                    id="login-retry-btn"
+                    onClick={() => handleSubmit()}
+                    disabled={isSubmitting}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-red-800 bg-red-100 hover:bg-red-200 rounded-md transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Tentar novamente
+                  </button>
+                )}
               </div>
             )}
 

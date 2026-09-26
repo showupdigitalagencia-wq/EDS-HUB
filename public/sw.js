@@ -8,7 +8,7 @@
 // 4. Safe App Shell Management (Zero CRM Data Caching)
 // =============================================================================
 
-const CACHE_NAME = 'eds-hub-shell-v8';
+const CACHE_NAME = 'eds-hub-shell-v9';
 const SHELL_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -72,11 +72,11 @@ self.addEventListener('fetch', (event) => {
     return; // Standard network fetch
   }
 
-  // Network-first with cache fallback for static app shell
+  // Network-first with safe cache fallback for static app shell
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Cache valid static responses
+        // Cache valid static basic responses
         if (response.status === 200 && response.type === 'basic') {
           const responseToCache = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -85,7 +85,28 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        const cached = await caches.match(event.request);
+        if (cached) {
+          return cached;
+        }
+
+        // If navigation request (opening / reloading PWA offline or during transient blip),
+        // fallback to the cached app shell ('/')
+        if (event.request.mode === 'navigate') {
+          const shell = await caches.match('/');
+          if (shell) {
+            return shell;
+          }
+        }
+
+        // Return a clean 503 instead of resolving to undefined (which triggers Safari "Load failed")
+        return new Response('Network error or resource unavailable', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      })
   );
 });
 
