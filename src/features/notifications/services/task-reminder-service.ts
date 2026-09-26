@@ -11,7 +11,6 @@
 // =============================================================================
 
 import { supabase } from '../../../lib/supabase';
-import { formatTaskDueTime, getUserTimezone } from '../../../utils/timezone';
 
 export interface TaskReminderResult {
   taskId: string;
@@ -43,11 +42,12 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
 
     const { data: dueTasks, error: taskErr } = await supabase
       .from('tasks')
-      .select('id, title, description, status, due_date, assigned_to, created_by, lead_id')
+      .select('id, title, description, status, due_at, created_by, lead_id')
       .eq('status', 'pending')
-      .lte('due_date', nowIso)
-      .gte('due_date', twoHoursAgo)
-      .order('due_date', { ascending: true })
+      .not('due_at', 'is', null)
+      .lte('due_at', nowIso)
+      .gte('due_at', twoHoursAgo)
+      .order('due_at', { ascending: true })
       .limit(20);
 
     if (taskErr || !dueTasks || dueTasks.length === 0) {
@@ -70,12 +70,12 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
     }
 
     for (const task of dueTasks) {
-      // PART 15: State safety checks
+      // PART 15: State safety checks - do not notify completed or cancelled tasks
       if (task.status === 'completed') {
         results.push({
           taskId: task.id,
-          recipientUserId: task.assigned_to || currentUserId || '',
-          idempotencyKey: `task_reminder_${task.id}_${task.due_date}`,
+          recipientUserId: currentUserId || '',
+          idempotencyKey: `task_reminder_${task.id}_${task.due_at}`,
           status: 'skipped_completed',
         });
         continue;
@@ -84,28 +84,23 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
       if (task.status === 'cancelled') {
         results.push({
           taskId: task.id,
-          recipientUserId: task.assigned_to || currentUserId || '',
-          idempotencyKey: `task_reminder_${task.id}_${task.due_date}`,
+          recipientUserId: currentUserId || '',
+          idempotencyKey: `task_reminder_${task.id}_${task.due_at}`,
           status: 'skipped_cancelled',
         });
         continue;
       }
 
-      // PART 12: Recipient Resolution
-      // If task has assignee: push to assignee only.
-      // If not: push to creator or current admin.
-      const recipientUserId = task.assigned_to || task.created_by || currentUserId;
-      if (!recipientUserId) {
-        continue;
-      }
+      // Canonical task recipient: target current admin or all active admins with tasks enabled
+      const targetUserIds = currentUserId ? [currentUserId] : undefined;
 
-      // PART 14: Idempotency Key (1 reminder per task per due time)
-      const idempotencyKey = `task_reminder_${task.id}_${task.due_date}`;
+      // PART 14: Idempotency Key (exactly 1 reminder per task per scheduled due timestamp)
+      const idempotencyKey = `task_reminder_${task.id}_${task.due_at}`;
 
       if (sentRemindersCache.has(idempotencyKey)) {
         results.push({
           taskId: task.id,
-          recipientUserId,
+          recipientUserId: currentUserId || '',
           idempotencyKey,
           status: 'skipped_already_sent',
         });
@@ -125,7 +120,7 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
           sentRemindersCache.add(idempotencyKey);
           results.push({
             taskId: task.id,
-            recipientUserId,
+            recipientUserId: currentUserId || '',
             idempotencyKey,
             status: 'skipped_already_sent',
           });
@@ -141,13 +136,10 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
         ? `${leadInfo.first_name || ''} ${leadInfo.last_name || ''}`.trim()
         : null;
 
-      const userTz = getUserTimezone();
-      const dueTimeFormatted = formatTaskDueTime(task.due_date, userTz);
-
-      const title = 'EDS HUB — Lembrete de tarefa';
+      const title = 'Tarefa pendente';
       const body = leadName
-        ? `${task.title} — ${leadName}\nPrazo: ${dueTimeFormatted}`
-        : `${task.title}\nPrazo: ${dueTimeFormatted}`;
+        ? `${task.title} — ${leadName}`
+        : (task.title || 'Lembrete de tarefa');
 
       const deepLink = task.lead_id
         ? `/leads?leadId=${task.lead_id}&taskId=${task.id}`
@@ -165,7 +157,7 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
               title,
               body,
               deep_link: deepLink,
-              target_user_ids: [recipientUserId],
+              target_user_ids: targetUserIds,
             },
           }
         );
@@ -174,7 +166,7 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
           console.error('[TaskReminder] Push invoke error for task', task.id, pushErr);
           results.push({
             taskId: task.id,
-            recipientUserId,
+            recipientUserId: currentUserId || '',
             idempotencyKey,
             status: 'failed',
             error: pushErr.message || 'Push invocation failed',
@@ -183,7 +175,7 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
           sentRemindersCache.add(idempotencyKey);
           results.push({
             taskId: task.id,
-            recipientUserId,
+            recipientUserId: currentUserId || '',
             idempotencyKey,
             status: 'sent',
           });
@@ -192,7 +184,7 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
         console.error('[TaskReminder] Exception sending push for task', task.id, invokeErr);
         results.push({
           taskId: task.id,
-          recipientUserId,
+          recipientUserId: currentUserId || '',
           idempotencyKey,
           status: 'failed',
           error: invokeErr.message || 'Unknown push invocation error',
@@ -208,9 +200,9 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
 
 /**
  * Starts automatic task reminder scheduler in the active browser window.
- * Runs on initialization, on visibility change (re-focus), and periodically.
+ * Runs on initialization, on visibility change (re-focus), and periodically every 30s.
  */
-export function startTaskReminderScheduler(intervalMs = 60000): () => void {
+export function startTaskReminderScheduler(intervalMs = 30000): () => void {
   if (typeof window === 'undefined') {
     return () => {};
   }

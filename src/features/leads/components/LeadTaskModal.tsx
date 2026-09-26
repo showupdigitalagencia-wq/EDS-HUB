@@ -86,12 +86,18 @@ export function LeadTaskModal({
         description: note.trim() || undefined,
       });
 
-      // Supplementary non-blocking push notification
-      void notifyTaskDue({
-        taskId: taskRes?.task_id || leadId,
-        taskTitle: title,
-        leadId,
-      }).catch(() => {});
+      // Future scheduled tasks MUST NOT send push or in-app notification at creation time.
+      // They will be dispatched by the reminder scheduler when the scheduled time arrives.
+      const dueTime = dueIso ? new Date(dueIso).getTime() : null;
+      const isDueNowOrOverdue = dueTime !== null && dueTime <= Date.now();
+
+      if (isDueNowOrOverdue) {
+        void notifyTaskDue({
+          taskId: taskRes?.task_id || leadId,
+          taskTitle: title,
+          leadId,
+        }).catch(() => {});
+      }
 
       onTaskCreated();
       onClose();

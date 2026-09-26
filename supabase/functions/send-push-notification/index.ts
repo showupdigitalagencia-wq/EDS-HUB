@@ -60,6 +60,76 @@ Deno.serve(async (req) => {
     const supabase = createAdminClient();
     const payload = (await req.json()) as SendPushRequest;
 
+    // Support server-side scheduled check of pending due tasks
+    if ((payload as any).event_type === 'check_due_tasks' || (payload as any).action === 'check_due_tasks') {
+      const nowIso = new Date().toISOString();
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+      const { data: dueTasks, error: dueErr } = await supabase
+        .from('tasks')
+        .select('id, title, status, due_at, lead_id')
+        .eq('status', 'pending')
+        .not('due_at', 'is', null)
+        .lte('due_at', nowIso)
+        .gte('due_at', twoHoursAgo)
+        .order('due_at', { ascending: true })
+        .limit(20);
+
+      if (dueErr) {
+        return new Response(JSON.stringify({ error: dueErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      let checkedCount = 0;
+      let dispatchedTasksCount = 0;
+
+      for (const t of dueTasks || []) {
+        const idKey = `task_reminder_${t.id}_${t.due_at}`;
+        const { data: existing } = await supabase
+          .from('push_notification_logs')
+          .select('id')
+          .eq('idempotency_key', idKey)
+          .eq('status', 'sent')
+          .maybeSingle();
+
+        if (existing) continue;
+
+        // Dispatches task_due to all eligible admin devices
+        try {
+          const fetchRes = await fetch(req.url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: req.headers.get('Authorization') || '',
+            },
+            body: JSON.stringify({
+              event_type: 'task_due',
+              event_id: t.id,
+              idempotency_key: idKey,
+              title: 'Tarefa pendente',
+              body: t.title || 'Lembrete de tarefa',
+              deep_link: t.lead_id ? `/leads/${t.lead_id}` : '/work',
+            }),
+          });
+          if (fetchRes.ok) dispatchedTasksCount++;
+        } catch (_err) {
+          // Non-blocking task dispatch
+        }
+        checkedCount++;
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          checked_count: checkedCount,
+          dispatched_count: dispatchedTasksCount,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const {
       event_type,
       event_id,

@@ -98,11 +98,12 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     setError(null);
 
     try {
+      const dueIso = dueDate ? new Date(dueDate).toISOString() : null;
       const created = await createCrmTask({
         leadId: targetLeadId,
         title: title.trim(),
         taskType,
-        dueAt: dueDate ? new Date(dueDate).toISOString() : null,
+        dueAt: dueIso,
         priority,
         description: description.trim() || undefined,
         enrollmentId: initialEnrollmentId || undefined,
@@ -110,14 +111,20 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         postCourseEngagementId: initialEngagementId || undefined,
       });
 
-      // Supplementary non-blocking push notification (CRM is source of truth)
-      const createdTaskId = (created as { task_id?: string; id?: string } | undefined)?.task_id ||
-        (created as { task_id?: string; id?: string } | undefined)?.id;
-      void notifyTaskDue({
-        taskId: createdTaskId || targetLeadId,
-        taskTitle: title.trim(),
-        leadId: targetLeadId,
-      }).catch(() => {});
+      // Future scheduled tasks MUST NOT send push or in-app notification at creation time.
+      // They will be dispatched by the reminder scheduler when the scheduled time arrives.
+      const dueTime = dueIso ? new Date(dueIso).getTime() : null;
+      const isDueNowOrOverdue = dueTime !== null && dueTime <= Date.now();
+
+      if (isDueNowOrOverdue) {
+        const createdTaskId = (created as { task_id?: string; id?: string } | undefined)?.task_id ||
+          (created as { task_id?: string; id?: string } | undefined)?.id;
+        void notifyTaskDue({
+          taskId: createdTaskId || targetLeadId,
+          taskTitle: title.trim(),
+          leadId: targetLeadId,
+        }).catch(() => {});
+      }
 
       (onTaskCreated || onCreated)?.();
       onClose();
