@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
   if (providerMessageId) {
     const { data: outboundMatch } = await db
       .from('outbound_messages')
-      .select('id, recipient, lead_id')
+      .select('id, recipient, lead_id, opened_at, clicked_at, open_count, click_count, last_clicked_url')
       .eq('provider_message_id', providerMessageId)
       .maybeSingle();
 
@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
 
     const { data: campaignMatch } = await db
       .from('campaign_recipients')
-      .select('id, email')
+      .select('id, email, opened_at, clicked_at, open_count, click_count')
       .eq('provider_message_id', providerMessageId)
       .maybeSingle();
 
@@ -144,11 +144,14 @@ Deno.serve(async (req) => {
 
   // 6. Process Specific Factual Event Types
   const isDelivered = eventType === 'email.delivered';
+  const isOpened = eventType === 'email.opened';
+  const isClicked = eventType === 'email.clicked';
   const isBounced = eventType === 'email.bounced';
   const isComplained = eventType === 'email.complained';
   const isDeliveryDelayed = eventType === 'email.delivery_delayed';
   const isFailed = eventType === 'email.failed';
   const isSent = eventType === 'email.sent';
+  const isSuppressed = eventType === 'email.suppressed' || eventType === 'suppression.added';
 
   if (isDelivered) {
     if (outboundMessageId) {
@@ -173,19 +176,26 @@ Deno.serve(async (req) => {
         })
         .eq('id', campaignRecipientId);
     }
-  } else if (isBounced) {
-    const bounceMessage = data.bounce?.message || 'Email delivery bounced';
 
+    if (outboundLeadId) {
+      await db.from('lead_activities').insert({
+        lead_id: outboundLeadId,
+        activity_type: 'email_delivered',
+        actor_type: 'system',
+        summary: 'E-mail entregue com sucesso',
+        metadata: { provider: 'resend', occurred_at: occurredAt, provider_message_id: providerMessageId },
+      });
+    }
+  } else if (isOpened) {
     if (outboundMessageId) {
       await db
         .from('outbound_messages')
         .update({
-          status: 'bounced',
-          bounced_at: occurredAt,
-          failed_at: occurredAt,
-          provider_status: 'bounced',
-          error_code: 'BOUNCED',
-          error_message: bounceMessage.substring(0, 200),
+          status: 'opened',
+          opened_at: occurredAt,
+          last_opened_at: occurredAt,
+          open_count: 1,
+          provider_status: 'opened',
           updated_at: new Date().toISOString(),
         })
         .eq('id', outboundMessageId);
@@ -195,61 +205,227 @@ Deno.serve(async (req) => {
       await db
         .from('campaign_recipients')
         .update({
-          status: 'bounced',
-          bounced_at: occurredAt,
-          failed_at: occurredAt,
-          error_code: 'BOUNCED',
-          error_message: bounceMessage.substring(0, 200),
+          status: 'opened',
+          opened_at: occurredAt,
+          last_opened_at: occurredAt,
+          open_count: 1,
           updated_at: new Date().toISOString(),
         })
         .eq('id', campaignRecipientId);
     }
 
-    // Record suppression on hard bounce
-    if (recipientEmail && recipientEmail !== 'unknown@expdentalsolutions.com') {
+    if (outboundLeadId) {
+      await db.from('lead_activities').insert({
+        lead_id: outboundLeadId,
+        activity_type: 'email_opened',
+        actor_type: 'system',
+        summary: 'Abertura detectada',
+        metadata: { provider: 'resend', occurred_at: occurredAt, provider_message_id: providerMessageId },
+      });
+    }
+  } else if (isClicked) {
+    const clickUrl = data.click?.link || '';
+    if (outboundMessageId) {
       await db
-        .from('email_suppressions')
-        .upsert(
-          {
-            normalized_email: recipientEmail,
-            reason: 'hard_bounce',
-            provider: 'resend',
-            provider_event_id: providerEventId,
-            source_message_id: providerMessageId || null,
-            metadata: {
-              bounce_type: data.bounce?.type || 'hard_bounce',
-              occurred_at: occurredAt,
-            },
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'normalized_email' }
-        );
+        .from('outbound_messages')
+        .update({
+          status: 'clicked',
+          clicked_at: occurredAt,
+          last_clicked_at: occurredAt,
+          click_count: 1,
+          last_clicked_url: clickUrl || null,
+          provider_status: 'clicked',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', outboundMessageId);
+    }
+
+    if (campaignRecipientId) {
+      await db
+        .from('campaign_recipients')
+        .update({
+          status: 'clicked',
+          clicked_at: occurredAt,
+          last_clicked_at: occurredAt,
+          click_count: 1,
+          last_clicked_url: clickUrl || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', campaignRecipientId);
     }
 
     if (outboundLeadId) {
       await db.from('lead_activities').insert({
         lead_id: outboundLeadId,
-        activity_type: 'email_bounced',
+        activity_type: 'email_clicked',
         actor_type: 'system',
-        summary: `E-mail não entregue (Hard Bounce): ${bounceMessage.substring(0, 100)}`,
-        metadata: { provider: 'resend', bounce_type: data.bounce?.type || 'hard_bounce', occurred_at: occurredAt },
-      });
-    }
-
-    // Non-blocking critical deliverability notification for hard bounce
-    try {
-      await db.functions.invoke('send-push-notification', {
-        body: {
-          event_type: 'deliverability_critical',
-          event_id: outboundLeadId || providerMessageId || providerEventId,
-          idempotency_key: `bounce_${providerEventId}`,
-          title: 'Alerta de Entregabilidade',
-          body: `E-mail para ${recipientEmail} rejeitado permanentemente (Hard Bounce).`,
-          deep_link: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversations` : '/reports',
+        summary: clickUrl ? `Clique detectado: ${clickUrl}` : 'Clique detectado',
+        metadata: {
+          provider: 'resend',
+          link: clickUrl,
+          user_agent: data.click?.userAgent,
+          ip: data.click?.ipAddress,
+          occurred_at: occurredAt,
+          provider_message_id: providerMessageId,
         },
       });
-    } catch (pushErr) {
-      console.warn('[resend-event-webhook] Critical deliverability push notice:', pushErr);
+    }
+  } else if (isDeliveryDelayed) {
+    if (outboundMessageId) {
+      await db
+        .from('outbound_messages')
+        .update({
+          status: 'delayed',
+          delivery_delayed_at: occurredAt,
+          provider_status: 'delivery_delayed',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', outboundMessageId);
+    }
+
+    if (campaignRecipientId) {
+      await db
+        .from('campaign_recipients')
+        .update({
+          status: 'delayed',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', campaignRecipientId);
+    }
+
+    if (outboundLeadId) {
+      await db.from('lead_activities').insert({
+        lead_id: outboundLeadId,
+        activity_type: 'email_delivery_delayed',
+        actor_type: 'system',
+        summary: 'Entrega de e-mail temporariamente adiada pelo servidor',
+        metadata: { provider: 'resend', occurred_at: occurredAt, provider_message_id: providerMessageId },
+      });
+    }
+  } else if (isBounced) {
+    const bounceMessage = data.bounce?.message || 'Email delivery bounced';
+    const bounceType = String(data.bounce?.type || '').toLowerCase();
+    const isSoftBounce = bounceType.includes('soft');
+
+    if (isSoftBounce) {
+      // Soft Bounce: temporary issue, DO NOT permanently suppress
+      if (outboundMessageId) {
+        await db
+          .from('outbound_messages')
+          .update({
+            status: 'failed',
+            failed_at: occurredAt,
+            provider_status: 'soft_bounce',
+            bounce_type: 'soft_bounce',
+            error_code: 'SOFT_BOUNCE',
+            error_message: bounceMessage.substring(0, 200),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', outboundMessageId);
+      }
+
+      if (campaignRecipientId) {
+        await db
+          .from('campaign_recipients')
+          .update({
+            status: 'failed',
+            failed_at: occurredAt,
+            bounce_type: 'soft_bounce',
+            error_code: 'SOFT_BOUNCE',
+            error_message: bounceMessage.substring(0, 200),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', campaignRecipientId);
+      }
+
+      if (outboundLeadId) {
+        await db.from('lead_activities').insert({
+          lead_id: outboundLeadId,
+          activity_type: 'email_bounced',
+          actor_type: 'system',
+          summary: `Falha temporária de entrega (Soft Bounce): ${bounceMessage.substring(0, 100)}`,
+          metadata: { provider: 'resend', bounce_type: 'soft_bounce', occurred_at: occurredAt },
+        });
+      }
+    } else {
+      // Hard Bounce: permanent failure, SUPPRESS recipient
+      if (outboundMessageId) {
+        await db
+          .from('outbound_messages')
+          .update({
+            status: 'bounced',
+            bounced_at: occurredAt,
+            failed_at: occurredAt,
+            provider_status: 'bounced',
+            bounce_type: 'hard_bounce',
+            error_code: 'BOUNCED',
+            error_message: bounceMessage.substring(0, 200),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', outboundMessageId);
+      }
+
+      if (campaignRecipientId) {
+        await db
+          .from('campaign_recipients')
+          .update({
+            status: 'bounced',
+            bounced_at: occurredAt,
+            failed_at: occurredAt,
+            bounce_type: 'hard_bounce',
+            error_code: 'BOUNCED',
+            error_message: bounceMessage.substring(0, 200),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', campaignRecipientId);
+      }
+
+      // Record suppression on hard bounce
+      if (recipientEmail && recipientEmail !== 'unknown@expdentalsolutions.com') {
+        await db
+          .from('email_suppressions')
+          .upsert(
+            {
+              normalized_email: recipientEmail,
+              reason: 'hard_bounce',
+              provider: 'resend',
+              provider_event_id: providerEventId,
+              source_message_id: providerMessageId || null,
+              metadata: {
+                bounce_type: data.bounce?.type || 'hard_bounce',
+                occurred_at: occurredAt,
+              },
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'normalized_email' }
+          );
+      }
+
+      if (outboundLeadId) {
+        await db.from('lead_activities').insert({
+          lead_id: outboundLeadId,
+          activity_type: 'email_bounced',
+          actor_type: 'system',
+          summary: `E-mail não entregue (Hard Bounce): ${bounceMessage.substring(0, 100)}`,
+          metadata: { provider: 'resend', bounce_type: data.bounce?.type || 'hard_bounce', occurred_at: occurredAt },
+        });
+      }
+
+      // Non-blocking critical deliverability notification for hard bounce
+      try {
+        await db.functions.invoke('send-push-notification', {
+          body: {
+            event_type: 'deliverability_critical',
+            event_id: outboundLeadId || providerMessageId || providerEventId,
+            idempotency_key: `bounce_${providerEventId}`,
+            title: 'Alerta de Entregabilidade',
+            body: `E-mail para ${recipientEmail} rejeitado permanentemente (Hard Bounce).`,
+            deep_link: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversas` : '/reports',
+          },
+        });
+      } catch (pushErr) {
+        console.warn('[resend-event-webhook] Critical deliverability push notice:', pushErr);
+      }
     }
   } else if (isComplained) {
     if (outboundMessageId) {
@@ -316,11 +492,65 @@ Deno.serve(async (req) => {
           idempotency_key: `complaint_${providerEventId}`,
           title: 'Alerta de Entregabilidade',
           body: `E-mail para ${recipientEmail} reportado como spam (Reclamação).`,
-          deep_link: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversations` : '/reports',
+          deep_link: outboundLeadId ? `/leads/${outboundLeadId}?tab=conversas` : '/reports',
         },
       });
     } catch (pushErr) {
       console.warn('[resend-event-webhook] Critical deliverability complaint push notice:', pushErr);
+    }
+  } else if (isSuppressed) {
+    if (outboundMessageId) {
+      await db
+        .from('outbound_messages')
+        .update({
+          status: 'failed',
+          failed_at: occurredAt,
+          provider_status: 'suppressed',
+          error_code: 'PROVIDER_SUPPRESSED',
+          error_message: 'Destinatário suprimido no provedor de e-mail',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', outboundMessageId);
+    }
+
+    if (campaignRecipientId) {
+      await db
+        .from('campaign_recipients')
+        .update({
+          status: 'failed',
+          failed_at: occurredAt,
+          error_code: 'PROVIDER_SUPPRESSED',
+          error_message: 'Destinatário suprimido no provedor de e-mail',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', campaignRecipientId);
+    }
+
+    if (recipientEmail && recipientEmail !== 'unknown@expdentalsolutions.com') {
+      await db
+        .from('email_suppressions')
+        .upsert(
+          {
+            normalized_email: recipientEmail,
+            reason: 'manual',
+            provider: 'resend',
+            provider_event_id: providerEventId,
+            source_message_id: providerMessageId || null,
+            metadata: { provider_suppressed: true, occurred_at: occurredAt },
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'normalized_email' }
+        );
+    }
+
+    if (outboundLeadId) {
+      await db.from('lead_activities').insert({
+        lead_id: outboundLeadId,
+        activity_type: 'email_suppressed',
+        actor_type: 'system',
+        summary: 'Envio bloqueado: destinatário suprimido pelo provedor',
+        metadata: { provider: 'resend', occurred_at: occurredAt },
+      });
     }
   } else if (isFailed) {
     if (outboundMessageId) {
@@ -349,6 +579,16 @@ Deno.serve(async (req) => {
         })
         .eq('id', campaignRecipientId);
     }
+
+    if (outboundLeadId) {
+      await db.from('lead_activities').insert({
+        lead_id: outboundLeadId,
+        activity_type: 'email_failed',
+        actor_type: 'system',
+        summary: `Falha técnica no envio: ${(data.error || 'Erro do provedor').substring(0, 100)}`,
+        metadata: { provider: 'resend', occurred_at: occurredAt },
+      });
+    }
   } else if (isSent) {
     if (outboundMessageId) {
       await db
@@ -371,6 +611,16 @@ Deno.serve(async (req) => {
           updated_at: new Date().toISOString(),
         })
         .eq('id', campaignRecipientId);
+    }
+
+    if (outboundLeadId) {
+      await db.from('lead_activities').insert({
+        lead_id: outboundLeadId,
+        activity_type: 'email_sent',
+        actor_type: 'system',
+        summary: 'E-mail enviado',
+        metadata: { provider: 'resend', occurred_at: occurredAt, provider_message_id: providerMessageId },
+      });
     }
   }
 

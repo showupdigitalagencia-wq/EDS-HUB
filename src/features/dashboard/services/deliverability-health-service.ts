@@ -440,7 +440,7 @@ export async function fetchLeadEmailHealth(
     // 2. Check recent outbound messages history for this recipient
     const { data: recentOutbound } = await client
       .from('outbound_messages')
-      .select('status, delivered_at, bounced_at, complained_at')
+      .select('status, delivered_at, bounced_at, complained_at, opened_at, clicked_at, delivery_delayed_at, failed_at, bounce_type')
       .eq('channel', 'email')
       .eq('recipient', cleanEmail)
       .order('created_at', { ascending: false })
@@ -456,12 +456,42 @@ export async function fetchLeadEmailHealth(
         };
       }
 
-      const hasBounce = recentOutbound.some((m) => m.bounced_at || m.status === 'bounced');
-      if (hasBounce) {
+      const hasHardBounce = recentOutbound.some((m) => (m.bounced_at || m.status === 'bounced') && m.bounce_type !== 'soft_bounce');
+      if (hasHardBounce) {
         return {
           status: 'falha',
           label: 'Falha de entrega',
           badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+        };
+      }
+
+      const hasSoftBounce = recentOutbound.some((m) => m.bounce_type === 'soft_bounce');
+      if (hasSoftBounce) {
+        return {
+          status: 'falha',
+          label: 'Falha temporária',
+          badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+          details: 'Falha temporária de entrega (soft bounce), o provedor tentará novamente',
+        };
+      }
+
+      const hasClick = recentOutbound.some((m) => m.clicked_at || m.status === 'clicked');
+      if (hasClick) {
+        return {
+          status: 'saudavel',
+          label: 'Clique detectado',
+          badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+          details: 'Engajamento comprovado: clique detectado em link do e-mail',
+        };
+      }
+
+      const hasOpen = recentOutbound.some((m) => m.opened_at || m.status === 'opened');
+      if (hasOpen) {
+        return {
+          status: 'saudavel',
+          label: 'Abertura detectada',
+          badgeClass: 'bg-sky-50 text-sky-700 border-sky-200',
+          details: 'Abertura detectada no e-mail (sujeito a proxies/scanners)',
         };
       }
 
@@ -472,6 +502,16 @@ export async function fetchLeadEmailHealth(
           label: 'E-mail saudável',
           badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
           details: 'Histórico factual de entrega comprovada',
+        };
+      }
+
+      const hasDelayed = recentOutbound.some((m) => m.delivery_delayed_at || m.status === 'delayed');
+      if (hasDelayed) {
+        return {
+          status: 'falha',
+          label: 'Entrega adiada',
+          badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+          details: 'Entrega temporariamente adiada pelo servidor do destinatário',
         };
       }
     }
@@ -519,6 +559,9 @@ export interface ResolveDeliverabilityParams {
     bounced_at?: string | null;
     complained_at?: string | null;
     failed_at?: string | null;
+    opened_at?: string | null;
+    clicked_at?: string | null;
+    delivery_delayed_at?: string | null;
   }> | null;
 }
 
@@ -599,12 +642,22 @@ export function resolveLeadDeliverabilityHealth(
     };
   }
 
-  // 6. Saudável: verified delivered event and no negative signals
-  if (hasDelivered) {
+  // 6. Saudável: verified delivered event or positive engagement and no negative signals
+  const hasClick = messages.some((m) => (m as any).clicked_at || m.status === 'clicked');
+  const hasOpen = messages.some((m) => (m as any).opened_at || m.status === 'opened');
+  const isDeliveredOrEngaged = hasDelivered || hasClick || hasOpen;
+
+  if (isDeliveredOrEngaged) {
+    let desc = 'Últimos envios com entrega confirmada.';
+    if (hasClick) {
+      desc = 'Clique detectado em link do e-mail.';
+    } else if (hasOpen) {
+      desc = 'Abertura detectada no e-mail (sujeito a proxies/scanners).';
+    }
     return {
       status: 'saudavel',
       label: 'Saudável',
-      description: 'Últimos envios com entrega confirmada.',
+      description: desc,
       dotColor: 'bg-emerald-500',
       badgeClass: 'bg-emerald-50/90 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100/80',
     };
@@ -667,7 +720,7 @@ export async function batchFetchPipelineDeliverabilityHealth(
     if (leadIds.length > 0) {
       const { data: messages } = await client
         .from('outbound_messages')
-        .select('lead_id, status, delivered_at, bounced_at, complained_at, failed_at, created_at')
+        .select('lead_id, status, delivered_at, bounced_at, complained_at, failed_at, opened_at, clicked_at, created_at')
         .eq('channel', 'email')
         .in('lead_id', leadIds)
         .order('created_at', { ascending: false });

@@ -1,4 +1,4 @@
-import { Activity, Phone, MessageSquare, Mail, CalendarCheck, CheckCircle2, RefreshCw, Clock, AlertCircle } from 'lucide-react';
+import { Activity, Phone, MessageSquare, Mail, CalendarCheck, CheckCircle2, CheckCheck, RefreshCw, Clock, AlertCircle, AlertTriangle, Eye, MousePointerClick } from 'lucide-react';
 import type { LeadActivity } from '../../../types';
 import { WhatsAppIcon } from '../../../components/icons/WhatsAppIcon';
 
@@ -57,6 +57,26 @@ export function getActivityLabel(activityType: string): string {
   switch (activityType) {
     case 'email_dispatched':
       return 'Envio de email iniciado';
+    case 'email_sent':
+      return 'E-mail enviado';
+    case 'email_delivered':
+      return 'E-mail entregue';
+    case 'email_opened':
+      return 'Abertura detectada';
+    case 'email_clicked':
+      return 'Clique detectado';
+    case 'email_delivery_delayed':
+      return 'Entrega adiada temporariamente';
+    case 'email_bounced':
+      return 'E-mail retornado (Bounce)';
+    case 'email_complained':
+      return 'E-mail marcado como spam';
+    case 'email_failed':
+      return 'Falha no envio de e-mail';
+    case 'email_suppressed':
+      return 'E-mail suprimido pelo provedor';
+    case 'email_unsubscribed':
+      return 'Descadastro solicitado';
     case 'sms_dispatched':
       return 'Envio de SMS iniciado';
     case 'call_manual_attempt':
@@ -138,10 +158,25 @@ function getActivityIcon(type: string) {
       return <Phone className="h-3 w-3 text-[#449bd5]" />;
     case 'whatsapp_contact_attempt':
       return <WhatsAppIcon className="h-3 w-3 text-emerald-600" />;
+    case 'email_opened':
+      return <Eye className="h-3 w-3 text-sky-500" />;
+    case 'email_clicked':
+      return <MousePointerClick className="h-3 w-3 text-indigo-600" />;
+    case 'email_delivered':
+      return <CheckCheck className="h-3 w-3 text-emerald-600" />;
     case 'email_dispatched':
+    case 'email_sent':
     case 'email_manual_attempt':
     case 'email_reply_received':
       return <Mail className="h-3 w-3 text-indigo-500" />;
+    case 'email_bounced':
+    case 'email_failed':
+      return <AlertTriangle className="h-3 w-3 text-rose-500" />;
+    case 'email_complained':
+    case 'email_suppressed':
+      return <AlertCircle className="h-3 w-3 text-rose-600" />;
+    case 'email_delivery_delayed':
+      return <Clock className="h-3 w-3 text-amber-500" />;
     case 'sms_dispatched':
     case 'sms_manual_attempt':
     case 'sms_reply_received':

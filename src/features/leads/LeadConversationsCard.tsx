@@ -15,6 +15,8 @@ import {
   Reply,
   Paperclip,
   X,
+  Eye,
+  MousePointerClick,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { sanitizeHtml } from '../../utils/sanitize-html';
@@ -31,6 +33,9 @@ export interface LeadConversationsCardProps {
 export type TimelineDeliveryStatus =
   | 'sent'
   | 'delivered'
+  | 'opened'
+  | 'clicked'
+  | 'delayed'
   | 'received'
   | 'bounced'
   | 'complained'
@@ -53,6 +58,12 @@ export interface LeadTimelineMessage {
   statusLabel: string;
   timestamp: string;
   readAt?: string | null;
+  openedAt?: string | null;
+  clickedAt?: string | null;
+  deliveredAt?: string | null;
+  openCount?: number;
+  clickCount?: number;
+  lastClickedUrl?: string | null;
   attachments?: Array<{ filename: string; mime_type?: string; size?: number }>;
   isManualReply?: boolean;
 }
@@ -84,10 +95,16 @@ function resolveDeliveryStatus(
   }
 
   switch (status) {
+    case 'clicked':
+      return { status: 'clicked', label: 'Clique detectado' };
+    case 'opened':
+      return { status: 'opened', label: 'Abertura detectada' };
     case 'delivered':
       return { status: 'delivered', label: 'Entregue' };
     case 'sent':
       return { status: 'sent', label: 'Enviado' };
+    case 'delayed':
+      return { status: 'delayed', label: 'Entrega adiada' };
     case 'bounced':
     case 'failed':
       return { status: 'bounced', label: 'Falha de entrega' };
@@ -219,7 +236,7 @@ export function LeadConversationsCard({
       const { data: outbounds, error: outErr } = await supabase
         .from('outbound_messages')
         .select(
-          'id, lead_id, conversation_id, channel, provider, recipient, template_key, subject_snapshot, body_snapshot, status, provider_status, provider_message_id, sent_at, delivered_at, bounced_at, complained_at, failed_at, is_manual_reply, created_at'
+          'id, lead_id, conversation_id, channel, provider, recipient, template_key, subject_snapshot, body_snapshot, status, provider_status, provider_message_id, sent_at, delivered_at, bounced_at, complained_at, failed_at, opened_at, clicked_at, last_clicked_url, open_count, click_count, is_manual_reply, created_at'
         )
         .eq('lead_id', lead.id)
         .order('created_at', { ascending: true });
@@ -272,6 +289,12 @@ export function LeadConversationsCard({
           status,
           statusLabel: label,
           timestamp: out.sent_at || out.created_at,
+          openedAt: out.opened_at || null,
+          clickedAt: out.clicked_at || null,
+          deliveredAt: out.delivered_at || null,
+          lastClickedUrl: out.last_clicked_url || null,
+          openCount: out.open_count || 0,
+          clickCount: out.click_count || 0,
           isManualReply: Boolean(out.is_manual_reply),
         });
       });
@@ -449,6 +472,39 @@ export function LeadConversationsCard({
     }
 
     switch (msg.status) {
+      case 'clicked':
+        return (
+          <span
+            data-testid={`delivery-status-${msg.id}`}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/80"
+            title="Clique detectado em link do e-mail"
+          >
+            <MousePointerClick className="w-3 h-3 text-indigo-600" />
+            <span>Clique detectado</span>
+          </span>
+        );
+      case 'opened':
+        return (
+          <span
+            data-testid={`delivery-status-${msg.id}`}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200/80"
+            title="Abertura detectada no e-mail (sujeito a proxies/scanners)"
+          >
+            <Eye className="w-3 h-3 text-sky-600" />
+            <span>Abertura detectada</span>
+          </span>
+        );
+      case 'delayed':
+        return (
+          <span
+            data-testid={`delivery-status-${msg.id}`}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/80"
+            title="Entrega adiada temporariamente pelo servidor do destinatário"
+          >
+            <Clock className="w-3 h-3 text-amber-600" />
+            <span>Entrega adiada</span>
+          </span>
+        );
       case 'delivered':
         return (
           <span
@@ -784,6 +840,36 @@ export function LeadConversationsCard({
                                   {att.filename} {att.size ? `(${Math.round(att.size / 1024)} KB)` : ''}
                                 </span>
                               ))}
+                            </div>
+                          )}
+
+                          {/* Engagement & Granular Delivery Info (Clicks, Opens, Delivery timestamp) */}
+                          {(msg.openedAt || msg.clickedAt || (msg.deliveredAt && msg.status !== 'delivered')) && (
+                            <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-500">
+                              {msg.deliveredAt && msg.status !== 'delivered' && (
+                                <span className="inline-flex items-center gap-1 text-slate-500">
+                                  <CheckCheck className="w-3 h-3 text-emerald-600" />
+                                  Entregue às {formatMessageDateTime(msg.deliveredAt).timeStr}
+                                </span>
+                              )}
+                              {msg.openedAt && (
+                                <span
+                                  className="inline-flex items-center gap-1 text-sky-700 bg-sky-50 border border-sky-200/80 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                  title="Abertura detectada no e-mail (sujeito a proxies/scanners)"
+                                >
+                                  <Eye className="w-3 h-3 text-sky-600" />
+                                  Abertura detectada ({formatMessageDateTime(msg.openedAt).timeStr})
+                                </span>
+                              )}
+                              {msg.clickedAt && (
+                                <span
+                                  className="inline-flex items-center gap-1 text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                  title={msg.lastClickedUrl ? `Link clicado: ${msg.lastClickedUrl}` : 'Clique registrado'}
+                                >
+                                  <MousePointerClick className="w-3 h-3 text-indigo-600" />
+                                  Clique detectado ({formatMessageDateTime(msg.clickedAt).timeStr})
+                                </span>
+                              )}
                             </div>
                           )}
 

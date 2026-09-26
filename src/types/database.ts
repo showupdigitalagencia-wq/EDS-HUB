@@ -6,7 +6,7 @@ export type LeadSource = 'meta' | 'google' | 'manual' | 'test' | 'form';
 export type ContactPreference = 'email' | 'sms' | 'call' | 'whatsapp' | null;
 export type MessageChannel = 'email' | 'sms' | 'call' | 'whatsapp';
 export type MessageProvider = 'resend' | 'twilio';
-export type MessageStatus = 'queued' | 'pending' | 'sent' | 'delivered' | 'failed' | 'bounced' | 'complained';
+export type MessageStatus = 'queued' | 'pending' | 'sent' | 'delivered' | 'failed' | 'bounced' | 'complained' | 'opened' | 'clicked' | 'delayed';
 export type IntakeStatus = 'received' | 'processing' | 'processed' | 'failed' | 'duplicate';
 export type TaskType = 'call' | 'data_review' | 'general' | 'follow_up' | 'payment';
 export type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
@@ -72,7 +72,17 @@ export type ActivityType =
   | 'whatsapp_contact_confirmed'
   | 'incomplete_enrollment_captured'
   | 'incomplete_enrollment_recovered'
-  | 'incomplete_enrollment_dismissed';
+  | 'incomplete_enrollment_dismissed'
+  | 'email_sent'
+  | 'email_delivered'
+  | 'email_opened'
+  | 'email_clicked'
+  | 'email_delivery_delayed'
+  | 'email_bounced'
+  | 'email_complained'
+  | 'email_failed'
+  | 'email_suppressed'
+  | 'email_unsubscribed';
 
 export type IncompleteEnrollmentProcessingStatus = 'processed' | 'conflict';
 export type IncompleteEnrollmentStatus = 'needs_followup' | 'form_completed' | 'recovered' | 'dismissed';
@@ -248,6 +258,15 @@ export interface OutboundMessage {
   complained_at?: string | null;
   failed_at?: string | null;
   provider_status?: string | null;
+  opened_at?: string | null;
+  last_opened_at?: string | null;
+  open_count?: number;
+  clicked_at?: string | null;
+  last_clicked_at?: string | null;
+  click_count?: number;
+  last_clicked_url?: string | null;
+  delivery_delayed_at?: string | null;
+  bounce_type?: string | null;
   automation_run_id?: string | null;
   automation_run_step_id?: string | null;
   conversation_id?: string | null;
@@ -468,6 +487,14 @@ export interface CampaignRecipient {
   bounced_at?: string | null;
   complained_at?: string | null;
   failed_at?: string | null;
+  opened_at?: string | null;
+  last_opened_at?: string | null;
+  open_count?: number;
+  clicked_at?: string | null;
+  last_clicked_at?: string | null;
+  click_count?: number;
+  last_clicked_url?: string | null;
+  bounce_type?: string | null;
   error_code: string | null;
   error_message: string | null;
   snapshot_stage_id?: string | null;
