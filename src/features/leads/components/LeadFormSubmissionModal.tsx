@@ -23,6 +23,9 @@ export interface LeadFormSubmissionItem {
   source_raw?: string;
   form_name: string;
   submitted_at: string;
+  recovery_state?: 'complete' | 'partially_recovered' | string;
+  notes?: string | null;
+  synchronized_via?: string | null;
   fields: FormSubmissionField[];
 }
 
@@ -31,6 +34,32 @@ interface LeadFormSubmissionModalProps {
   onClose: () => void;
   leadId: string;
   leadName?: string;
+}
+
+const PROHIBITED_KEYS = [
+  'token',
+  'secret',
+  'api_key',
+  'apikey',
+  'cookie',
+  'session',
+  'password',
+  'authorization',
+  'csrf',
+  'medical_conditions',
+  'dietary',
+  'passport',
+  'dental_license',
+  'signature',
+];
+
+function isSafeField(field: FormSubmissionField): boolean {
+  if (!field || !field.label) return false;
+  const l = field.label.toLowerCase();
+  for (const p of PROHIBITED_KEYS) {
+    if (l.includes(p)) return false;
+  }
+  return true;
 }
 
 export function LeadFormSubmissionModal({
@@ -108,15 +137,29 @@ export function LeadFormSubmissionModal({
   };
 
   const getSourceBadge = (src: string) => {
-    const s = src.toLowerCase();
-    if (s.includes('meta') || s.includes('facebook') || s.includes('instagram')) {
+    const s = (src || '').toLowerCase();
+    if (s.includes('instagram')) {
+      return {
+        label: 'Instagram Lead Ads',
+        classes: 'bg-pink-50 text-pink-700 border-pink-200',
+        icon: <Share2 className="w-3.5 h-3.5 text-pink-600" />,
+      };
+    }
+    if (s.includes('facebook')) {
+      return {
+        label: 'Facebook Lead Ads',
+        classes: 'bg-blue-50 text-blue-700 border-blue-200',
+        icon: <Share2 className="w-3.5 h-3.5 text-blue-600" />,
+      };
+    }
+    if (s.includes('meta')) {
       return {
         label: 'Meta Lead Ads',
         classes: 'bg-blue-50 text-blue-700 border-blue-200',
         icon: <Share2 className="w-3.5 h-3.5 text-blue-600" />,
       };
     }
-    if (s.includes('site') || s.includes('form') || s.includes('website')) {
+    if (s.includes('site') || s.includes('form') || s.includes('website') || s.includes('register')) {
       return {
         label: 'Site',
         classes: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -131,7 +174,7 @@ export function LeadFormSubmissionModal({
       };
     }
     return {
-      label: src,
+      label: src || 'Formulário',
       classes: 'bg-slate-50 text-slate-700 border-slate-200',
       icon: <FileText className="w-3.5 h-3.5 text-slate-500" />,
     };
@@ -214,7 +257,7 @@ export function LeadFormSubmissionModal({
                             : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
                         }`}
                       >
-                        Envio #{submissions.length - idx} {idx === 0 ? '(Mais recente)' : ''} •{' '}
+                        Formulário {idx + 1} (Envio #{submissions.length - idx}) {idx === 0 ? '(Mais recente)' : ''} •{' '}
                         {formatDateTime(sub.submitted_at).split(' ')[0]}
                       </button>
                     ))}
@@ -230,7 +273,7 @@ export function LeadFormSubmissionModal({
                       <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
                         Origem
                       </span>
-                      <div className="mt-1 flex items-center gap-1.5">
+                      <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                         {(() => {
                           const badge = getSourceBadge(currentSubmission.source);
                           return (
@@ -243,6 +286,11 @@ export function LeadFormSubmissionModal({
                           );
                         })()}
                       </div>
+                      {currentSubmission.synchronized_via && (
+                        <span className="text-[10px] text-slate-500 block mt-1">
+                          Sincronizado via: <strong className="font-semibold text-slate-700">{currentSubmission.synchronized_via}</strong>
+                        </span>
+                      )}
                     </div>
 
                     <div>
@@ -265,6 +313,19 @@ export function LeadFormSubmissionModal({
                     </div>
                   </div>
 
+                  {/* Partial Recovery Notice if applicable */}
+                  {(currentSubmission.recovery_state === 'partially_recovered' || currentSubmission.notes) && (
+                    <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200/80 text-xs text-amber-800 flex items-start gap-2.5">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                      <div>
+                        <p className="font-semibold">Formulário histórico parcialmente recuperado</p>
+                        <p className="mt-0.5 text-[11px] text-amber-700">
+                          {currentSubmission.notes || 'Algumas respostas originais não estão mais disponíveis na fonte.'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Submitted Fields */}
                   <div className="space-y-2">
                     <span className="text-xs font-bold text-slate-700 font-heading uppercase tracking-wider block">
@@ -272,36 +333,38 @@ export function LeadFormSubmissionModal({
                     </span>
 
                     <div className="space-y-2 divide-y divide-slate-100 bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-2xs">
-                      {currentSubmission.fields.map((field, fIdx) => (
-                        <div
-                          key={fIdx}
-                          className="p-3 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <span className="text-[11px] font-semibold text-slate-400 block">
-                              {field.label}
-                            </span>
-                            <span className="text-xs font-bold text-slate-800 break-words mt-0.5 block select-text font-sans">
-                              {field.value || <span className="text-slate-400 font-normal italic">Não informado</span>}
-                            </span>
-                          </div>
+                      {currentSubmission.fields
+                        .filter(isSafeField)
+                        .map((field, fIdx) => (
+                          <div
+                            key={fIdx}
+                            className="p-3 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <span className="text-[11px] font-semibold text-slate-400 block">
+                                {field.label}
+                              </span>
+                              <span className="text-xs font-bold text-slate-800 break-words mt-0.5 block select-text font-sans">
+                                {field.value || <span className="text-slate-400 font-normal italic">Não informado</span>}
+                              </span>
+                            </div>
 
-                          {field.value && (
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(`${selectedIndex}-${fIdx}`, field.value)}
-                              className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 transition-colors shrink-0"
-                              title="Copiar valor"
-                            >
-                              {copiedKey === `${selectedIndex}-${fIdx}` ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      ))}
+                            {field.value && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(`${selectedIndex}-${fIdx}`, field.value)}
+                                className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 transition-colors shrink-0"
+                                title="Copiar valor"
+                              >
+                                {copiedKey === `${selectedIndex}-${fIdx}` ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        ))}
                     </div>
                   </div>
                 </div>
@@ -313,7 +376,7 @@ export function LeadFormSubmissionModal({
         {/* Footer */}
         <div className="px-5 py-3 border-t border-slate-200 bg-slate-50/60 flex items-center justify-between text-xs">
           <span className="text-[11px] text-slate-400">
-            {submissions.length > 0 ? `${submissions.length} envio(s) registrado(s)` : ''}
+            {submissions.length > 0 ? `${submissions.length} formulário(s) registrado(s)` : ''}
           </span>
           <button
             type="button"

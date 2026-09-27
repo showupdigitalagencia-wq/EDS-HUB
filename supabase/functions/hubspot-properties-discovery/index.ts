@@ -112,6 +112,327 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (body.action === 'audit_hubspot_contact') {
+      const contactId = body.contact_id || '558246046440';
+      const cachedPropsRes = await db.from('integration_property_cache').select('property_name').eq('integration', 'hubspot');
+      const propNames = cachedPropsRes.data?.map((p: any) => p.property_name) || [];
+      const extraProps = [
+        'hs_analytics_source', 'hs_analytics_source_data_1', 'hs_analytics_source_data_2',
+        'recent_conversion_event_name', 'recent_conversion_date', 'first_conversion_event_name', 'first_conversion_date',
+        'hs_lead_status', 'curso_de_interesse', 'curso_de_interesse_2', 'curso_de_interesse_3',
+        'contact_preference', 'preferencia_de_contato', 'status_de_qualificacao', 'firstname', 'lastname', 'email', 'phone', 'mobilephone',
+        'hs_object_id', 'createdate', 'lastmodifieddate', 'hs_all_contact_vids', 'hs_facebook_ad_id', 'hs_facebook_adset_id', 'hs_facebook_campaign_id',
+        'hs_facebook_click_id', 'hs_google_click_id', 'hs_analytics_first_url', 'hs_analytics_last_url', 'hs_analytics_num_page_views',
+        'hs_analytics_num_visits', 'hs_analytics_average_page_views', 'hs_email_domain', 'hs_marketable_status',
+        'lead_source', 'source', 'lead_form', 'form_name', 'form_id', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'
+      ];
+      const allPropsSet = new Set([...propNames, ...extraProps]);
+      const propQuery = Array.from(allPropsSet).join(',');
+
+      let crmContact: any = null;
+      let crmContactErr: any = null;
+      try {
+        const crmRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=${propQuery}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (crmRes.ok) {
+          crmContact = await crmRes.json();
+        } else {
+          crmContactErr = await crmRes.text();
+        }
+      } catch (e: any) {
+        crmContactErr = e.message;
+      }
+
+      let classicProfile: any = null;
+      let classicErr: any = null;
+      try {
+        const classicRes = await fetch(`https://api.hubapi.com/contacts/v1/contact/vid/${contactId}/profile`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (classicRes.ok) {
+          classicProfile = await classicRes.json();
+        } else {
+          classicErr = await classicRes.text();
+        }
+      } catch (e: any) {
+        classicErr = e.message;
+      }
+
+      const populatedProperties: Record<string, any> = {};
+      if (crmContact?.properties) {
+        for (const [k, v] of Object.entries(crmContact.properties)) {
+          if (v !== null && v !== '' && v !== undefined) {
+            populatedProperties[k] = v;
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          contactId,
+          crmContactErr,
+          classicErr,
+          formSubmissions: classicProfile?.['form-submissions'] || [],
+          populatedProperties,
+          identityProfiles: classicProfile?.['identity-profiles'] || [],
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (body.action === 'backfill_forms') {
+      const mode = body.mode === 'execute' ? 'execute' : 'dry_run';
+      const targetLeadId = body.lead_id || null;
+      const targetLimit = Math.min(Math.max(Number(body.limit) || 100, 1), 500);
+
+      let leadsToProcess: any[] = [];
+      if (targetLeadId) {
+        const { data: rawLead, error: leadErr } = await db
+          .from('leads')
+          .select('id, first_name, last_name, email, phone_e164, phone_raw, source, source_detail, course_interest, hubspot_contact_id, source_created_at, created_at')
+          .eq('id', targetLeadId)
+          .single();
+        if (leadErr) throw leadErr;
+        if (rawLead) leadsToProcess = [rawLead];
+      } else {
+        const { data: unbackfilledLeads, error: rpcErr } = await db.rpc('get_unbackfilled_form_leads', {
+          p_limit: targetLimit,
+        });
+        if (rpcErr) throw rpcErr;
+        leadsToProcess = unbackfilledLeads || [];
+      }
+
+      const propList = [
+        'firstname', 'lastname', 'email', 'confirm_your_email', 'please_confirm_your_email_address',
+        'phone', 'mobilephone', 'curso_de_interesse', 'curso_de_interesse_2', 'curso_de_interesse_3',
+        'data_do_curso_de_interesse', 'origem_do_lead', 'what_is_your_preferred_contact_method',
+        'what_is_your_preferred_method_of_contact', 'what_is_your_current_license_status',
+        'when_would_you_like_to_attend_our_intensive_course', 'education_level',
+        'hs_analytics_source', 'hs_analytics_source_data_1', 'hs_analytics_source_data_2',
+        'first_conversion_event_name', 'first_conversion_date', 'recent_conversion_event_name', 'recent_conversion_date',
+        'hs_calculated_form_submissions', 'hs_object_source_detail_1', 'hs_object_source_id',
+        'createdate', 'lastmodifieddate'
+      ];
+
+      let totalAnalyzed = 0;
+      let totalRecovered = 0;
+      let totalUnrecoverable = 0;
+      const recoveryResults: any[] = [];
+      const submissionsToUpsert: any[] = [];
+
+      // Process leads in batches of 100 via HubSpot Batch Read API
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < leadsToProcess.length; i += BATCH_SIZE) {
+        const chunk = leadsToProcess.slice(i, i + BATCH_SIZE);
+        const contactInputs = chunk.map(l => ({ id: String(l.hubspot_contact_id) }));
+
+        let batchResultsMap = new Map<string, any>();
+        try {
+          const batchRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/batch/read`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              properties: propList,
+              inputs: contactInputs,
+            }),
+          });
+
+          if (batchRes.ok) {
+            const batchJson = await batchRes.json();
+            for (const item of (batchJson.results || [])) {
+              batchResultsMap.set(String(item.id), item.properties || {});
+            }
+          } else {
+            console.error('Batch read error:', await batchRes.text());
+          }
+        } catch (bErr) {
+          console.error('Batch fetch error:', bErr);
+        }
+
+        for (const lead of chunk) {
+          totalAnalyzed++;
+          const contactId = String(lead.hubspot_contact_id);
+          const props = batchResultsMap.get(contactId);
+
+          if (!props) {
+            totalUnrecoverable++;
+            recoveryResults.push({ lead_id: lead.id, contactId, name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(), status: 'unrecoverable', reason: 'not_found_in_hubspot' });
+            continue;
+          }
+
+          // Check if contact has form submissions or conversion event
+          const hasCalculated = Boolean(props.hs_calculated_form_submissions);
+          const hasConversion = Boolean(props.first_conversion_event_name || props.recent_conversion_event_name || props.hs_object_source_detail_1);
+          const isMetaOrFormOrigin = lead.source === 'meta' || lead.source === 'form' || Boolean(props.origem_do_lead);
+
+          if (!hasCalculated && !hasConversion && !isMetaOrFormOrigin) {
+            totalUnrecoverable++;
+            recoveryResults.push({ lead_id: lead.id, contactId, name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(), status: 'unrecoverable', reason: 'no_form_or_conversion' });
+            continue;
+          }
+
+          // Multiple submissions detection:
+          // If hs_calculated_form_submissions has multiple entries separated by semicolon (e.g. "form1::ts1;form2::ts2")
+          const subEntries: { formId?: string; ts?: number; title?: string }[] = [];
+          if (hasCalculated && String(props.hs_calculated_form_submissions).includes(';')) {
+            const parts = String(props.hs_calculated_form_submissions).split(';');
+            for (const part of parts) {
+              const [fId, fTs] = part.split('::');
+              subEntries.push({
+                formId: fId || undefined,
+                ts: fTs ? Number(fTs) : undefined,
+                title: props.recent_conversion_event_name || props.first_conversion_event_name || props.hs_object_source_detail_1,
+              });
+            }
+          } else {
+            subEntries.push({
+              formId: props.hs_object_source_id || undefined,
+              ts: props.first_conversion_date ? Date.parse(props.first_conversion_date) : props.createdate ? Date.parse(props.createdate) : undefined,
+              title: props.first_conversion_event_name || props.recent_conversion_event_name || props.hs_object_source_detail_1 || lead.course_interest,
+            });
+          }
+
+          const leadRecoveries: any[] = [];
+          for (let sIdx = 0; sIdx < subEntries.length; sIdx++) {
+            const sub = subEntries[sIdx];
+            const rawTitle = sub.title || props.first_conversion_event_name || props.recent_conversion_event_name || lead.course_interest || 'Inscrição';
+            const cleanFormName = String(rawTitle).replace(/^(Facebook Lead Ads:\s*|Register For Our Course [—–-]\s*Expert Dental Solutions:\s*)/i, '').trim();
+
+            let sourceLabel = 'Meta Lead Ads';
+            const leadOrigin = (props.origem_do_lead || '').toLowerCase();
+            const source1 = (props.hs_analytics_source_data_1 || '').toLowerCase();
+            const sourceDetail = (lead.source_detail || '').toLowerCase();
+
+            if (leadOrigin.includes('instagram') || sourceDetail.includes('instagram')) {
+              sourceLabel = 'Instagram Lead Ads';
+            } else if (leadOrigin.includes('facebook') || source1.includes('facebook') || sourceDetail.includes('facebook')) {
+              sourceLabel = 'Facebook Lead Ads';
+            } else if (source1.includes('expdentalsolutions.com') || lead.source === 'form' || sourceDetail.includes('website')) {
+              sourceLabel = 'Site';
+            }
+
+            const subTimestamp = sub.ts ? new Date(sub.ts).toISOString() : (props.first_conversion_date || props.createdate || lead.source_created_at || lead.created_at);
+            const subId = sub.formId ? (sIdx > 0 ? `${sub.formId}_${sIdx}` : sub.formId) : (sIdx > 0 ? `sub_${sIdx}` : 'initial');
+            const idempotencyKey = `hubspot_form:${contactId}:${subId}`;
+
+            const submittedData: Record<string, any> = {
+              first_name: props.firstname || lead.first_name || null,
+              last_name: props.lastname || lead.last_name || null,
+              email: props.email || lead.email || null,
+              confirm_email: props.confirm_your_email || props.please_confirm_your_email_address || null,
+              phone: props.phone || props.mobilephone || lead.phone_e164 || lead.phone_raw || null,
+              course_interest: props.curso_de_interesse || lead.course_interest || null,
+              curso_de_interesse_2: props.curso_de_interesse_2 || null,
+              curso_de_interesse_3: props.curso_de_interesse_3 || null,
+              course_session: props.data_do_curso_de_interesse || null,
+              contact_preference: props.what_is_your_preferred_contact_method || props.what_is_your_preferred_method_of_contact || lead.contact_preference || null,
+              what_is_your_preferred_contact_method: props.what_is_your_preferred_contact_method || null,
+              what_is_your_current_license_status: props.what_is_your_current_license_status || null,
+              when_would_you_like_to_attend_our_intensive_course: props.when_would_you_like_to_attend_our_intensive_course || null,
+              education_level: props.education_level || null,
+              campaign: props.hs_analytics_source_data_2 || props.utm_campaign || null,
+              utm_source: props.hs_analytics_source_data_1 || props.utm_source || null,
+              source_platform: props.origem_do_lead || null,
+              form_name: cleanFormName,
+              synchronized_via: 'HubSpot',
+            };
+
+            const cleanSubmittedData: Record<string, any> = {};
+            for (const [k, v] of Object.entries(submittedData)) {
+              if (v !== null && v !== undefined && v !== '') {
+                cleanSubmittedData[k] = v;
+              }
+            }
+
+            const subRecord = {
+              lead_id: lead.id,
+              form_id: null,
+              form_name: cleanFormName,
+              source: sourceLabel,
+              source_detail: props.origem_do_lead || lead.source_detail || 'hubspot_historical',
+              external_form_id: sub.formId || null,
+              external_submission_id: String(subId),
+              email: props.email || lead.email || null,
+              phone_e164: lead.phone_e164 || props.phone || null,
+              contact_preference: props.what_is_your_preferred_contact_method || lead.contact_preference || null,
+              course_interest: props.curso_de_interesse || lead.course_interest || null,
+              submitted_data: cleanSubmittedData,
+              processing_status: 'historical_backfill',
+              recovery_state: 'complete',
+              idempotency_key: idempotencyKey,
+              submitted_at: subTimestamp,
+            };
+
+            submissionsToUpsert.push(subRecord);
+
+            leadRecoveries.push({
+              form_name: cleanFormName,
+              source: sourceLabel,
+              submitted_at: subTimestamp,
+              idempotency_key: idempotencyKey,
+              fields_count: Object.keys(cleanSubmittedData).length,
+            });
+          }
+
+          totalRecovered++;
+          recoveryResults.push({
+            lead_id: lead.id,
+            contactId,
+            name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+            submissions_count: leadRecoveries.length,
+            submissions: leadRecoveries,
+            status: 'recovered',
+          });
+        }
+      }
+
+      let upsertedCount = 0;
+      let lastUpsertError: string | null = null;
+      if (mode === 'execute' && submissionsToUpsert.length > 0) {
+        // Deduplicate submissions by idempotency_key to prevent PostgreSQL ON CONFLICT row affect error
+        const dedupedMap = new Map<string, any>();
+        for (const sub of submissionsToUpsert) {
+          dedupedMap.set(sub.idempotency_key, sub);
+        }
+        const dedupedList = Array.from(dedupedMap.values());
+
+        // Upsert in batches of 100
+        for (let i = 0; i < dedupedList.length; i += 100) {
+          const slice = dedupedList.slice(i, i + 100);
+          const { error: insErr } = await db.from('form_submissions').upsert(slice, {
+            onConflict: 'idempotency_key',
+          });
+          if (insErr) {
+            console.error('Error upserting backfill submissions slice:', insErr);
+            lastUpsertError = insErr.message || JSON.stringify(insErr);
+          } else {
+            upsertedCount += slice.length;
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          mode,
+          total_analyzed: totalAnalyzed,
+          total_recovered: totalRecovered,
+          total_unrecoverable: totalUnrecoverable,
+          submissions_to_upsert: submissionsToUpsert.length,
+          upserted_count: upsertedCount,
+          last_upsert_error: lastUpsertError,
+          results_count: recoveryResults.length,
+          sample_results: recoveryResults.slice(0, 10),
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (body.action === 'investigate_incident') {
       // 1. Check forms
       const { data: forms } = await db.from('forms').select('*');

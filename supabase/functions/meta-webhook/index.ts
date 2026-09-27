@@ -625,6 +625,60 @@ Deno.serve(async (req) => {
       })
       .eq('id', intakeEventId);
 
+    // --- Persist Canonical Form Submission (Continuous Ingestion Traceability) ---
+    const dynamicSubmittedData: Record<string, any> = {};
+    if (graphLead && Array.isArray(graphLead.field_data)) {
+      for (const field of graphLead.field_data) {
+        if (field.name && Array.isArray(field.values) && field.values.length > 0) {
+          const val = field.values.length === 1 ? field.values[0] : field.values.join(', ');
+          dynamicSubmittedData[field.name] = val;
+        }
+      }
+    }
+    if (adId) dynamicSubmittedData.ad_id = adId;
+    if (adgroupId) dynamicSubmittedData.adset_id = adgroupId;
+    if (pageId) dynamicSubmittedData.page_id = pageId;
+    if (formId) dynamicSubmittedData.form_id = formId;
+    if (platformRaw) dynamicSubmittedData.platform = platformRaw;
+
+    const sourceLabel = platformRaw === 'ig'
+      ? 'Instagram Lead Ads'
+      : platformRaw === 'fb'
+      ? 'Facebook Lead Ads'
+      : 'Meta Lead Ads';
+
+    const formDisplayName = resolvedCourse?.courseName || (formId ? `Meta Form ${formId}` : 'Meta Lead Form');
+    const formSubmissionIdempotency = `meta:form_sub:${leadgenId}`;
+
+    const { error: formSubErr } = await db
+      .from('form_submissions')
+      .upsert({
+        lead_id: targetLeadId,
+        intake_event_id: intakeEventId,
+        form_name: formDisplayName,
+        source: sourceLabel,
+        external_form_id: formId,
+        external_submission_id: leadgenId,
+        submitted_at: graphLead.created_time || new Date().toISOString(),
+        submitted_data: dynamicSubmittedData,
+        email: cleanEmail,
+        phone_e164: phoneE164,
+        contact_preference: metaContactPreference,
+        course_interest: resolvedCourse?.courseName || null,
+        source_detail: sourceDetail,
+        processing_status: 'completed',
+        recovery_state: 'complete',
+        idempotency_key: formSubmissionIdempotency,
+      }, {
+        onConflict: 'idempotency_key',
+      });
+
+    if (formSubErr) {
+      console.error('[meta-webhook] Failed to upsert form_submissions record:', formSubErr);
+    } else {
+      console.log(`[meta-webhook] Form submission persisted immediately for lead ${targetLeadId}`);
+    }
+
     // Operational log: strictly no secrets, no raw passwords/tokens
     console.log(`[meta-webhook] Lead processed successfully: lead_id=${targetLeadId} is_new=${isNewLead} stage=Novo Lead`);
 
