@@ -307,3 +307,119 @@ export function resolvePrioritizedCourseInterests(
 
   return results.slice(0, 3);
 }
+
+/**
+ * Resolves a raw course signal (e.g. "Zygomatic Implant Training • Nov 2026 #1", "IDIT-01")
+ * to its canonical short business label (e.g. "Zygomatic", "Intensive", "Advanced", etc.).
+ * Strips date/session/number noise and maps to the official course taxonomy.
+ */
+export function getCanonicalCourseShortName(rawSignal: string | null | undefined): string | null {
+  if (!rawSignal || typeof rawSignal !== 'string') return null;
+  const trimmed = rawSignal.trim();
+  if (!trimmed) return null;
+
+  // 1. Strip session/date suffix if present (e.g. " • Nov 2026 #1", " #1")
+  const cleanedSignal = trimmed
+    .replace(/\s*•\s*.*$/gi, '')
+    .replace(/\s*#\d+.*$/gi, '')
+    .trim();
+
+  // 2. Resolve via canonical resolver
+  const resolved = resolveCanonicalCourse(cleanedSignal || trimmed);
+  if (resolved.status === 'resolved' && resolved.courseCode) {
+    const def = CANONICAL_COURSES.find((c) => c.code === resolved.courseCode);
+    if (def) return def.hubspotOption;
+  }
+
+  if (resolved.status === 'historical_free') {
+    return 'Free courses';
+  }
+
+  // 3. Fallback matching against known short names
+  const lower = (cleanedSignal || trimmed).toLowerCase();
+  for (const c of CANONICAL_COURSES) {
+    if (
+      lower.includes(c.hubspotOption.toLowerCase()) ||
+      c.aliases.some((a) => lower.includes(a))
+    ) {
+      return c.hubspotOption;
+    }
+  }
+
+  if (lower.includes('free')) {
+    return 'Free courses';
+  }
+
+  return cleanedSignal || trimmed;
+}
+
+export interface CanonicalLeadCourseInterest {
+  canonicalName: string;
+  sessionDate?: string | null;
+  rawSignal?: string;
+  priority?: number;
+}
+
+/**
+ * Resolves all course interests for a lead into a deduplicated list of canonical short names.
+ * Ensures the same course never appears twice on cards or profile.
+ */
+export function resolveLeadCanonicalCourseInterests(
+  lead?: { course_interest?: string | null; course_interests?: string[] | null } | null,
+  interests?: Array<{ courseName?: string | null; sessionTitle?: string | null; startDate?: string | null; priority?: number | null }> | null
+): CanonicalLeadCourseInterest[] {
+  const result: CanonicalLeadCourseInterest[] = [];
+  const seenCanonical = new Set<string>();
+
+  // 1. Process relational interests first (often contains session date)
+  if (Array.isArray(interests) && interests.length > 0) {
+    for (const item of interests) {
+      if (!item.courseName) continue;
+      const shortName = getCanonicalCourseShortName(item.courseName);
+      if (shortName && !seenCanonical.has(shortName.toLowerCase())) {
+        seenCanonical.add(shortName.toLowerCase());
+        result.push({
+          canonicalName: shortName,
+          sessionDate: item.startDate || null,
+          rawSignal: item.courseName,
+          priority: item.priority || 1,
+        });
+      }
+    }
+  }
+
+  // 2. Process lead.course_interests array
+  if (Array.isArray(lead?.course_interests)) {
+    for (const item of lead.course_interests) {
+      if (!item) continue;
+      const shortName = getCanonicalCourseShortName(item);
+      if (shortName && !seenCanonical.has(shortName.toLowerCase())) {
+        seenCanonical.add(shortName.toLowerCase());
+        result.push({
+          canonicalName: shortName,
+          rawSignal: item,
+          priority: result.length + 1,
+        });
+      }
+    }
+  }
+
+  // 3. Process lead.course_interest string (could be comma-separated or single)
+  if (lead?.course_interest) {
+    const parts = lead.course_interest.split(',').map((s) => s.trim()).filter(Boolean);
+    for (const part of parts) {
+      const shortName = getCanonicalCourseShortName(part);
+      if (shortName && !seenCanonical.has(shortName.toLowerCase())) {
+        seenCanonical.add(shortName.toLowerCase());
+        result.push({
+          canonicalName: shortName,
+          rawSignal: part,
+          priority: result.length + 1,
+        });
+      }
+    }
+  }
+
+  return result;
+}
+

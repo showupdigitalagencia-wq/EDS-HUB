@@ -8,6 +8,7 @@ import {
   calculateSmsSegments,
   SAMPLE_PREVIEW_DATA,
   getApprovedZygomaticHtml,
+  getApprovedZygomaticSmsText,
 } from '../../../utils/template-variables';
 import type { EmailTemplate } from '../../../types';
 import {
@@ -57,7 +58,18 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
 
   const smsData = useMemo(() => {
     if (!template || channel !== 'sms') return null;
-    const substitutedText = renderTemplateWithSampleData(template.text_template, 'global');
+    const isZygomaticSms =
+      template.template_key === 'zygomatic_followup_sms' ||
+      template.template_key === 'zygomatic_initial_sms' ||
+      template.name === 'Contato SMS inicial' ||
+      (template.name?.toLowerCase().includes('zygomatic') && template.name?.toLowerCase().includes('sms'));
+
+    let substitutedText: string;
+    if (isZygomaticSms) {
+      substitutedText = getApprovedZygomaticSmsText(SAMPLE_PREVIEW_DATA);
+    } else {
+      substitutedText = renderTemplateWithSampleData(template.text_template, 'global');
+    }
     const segments = calculateSmsSegments(substitutedText);
 
     return {

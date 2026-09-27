@@ -18,6 +18,7 @@ export {
   resolveZygomaticSalutation,
   getApprovedZygomaticText,
   getApprovedZygomaticHtml,
+  getApprovedZygomaticSmsText,
 } from './salutation';
 
 export type TemplateChannel = 'email' | 'sms';

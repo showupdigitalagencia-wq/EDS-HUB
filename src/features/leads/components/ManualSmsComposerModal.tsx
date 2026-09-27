@@ -19,7 +19,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
-import { resolveSafeFirstName } from '../../../utils/salutation';
+import { resolveSafeFirstName, getApprovedZygomaticSmsText } from '../../../utils/salutation';
 import { formatContactPreferenceLabel, resolveCanonicalPreference } from '../../../utils/contact-preference';
 import type { Lead } from '../../../types';
 
@@ -53,7 +53,7 @@ export const OFFICIAL_GENERAL_SMS_BODY =
 const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
   {
     id: 'zygomatic_followup_sms',
-    name: 'Zygomatic — Follow-up SMS',
+    name: 'Contato SMS inicial',
     body: OFFICIAL_ZYGOMATIC_SMS_BODY,
   },
   {
@@ -89,15 +89,13 @@ export function ManualSmsComposerModal({
 
     const tpl = DEFAULT_SMS_TEMPLATES.find((t) => t.id === selectedTemplateId) || DEFAULT_SMS_TEMPLATES[0];
     if (tpl.id === 'zygomatic_followup_sms') {
-      // RULE D: For Zygomatic Follow-up SMS, preserve exact "Hello Dr."
-      // Never replace with name or Hello Doctor
-      setMessageText(tpl.body);
+      setMessageText(getApprovedZygomaticSmsText(lead));
     } else {
       const greetingName = firstName || 'Doctor';
       const filled = tpl.body.replace(/\{\{\s*first_name\s*\}\}/g, greetingName);
       setMessageText(filled);
     }
-  }, [isOpen, selectedTemplateId, firstName]);
+  }, [isOpen, selectedTemplateId, firstName, lead]);
 
   if (!isOpen) return null;
 
@@ -106,7 +104,7 @@ export function ManualSmsComposerModal({
     const tpl = DEFAULT_SMS_TEMPLATES.find((t) => t.id === templateId);
     if (tpl) {
       if (tpl.id === 'zygomatic_followup_sms') {
-        setMessageText(tpl.body);
+        setMessageText(getApprovedZygomaticSmsText(lead));
       } else {
         const greetingName = firstName || 'Doctor';
         setMessageText(tpl.body.replace(/\{\{\s*first_name\s*\}\}/g, greetingName));

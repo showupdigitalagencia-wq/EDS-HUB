@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Lead } from '../../../types';
 import type { LeadDeliverabilityInfo } from '../../dashboard/services/deliverability-health-service';
+import { resolveLeadCanonicalCourseInterests } from '../../../utils/course-resolver';
 import {
   GripVertical,
   AlertTriangle,
@@ -176,15 +177,8 @@ export function MinimalLeadCard({
     isClosed
   );
 
-  // Sort and limit up to 3 prioritized interests
-  const displayInterests = interests
-    .filter((i) => Boolean(i.courseName))
-    .sort((a, b) => (a.priority || 99) - (b.priority || 99))
-    .slice(0, 3);
-
-  // Fallback to legacy lead.course_interest if no relational interests exist
-  const hasInterests = displayInterests.length > 0;
-  const legacyCourseInterest = !hasInterests && lead.course_interest ? lead.course_interest : null;
+  // Resolve deduplicated canonical course interests (canonical short names only, no session/date/#)
+  const canonicalInterests = resolveLeadCanonicalCourseInterests(lead, interests).slice(0, 3);
 
   const phoneValue = lead.phone_raw || lead.phone_e164 || null;
   const emailValue = lead.email ? lead.email.trim() : null;
@@ -294,18 +288,9 @@ export function MinimalLeadCard({
         </div>
       )}
 
-      {/* Contact Preference Badge & Separate Factual SMS Sent Indicator */}
-      <div className="pt-1 flex items-center justify-between gap-1.5 flex-wrap">
-        <span
-          data-testid="contact-preference-badge"
-          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md border select-none max-w-full truncate ${
-            getContactPreferenceBadgeClasses(lead.contact_preference).badge
-          }`}
-        >
-          {formatContactPreferenceLabel(lead.contact_preference)}
-        </span>
-
-        {smsSentInfo && (
+      {/* Separate Factual SMS Sent Indicator (Preserved independently without Contact Preference) */}
+      {smsSentInfo && (
+        <div className="pt-1 flex items-center gap-1.5 flex-wrap">
           <span
             data-testid="lead-card-sms-sent-badge"
             className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 select-none shrink-0"
@@ -317,8 +302,8 @@ export function MinimalLeadCard({
               <span className="text-[9px] text-emerald-600 font-normal">({smsSentInfo.formattedDate})</span>
             )}
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Deliverability Health Indicator — Factual Delivery Status + Deliverability Risk (COEXISTS WITH PREFERENCE) */}
       {!isClosedLead && deliverabilityHealth && (
@@ -373,41 +358,20 @@ export function MinimalLeadCard({
         </div>
       )}
 
-      {/* 4. Course Interests (Up to 3, formatted: Course • Month Year) */}
+      {/* 4. Course Interests (Canonical Short Names only, deduplicated, without session/date/#) */}
       <div className="space-y-1 pt-1 border-t border-slate-100/80">
-        {hasInterests ? (
-          displayInterests.map((interest, idx) => {
-            const formattedDate = formatSessionMonthYear(interest.startDate);
-            const label = formattedDate
-              ? `${interest.courseName} • ${formattedDate}`
-              : interest.courseName;
-
-            return (
-              <div
-                key={idx}
-                className="text-[11px] font-medium text-slate-700 bg-slate-50 hover:bg-slate-100/80 px-2 py-0.5 rounded-md border border-slate-100 truncate flex items-center justify-between gap-1"
-                title={label}
-              >
-                <div className="flex items-center gap-1.5 truncate">
-                  <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
-                  <span className="truncate">{label}</span>
-                </div>
-                {interest.priority && (
-                  <span className="text-[9px] font-semibold text-slate-400 shrink-0">
-                    #{interest.priority}
-                  </span>
-                )}
-              </div>
-            );
-          })
-        ) : legacyCourseInterest ? (
-          <div
-            className="text-[11px] font-medium text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100 truncate flex items-center gap-1.5"
-            title={legacyCourseInterest}
-          >
-            <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
-            <span className="truncate">{legacyCourseInterest}</span>
-          </div>
+        {canonicalInterests.length > 0 ? (
+          canonicalInterests.map((interest, idx) => (
+            <div
+              key={idx}
+              className="text-[11px] font-medium text-slate-700 bg-slate-50 hover:bg-slate-100/80 px-2 py-0.5 rounded-md border border-slate-100 truncate flex items-center gap-1.5"
+              title={interest.canonicalName}
+              data-testid="lead-card-course-badge"
+            >
+              <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
+              <span className="truncate">{interest.canonicalName}</span>
+            </div>
+          ))
         ) : (
           <div className="text-[10px] text-slate-400 italic px-0.5">
             Sem curso de interesse

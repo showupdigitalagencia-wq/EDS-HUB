@@ -303,9 +303,8 @@ describe('CRITICAL PRODUCTION FIX — Objectives A through AA', () => {
       />
     );
 
-    // Both badges are rendered distinctly
-    const prefBadge = screen.getByTestId('contact-preference-badge');
-    expect(prefBadge.textContent).toContain('Preferência: SMS');
+    // Contact preference is removed from compact card, while factual SMS enviado is preserved
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
 
     const smsSentBadge = screen.getByTestId('lead-card-sms-sent-badge');
     expect(smsSentBadge).toBeDefined();

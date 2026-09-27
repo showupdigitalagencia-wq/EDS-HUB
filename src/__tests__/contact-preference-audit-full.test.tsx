@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
 import { MinimalLeadCard } from '../features/pipeline/components/MinimalLeadCard';
 import { LeadProfileContent } from '../features/leads/components/LeadProfileContent';
 import {
@@ -128,10 +129,10 @@ describe('Regression Audit — Real Production Leads Display', () => {
       ...overrides,
     } as unknown as Lead);
 
-  it('renders Real Prod Lead 1 (Gregory Boyajian - Email) with correct badge', () => {
+  it('verifies preference badge is omitted from MinimalLeadCard for Lead 1 (Greg Boyajian - Email)', () => {
     const lead = createLead({
-      id: 'ff8620a2-751d-49c0-9271-40887c8f6a38',
-      first_name: 'Gregory',
+      id: '20272ec8-90f9-4d68-af48-73b39ad34b07',
+      first_name: 'Greg',
       last_name: 'Boyajian',
       email: 'gregboyajian@yahoo.com',
       contact_preference: 'email',
@@ -140,12 +141,10 @@ describe('Regression Audit — Real Production Leads Display', () => {
     });
 
     render(<MinimalLeadCard lead={lead} />);
-    const badge = screen.getByTestId('contact-preference-badge');
-    expect(badge).toBeDefined();
-    expect(badge.textContent).toBe('Preferência: Email');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 
-  it('renders Real Prod Lead 2 (Scott Kareth - SMS) with correct badge', () => {
+  it('verifies preference badge is omitted from MinimalLeadCard for Lead 2 (Scott Kareth - SMS)', () => {
     const lead = createLead({
       id: 'a4822c87-202d-4dca-8a39-f347fbd1155c',
       first_name: 'Scott',
@@ -157,12 +156,10 @@ describe('Regression Audit — Real Production Leads Display', () => {
     });
 
     render(<MinimalLeadCard lead={lead} />);
-    const badge = screen.getByTestId('contact-preference-badge');
-    expect(badge).toBeDefined();
-    expect(badge.textContent).toBe('Preferência: SMS');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 
-  it('renders Real Prod Lead 3 (Latasha Morris - Call) with correct badge', () => {
+  it('verifies preference badge is omitted from MinimalLeadCard for Lead 3 (Latasha Morris - Call)', () => {
     const lead = createLead({
       id: '2983951b-1c5a-47bd-88dc-b303cd50ad81',
       first_name: 'Latasha',
@@ -174,12 +171,10 @@ describe('Regression Audit — Real Production Leads Display', () => {
     });
 
     render(<MinimalLeadCard lead={lead} />);
-    const badge = screen.getByTestId('contact-preference-badge');
-    expect(badge).toBeDefined();
-    expect(badge.textContent).toBe('Preferência: Ligação');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 
-  it('renders Real Prod Lead 4 (David Smith - WhatsApp) with correct badge', () => {
+  it('verifies preference badge is omitted from MinimalLeadCard for Lead 4 (David Smith - WhatsApp)', () => {
     const lead = createLead({
       id: '64e5142d-2257-47ca-a7c7-0be2b03c17c7',
       first_name: 'David',
@@ -191,12 +186,10 @@ describe('Regression Audit — Real Production Leads Display', () => {
     });
 
     render(<MinimalLeadCard lead={lead} />);
-    const badge = screen.getByTestId('contact-preference-badge');
-    expect(badge).toBeDefined();
-    expect(badge.textContent).toBe('Preferência: WhatsApp');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 
-  it('renders Real Prod Lead 5 (Show up Digital - null) as Não informada without corrupting data', () => {
+  it('verifies preference badge is omitted from MinimalLeadCard for Lead 5 (Show up Digital - null)', () => {
     const lead = createLead({
       id: 'afb8bfac-2b0f-4046-880e-f42b6a587ed3',
       first_name: 'Show',
@@ -208,9 +201,7 @@ describe('Regression Audit — Real Production Leads Display', () => {
     });
 
     render(<MinimalLeadCard lead={lead} />);
-    const badge = screen.getByTestId('contact-preference-badge');
-    expect(badge).toBeDefined();
-    expect(badge.textContent).toBe('Preferência: Não informada');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 });
 
@@ -230,19 +221,20 @@ describe('Regression Audit — Surface Parity & Deliverability Coexistence', () 
     source_detail: 'hubspot_historical',
   } as unknown as Lead;
 
-  it('displays matching preference in MinimalLeadCard', () => {
+  it('omits preference badge from MinimalLeadCard', () => {
     render(<MinimalLeadCard lead={sampleLead} />);
-    const badge = screen.getByTestId('contact-preference-badge');
-    expect(badge.textContent).toBe('Preferência: WhatsApp');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 
   it('displays matching preference in LeadProfileContent header and details', () => {
     render(
-      <LeadProfileContent
-        leadId={sampleLead.id}
-        initialLead={sampleLead}
-        isStandalonePage={true}
-      />
+      <BrowserRouter>
+        <LeadProfileContent
+          leadId={sampleLead.id}
+          initialLead={sampleLead}
+          isStandalonePage={true}
+        />
+      </BrowserRouter>
     );
     const headerBadge = screen.getByTestId('profile-contact-preference-badge');
     expect(headerBadge.textContent).toBe('Preferência: WhatsApp');
@@ -251,7 +243,7 @@ describe('Regression Audit — Surface Parity & Deliverability Coexistence', () 
     expect(detailValue.textContent).toBe('WhatsApp');
   });
 
-  it('preserves deliverability status coexistence with contact preference', () => {
+  it('preserves deliverability status on MinimalLeadCard without preference badge', () => {
     const deliverabilityHealth = {
       lead_id: sampleLead.id,
       email: sampleLead.email!,
@@ -282,16 +274,16 @@ describe('Regression Audit — Surface Parity & Deliverability Coexistence', () 
       />
     );
 
-    // 1. Contact preference badge is visible
-    const prefBadge = screen.getByTestId('contact-preference-badge');
-    expect(prefBadge.textContent).toBe('Preferência: WhatsApp');
+    // 1. Contact preference badge is removed from compact card
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
 
-    // 2. Deliverability factual badge is simultaneously visible
+    // 2. Deliverability factual badge is visible
     const delivBadge = screen.getByTestId('deliverability-health-badge');
     expect(delivBadge.textContent).toContain('Entregue');
 
-    // 3. Deliverability risk badge is simultaneously visible
+    // 3. Deliverability risk badge is visible
     const riskBadge = screen.getByTestId('deliverability-risk-badge');
     expect(riskBadge.textContent).toContain('Risco: Baixo');
   });
 });
+

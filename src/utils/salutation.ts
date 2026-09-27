@@ -398,3 +398,30 @@ Natalia<br/>
 Expert Dental Solutions</p>`;
 }
 
+/**
+ * Returns the exact approved SMS copy for the initial contact message ("Contato SMS inicial").
+ * Uses canonical doctor salutation:
+ * - Valid surname: "Hello Dr. [LAST NAME]"
+ * - No valid surname: "Hello Doctor"
+ * Never renders "Hello Dr.", "Hello Dr. null", "Hello Dr. undefined", or "Hello Dr. xxxxx".
+ */
+export function getApprovedZygomaticSmsText(leadOrSalutation?: any): string {
+  let salutationLine: string;
+  if (typeof leadOrSalutation === 'string' && (leadOrSalutation.startsWith('Hello Dr.') || leadOrSalutation === 'Hello Doctor')) {
+    salutationLine = leadOrSalutation;
+  } else {
+    salutationLine = resolveZygomaticSalutation(leadOrSalutation);
+  }
+
+  return `${salutationLine}
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Zygomatic Implant Training in Brazil.
+
+I just sent you an email with all the course details.
+
+To help you choose the best option, could you tell me a little about your implant experience?
+
+We currently have openings for our November 7 to 10 course. Would those dates work for you?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`;
+}
+

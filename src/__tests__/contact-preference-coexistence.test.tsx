@@ -134,7 +134,7 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
     },
   };
 
-  it('1. shows contact preference AND deliverability status simultaneously on active pipeline cards', () => {
+  it('1. removes contact preference badge from compact cards while preserving deliverability status and risk', () => {
     const lead = createMockLead({ contact_preference: 'email' });
     render(
       <MinimalLeadCard
@@ -145,11 +145,10 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
       />
     );
 
-    // Both badges coexist simultaneously
-    const prefBadge = screen.getByTestId('contact-preference-badge');
-    expect(prefBadge).toBeDefined();
-    expect(prefBadge.textContent).toContain('Preferência: Email');
+    // Contact preference badge is removed from compact card
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
 
+    // Deliverability badges remain visible
     const delivBadge = screen.getByTestId('deliverability-health-badge');
     expect(delivBadge).toBeDefined();
     expect(delivBadge.textContent).toContain('Entregue');
@@ -159,7 +158,7 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
     expect(riskBadge.textContent).toContain('Risco: Baixo');
   });
 
-  it('2. displays SMS contact preference on card', () => {
+  it('2. does not display SMS contact preference badge on compact card', () => {
     const lead = createMockLead({ contact_preference: 'sms' });
     render(
       <MinimalLeadCard
@@ -170,11 +169,10 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
       />
     );
 
-    const prefBadge = screen.getByTestId('contact-preference-badge');
-    expect(prefBadge.textContent).toContain('Preferência: SMS');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 
-  it('3. displays Ligação contact preference on card', () => {
+  it('3. does not display Ligação contact preference on compact card', () => {
     const lead = createMockLead({ contact_preference: 'call' });
     render(
       <MinimalLeadCard
@@ -185,11 +183,10 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
       />
     );
 
-    const prefBadge = screen.getByTestId('contact-preference-badge');
-    expect(prefBadge.textContent).toContain('Preferência: Ligação');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 
-  it('4. displays WhatsApp contact preference on card', () => {
+  it('4. does not display WhatsApp contact preference on compact card', () => {
     const lead = createMockLead({ contact_preference: 'whatsapp' });
     render(
       <MinimalLeadCard
@@ -200,11 +197,10 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
       />
     );
 
-    const prefBadge = screen.getByTestId('contact-preference-badge');
-    expect(prefBadge.textContent).toContain('Preferência: WhatsApp');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 
-  it('5. displays Email + SMS contact preference on card', () => {
+  it('5. does not display Email + SMS contact preference on compact card', () => {
     const lead = createMockLead({ contact_preference: 'email_sms' as any });
     render(
       <MinimalLeadCard
@@ -215,11 +211,10 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
       />
     );
 
-    const prefBadge = screen.getByTestId('contact-preference-badge');
-    expect(prefBadge.textContent).toContain('Preferência: Email + SMS');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 
-  it('6. displays "Preferência: Não informada" when preference is null, undefined, empty, or unknown', () => {
+  it('6. does not display "Preferência: Não informada" on compact card', () => {
     const cases = [null, undefined, '', 'sem preferência', 'unknown'];
     for (const val of cases) {
       const lead = createMockLead({ contact_preference: val as any });
@@ -231,14 +226,12 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
         />
       );
 
-      const prefBadge = screen.getByTestId('contact-preference-badge');
-      expect(prefBadge).toBeDefined();
-      expect(prefBadge.textContent).toContain('Preferência: Não informada');
+      expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
       unmount();
     }
   });
 
-  it('7. contact preference remains visible on closed stages (enrollment) even when deliverability is hidden', () => {
+  it('7. closed stages (enrollment) correctly hide deliverability health while card remains clean', () => {
     const lead = createMockLead({ contact_preference: 'email' });
     render(
       <MinimalLeadCard
@@ -249,11 +242,7 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
       />
     );
 
-    // Contact preference must remain visible on closed leads
-    const prefBadge = screen.getByTestId('contact-preference-badge');
-    expect(prefBadge).toBeDefined();
-    expect(prefBadge.textContent).toContain('Preferência: Email');
-
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
     // Deliverability health is hidden on closed leads as per business rule
     expect(screen.queryByTestId('deliverability-health-badge')).toBeNull();
   });
@@ -274,13 +263,12 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
         />
       );
 
-      const prefBadge = screen.getByTestId('contact-preference-badge');
-      expect(prefBadge.textContent).toContain('Preferência: WhatsApp');
+      expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
       unmount();
     }
   });
 
-  it('9. contact preference is visible when lead has no email or phone', () => {
+  it('9. contact preference is omitted from compact card even when lead has no email or phone', () => {
     const lead = createMockLead({
       email: null as any,
       phone_raw: null as any,
@@ -295,8 +283,6 @@ describe('MinimalLeadCard — Contact Preference & Deliverability Coexistence', 
       />
     );
 
-    const prefBadge = screen.getByTestId('contact-preference-badge');
-    expect(prefBadge).toBeDefined();
-    expect(prefBadge.textContent).toContain('Preferência: Não informada');
+    expect(screen.queryByTestId('contact-preference-badge')).toBeNull();
   });
 });

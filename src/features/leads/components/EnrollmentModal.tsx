@@ -1,11 +1,30 @@
 // =============================================================================
-// Enrollment Modal (Create / Edit Enrollment)
+// Enrollment Modal (Simplified Create / Edit Enrollment)
+// =============================================================================
+// Conforms to production simplification:
+// - Modal contains ONLY:
+//   1. Curso Oficial
+//   2. Status da Matrícula
+//   3. Data do Curso
+// - Removes commercial/financial inputs (agreed amount, initial payment, notes)
+// - Never creates fake $0 payment records
+// - Preserves all existing financial and enrollment history in database
 // =============================================================================
 
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import type { Course, Enrollment, EnrollmentStatus, PaymentMethod, PaymentStatus, LeadSource } from '../../../types/database';
+import type { Course, Enrollment, EnrollmentStatus, LeadSource } from '../../../types/database';
 import { fetchCourses, createEnrollment, updateEnrollment } from '../../revenue/services/revenue-service';
+import { supabase } from '../../../lib/supabase';
+
+interface CourseSessionItem {
+  id: string;
+  course_id: string;
+  title: string;
+  code?: string;
+  start_date: string;
+  end_date?: string;
+}
 
 interface EnrollmentModalProps {
   isOpen: boolean;
@@ -27,52 +46,55 @@ export const EnrollmentModal: React.FC<EnrollmentModalProps> = ({
   const isEdit = !!existingEnrollment;
 
   const [courses, setCourses] = useState<Course[]>([]);
+  const [sessions, setSessions] = useState<CourseSessionItem[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [selectedSessionId, setSelectedSessionId] = useState('');
   const [enrollmentStatus, setEnrollmentStatus] = useState<EnrollmentStatus>('confirmed');
-  const [agreedAmount, setAgreedAmount] = useState<string>('');
-  const [currency] = useState('USD');
-  const [enrollmentDate, setEnrollmentDate] = useState(
-    new Date().toISOString().split('T')[0]
-  );
-  const [notes, setNotes] = useState('');
-
-  // Initial Payment (Create only)
-  const [recordInitialPayment, setRecordInitialPayment] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState<string>('');
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('paid');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('credit_card');
+  const [courseDate, setCourseDate] = useState<string>('2026-11-07');
 
   const [isLoadingCourses, setIsLoadingCourses] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [idempotencyKey, setIdempotencyKey] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
     setIdempotencyKey(crypto.randomUUID());
 
-    const loadCourses = async () => {
+    const loadData = async () => {
       setIsLoadingCourses(true);
       setError(null);
       try {
-        const list = await fetchCourses();
-        setCourses(list);
+        const [courseList, { data: sessionData }] = await Promise.all([
+          fetchCourses(),
+          supabase
+            .from('course_sessions')
+            .select('id, course_id, title, code, start_date, end_date')
+            .order('start_date', { ascending: true }),
+        ]);
+
+        setCourses(courseList);
+        const activeSessions = (sessionData || []) as CourseSessionItem[];
+        setSessions(activeSessions);
 
         if (existingEnrollment) {
           setSelectedCourseId(existingEnrollment.course_id);
           setEnrollmentStatus(existingEnrollment.enrollment_status);
-          setAgreedAmount(String(existingEnrollment.agreed_amount));
-          setEnrollmentDate(existingEnrollment.enrollment_date);
-          setNotes(existingEnrollment.notes || '');
-          setRecordInitialPayment(false);
-        } else if (list.length > 0) {
-          const first = list[0];
+          setCourseDate(existingEnrollment.enrollment_date);
+          setSelectedSessionId((existingEnrollment as any).course_session_id || '');
+        } else if (courseList.length > 0) {
+          const first = courseList[0];
           setSelectedCourseId(first.id);
-          setAgreedAmount(first.default_price !== null ? String(first.default_price) : '');
-          setPaymentAmount(first.default_price !== null ? String(first.default_price) : '');
           setEnrollmentStatus('confirmed');
-          setRecordInitialPayment(true);
+
+          const matchingSess = activeSessions.filter((s) => s.course_id === first.id);
+          if (matchingSess.length > 0) {
+            setSelectedSessionId(matchingSess[0].id);
+            setCourseDate(matchingSess[0].start_date);
+          } else {
+            setSelectedSessionId('');
+            setCourseDate('2026-11-07');
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Falha ao carregar catálogo de cursos');
@@ -81,34 +103,47 @@ export const EnrollmentModal: React.FC<EnrollmentModalProps> = ({
       }
     };
 
-    loadCourses();
+    void loadData();
   }, [isOpen, existingEnrollment]);
 
   const handleCourseChange = (courseId: string) => {
     setSelectedCourseId(courseId);
-    if (!isEdit) {
-      const found = courses.find((c) => c.id === courseId);
-      if (found && found.default_price !== null) {
-        setAgreedAmount(String(found.default_price));
-        setPaymentAmount(String(found.default_price));
-      }
+    const matchingSess = sessions.filter((s) => s.course_id === courseId);
+    if (matchingSess.length > 0) {
+      setSelectedSessionId(matchingSess[0].id);
+      setCourseDate(matchingSess[0].start_date);
+    } else {
+      setSelectedSessionId('');
+      setCourseDate('2026-11-07');
     }
   };
+
+  const handleSessionChange = (sessionId: string) => {
+    setSelectedSessionId(sessionId);
+    const found = sessions.find((s) => s.id === sessionId);
+    if (found && found.start_date) {
+      setCourseDate(found.start_date);
+    }
+  };
+
+  const availableSessions = sessions.filter((s) => s.course_id === selectedCourseId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    const numericAmount = parseFloat(agreedAmount);
-    if (isNaN(numericAmount) || numericAmount < 0) {
-      setError('O valor acordado deve ser um número válido maior ou igual a zero.');
-      return;
-    }
-
     if (!selectedCourseId) {
       setError('Selecione um curso válido do catálogo.');
       return;
     }
+
+    if (!courseDate) {
+      setError('Informe a data do curso.');
+      return;
+    }
+
+    const course = courses.find((c) => c.id === selectedCourseId);
+    const agreedAmountNum = course?.default_price ?? 0;
 
     setIsSubmitting(true);
 
@@ -118,33 +153,44 @@ export const EnrollmentModal: React.FC<EnrollmentModalProps> = ({
           enrollmentId: existingEnrollment.id,
           courseId: selectedCourseId,
           enrollmentStatus,
-          agreedAmount: numericAmount,
-          enrollmentDate,
-          notes: notes.trim() || undefined,
+          agreedAmount: existingEnrollment.agreed_amount ?? agreedAmountNum,
+          enrollmentDate: courseDate,
+          notes: existingEnrollment.notes || undefined,
         });
-      } else {
-        const initPaymentNum = recordInitialPayment ? parseFloat(paymentAmount) : undefined;
-        if (recordInitialPayment && (isNaN(initPaymentNum!) || initPaymentNum! <= 0)) {
-          setError('O valor do pagamento inicial deve ser maior que zero.');
-          setIsSubmitting(false);
-          return;
-        }
 
-        await createEnrollment({
+        if (selectedSessionId) {
+          try {
+            await supabase
+              .from('enrollments')
+              .update({ course_session_id: selectedSessionId })
+              .eq('id', existingEnrollment.id);
+          } catch {
+            // Non-blocking update
+          }
+        }
+      } else {
+        const enrollmentId = await createEnrollment({
           leadId,
           courseId: selectedCourseId,
           enrollmentStatus,
-          agreedAmount: numericAmount,
-          currency,
-          enrollmentDate,
+          agreedAmount: agreedAmountNum,
+          currency: 'USD',
+          enrollmentDate: courseDate,
           source: leadSource,
-          notes: notes.trim() || undefined,
           idempotencyKey: idempotencyKey || crypto.randomUUID(),
-          initialPaymentAmount: recordInitialPayment ? initPaymentNum : undefined,
-          initialPaymentStatus: recordInitialPayment ? paymentStatus : undefined,
-          initialPaymentMethod: recordInitialPayment ? paymentMethod : undefined,
-          initialPaymentDate: enrollmentDate,
+          // Explicitly NO initial payment recorded to avoid fake financial records
         });
+
+        if (selectedSessionId) {
+          try {
+            await supabase
+              .from('enrollments')
+              .update({ course_session_id: selectedSessionId })
+              .eq('id', enrollmentId);
+          } catch {
+            // Non-blocking update
+          }
+        }
       }
 
       onSuccess();
@@ -160,7 +206,7 @@ export const EnrollmentModal: React.FC<EnrollmentModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200/90 w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200/90 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-[#f8fafc]">
           <div>
@@ -170,7 +216,7 @@ export const EnrollmentModal: React.FC<EnrollmentModalProps> = ({
             <p className="text-xs text-slate-500">
               {isEdit
                 ? 'Atualize os dados e status da matrícula do aluno'
-                : 'Vincule um curso canônico e defina os termos financeiros'}
+                : 'Vincule o curso oficial, defina o status e a data do curso'}
             </p>
           </div>
           <button
@@ -197,7 +243,7 @@ export const EnrollmentModal: React.FC<EnrollmentModalProps> = ({
             </div>
           ) : (
             <>
-              {/* Course Selection */}
+              {/* 1. Curso Oficial */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Curso Oficial <span className="text-rose-500">*</span>
@@ -207,154 +253,73 @@ export const EnrollmentModal: React.FC<EnrollmentModalProps> = ({
                   onChange={(e) => handleCourseChange(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium focus:outline-hidden focus:ring-2 focus:ring-[#125e95]/20 focus:border-[#125e95] transition-all"
                   required
+                  data-testid="enrollment-modal-course-select"
                 >
                   <option value="" disabled>Selecione um curso...</option>
                   {courses.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name} {c.default_price !== null ? `($${c.default_price.toLocaleString()})` : ''}
+                      {c.name}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Status & Agreed Amount */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Status da Matrícula <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={enrollmentStatus}
-                    onChange={(e) => setEnrollmentStatus(e.target.value as EnrollmentStatus)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium focus:outline-hidden focus:ring-2 focus:ring-[#125e95]/20 focus:border-[#125e95] transition-all"
-                    required
-                  >
-                    <option value="confirmed">Confirmada (Garante Vaga)</option>
-                    <option value="pending">Pendente (Em Análise)</option>
-                    <option value="cancelled">Cancelada (Desistência)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Valor Acordado (USD) <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">
-                      $
-                    </span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={agreedAmount}
-                      onChange={(e) => setAgreedAmount(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full pl-7 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold focus:outline-hidden focus:ring-2 focus:ring-[#125e95]/20 focus:border-[#125e95] transition-all"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Enrollment Date */}
+              {/* 2. Status da Matrícula */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Data da Matrícula
+                  Status da Matrícula <span className="text-rose-500">*</span>
                 </label>
+                <select
+                  value={enrollmentStatus}
+                  onChange={(e) => setEnrollmentStatus(e.target.value as EnrollmentStatus)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium focus:outline-hidden focus:ring-2 focus:ring-[#125e95]/20 focus:border-[#125e95] transition-all"
+                  required
+                  data-testid="enrollment-modal-status-select"
+                >
+                  <option value="confirmed">Confirmada (Garante Vaga)</option>
+                  <option value="pending">Pendente (Em Análise)</option>
+                  <option value="cancelled">Cancelada (Desistência)</option>
+                </select>
+              </div>
+
+              {/* 3. Data do Curso */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Data do Curso <span className="text-rose-500">*</span>
+                </label>
+
+                {availableSessions.length > 0 && (
+                  <div className="mb-2">
+                    <select
+                      value={selectedSessionId}
+                      onChange={(e) => handleSessionChange(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium mb-1.5"
+                      data-testid="enrollment-modal-session-select"
+                    >
+                      <option value="">Selecione uma turma / sessão disponível...</option>
+                      {availableSessions.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.title || s.code} ({s.start_date})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div className="relative">
                   <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="date"
-                    value={enrollmentDate}
-                    onChange={(e) => setEnrollmentDate(e.target.value)}
+                    value={courseDate}
+                    onChange={(e) => {
+                      setCourseDate(e.target.value);
+                      setSelectedSessionId('');
+                    }}
                     className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#125e95]/20 focus:border-[#125e95] transition-all"
                     required
+                    data-testid="enrollment-modal-course-date-input"
                   />
                 </div>
-              </div>
-
-              {/* Initial Payment Section (New only) */}
-              {!isEdit && (
-                <div className="pt-3 border-t border-slate-100">
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-800">
-                      <input
-                        type="checkbox"
-                        checked={recordInitialPayment}
-                        onChange={(e) => setRecordInitialPayment(e.target.checked)}
-                        className="rounded-sm border-slate-300 text-[#125e95] focus:ring-[#125e95]"
-                      />
-                      <span>Registrar pagamento inicial com a matrícula</span>
-                    </label>
-                  </div>
-
-                  {recordInitialPayment && (
-                    <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Valor Pago ($)
-                          </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0.01"
-                            value={paymentAmount}
-                            onChange={(e) => setPaymentAmount(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 font-semibold focus:outline-hidden focus:border-[#125e95]"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Método de Pagamento
-                          </label>
-                          <select
-                            value={paymentMethod}
-                            onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-hidden focus:border-[#125e95]"
-                          >
-                            <option value="credit_card">Cartão de Crédito</option>
-                            <option value="wire_transfer">Transferência Bancária (Wire/Zelle)</option>
-                            <option value="financing">Financiamento</option>
-                            <option value="check">Cheque</option>
-                            <option value="cash">Dinheiro</option>
-                            <option value="other">Outro</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                          Status do Pagamento
-                        </label>
-                        <select
-                          value={paymentStatus}
-                          onChange={(e) => setPaymentStatus(e.target.value as PaymentStatus)}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-hidden focus:border-[#125e95]"
-                        >
-                          <option value="paid">Liquidado / Pago (Paid)</option>
-                          <option value="pending">Pendente (Aguardando compensação)</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Notes */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Notas / Observações Comerciais
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                  placeholder="Detalhes sobre negociação, descontos concedidos, termos acordados..."
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-[#125e95]/20 focus:border-[#125e95] transition-all"
-                />
               </div>
             </>
           )}
@@ -373,6 +338,7 @@ export const EnrollmentModal: React.FC<EnrollmentModalProps> = ({
               type="submit"
               disabled={isSubmitting || isLoadingCourses}
               className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-[#125e95] hover:bg-[#08254f] shadow-xs flex items-center gap-2 transition-all disabled:opacity-50"
+              data-testid="enrollment-modal-submit-button"
             >
               {isSubmitting ? (
                 <>

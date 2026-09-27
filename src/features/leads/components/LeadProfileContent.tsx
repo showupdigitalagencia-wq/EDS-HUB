@@ -34,6 +34,7 @@ import { LeadTaskList } from './LeadTaskList';
 import { LeadTaskModal } from './LeadTaskModal';
 import { LeadEnrollmentCard } from './LeadEnrollmentCard';
 import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
+import { resolveLeadCanonicalCourseInterests } from '../../../utils/course-resolver';
 import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
 import { ManualEmailComposerModal } from './ManualEmailComposerModal';
 import { ManualSmsComposerModal } from './ManualSmsComposerModal';
@@ -886,45 +887,54 @@ export function LeadProfileContent({
             </div>
           )}
 
-          {/* 3. Cursos de Interesse Card */}
+          {/* 3. Cursos de Interesse Card (Aligned with Canonical Resolver) */}
           <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
             <h3 className="text-xs font-bold text-slate-700 font-heading uppercase tracking-wider flex items-center gap-1.5">
               <GraduationCap className="h-4 w-4 text-[#449bd5]" />
               <span>Cursos de Interesse</span>
             </h3>
 
-            {courseInterests.length > 0 ? (
-              <div className="space-y-2">
-                {courseInterests.map((interest) => {
-                  const courseName = interest.course?.name || 'Curso';
-                  const formattedDate = formatSessionMonthYear(interest.session?.start_date);
-                  return (
-                    <div
-                      key={interest.id}
-                      className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs"
-                    >
-                      <span className="font-semibold text-slate-800">
-                        {formattedDate ? `${courseName} • ${formattedDate}` : courseName}
-                      </span>
-                      {interest.session?.start_date && (
-                        <span className="flex items-center gap-1 text-[11px] text-slate-500 font-medium">
-                          <Calendar className="h-3 w-3 text-slate-400" />
-                          {formattedDate}
+            {(() => {
+              const formattedRelational = courseInterests.map((ci: any) => ({
+                courseName: ci.course?.name || ci.course?.code || '',
+                sessionTitle: ci.session?.name || null,
+                startDate: ci.session?.start_date || null,
+                priority: ci.priority,
+              }));
+              const canonicalInterests = resolveLeadCanonicalCourseInterests(lead, formattedRelational);
+
+              if (canonicalInterests.length === 0) {
+                return (
+                  <p className="text-xs text-slate-400 italic">
+                    Nenhum curso de interesse selecionado
+                  </p>
+                );
+              }
+
+              return (
+                <div className="space-y-2">
+                  {canonicalInterests.map((interest, idx) => {
+                    const formattedDate = formatSessionMonthYear(interest.sessionDate);
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs"
+                      >
+                        <span className="font-semibold text-slate-800">
+                          {interest.canonicalName}
                         </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : lead.course_interest ? (
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs font-semibold text-slate-800">
-                {lead.course_interest}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400 italic">
-                Nenhum curso de interesse selecionado
-              </p>
-            )}
+                        {formattedDate && (
+                          <span className="flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+                            <Calendar className="h-3 w-3 text-slate-400" />
+                            {formattedDate}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {/* 4. Matrículas & Financeiro Card (Complete Operational Capability) */}

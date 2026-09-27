@@ -27,7 +27,7 @@ describe('EDS HUB — FINAL OPERATIONAL GO-LIVE TEST SUITE', () => {
 
     const mockSmsTemplate = {
       id: 'tmpl-sms-1',
-      name: 'Zygomatic — Follow-up SMS',
+      name: 'Contato SMS inicial',
       category: 'sms',
       channel: 'sms',
       has_attachment: false,
@@ -61,7 +61,7 @@ describe('EDS HUB — FINAL OPERATIONAL GO-LIVE TEST SUITE', () => {
       const smsComposerTemplates = allTemplates.filter((t) => getTemplateChannel(t) === 'sms');
 
       expect(smsComposerTemplates).toHaveLength(2);
-      expect(smsComposerTemplates.map((t) => t.name)).toContain('Zygomatic — Follow-up SMS');
+      expect(smsComposerTemplates.map((t) => t.name)).toContain('Contato SMS inicial');
       expect(smsComposerTemplates.map((t) => t.name)).toContain('Contato Inicial — Geral');
       expect(smsComposerTemplates.some((t) => t.name === 'Zygomatic Course Details')).toBe(false);
     });
