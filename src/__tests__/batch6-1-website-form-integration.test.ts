@@ -110,7 +110,7 @@ describe('Batch 6.1 — Website Form Integration & Incomplete Intent Reconciliat
       expect(submitFunctionContent).toContain('delete fields.certificate_name');
       expect(submitFunctionContent).toContain('delete fields.coat_size');
       expect(submitFunctionContent).toContain('delete fields.signature');
-      expect(submitFunctionContent).toContain('delete fields.email_confirmation');
+      expect(submitFunctionContent).toContain('rawEmailConfirmation');
       expect(submitFunctionContent).toContain('delete fields.formData');
       expect(submitFunctionContent).toContain('delete fields.raw_form_data');
     });

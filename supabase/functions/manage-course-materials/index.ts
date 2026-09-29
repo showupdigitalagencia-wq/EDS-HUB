@@ -312,10 +312,96 @@ Deno.serve(async (req) => {
       return jsonResponse({ submission, lead, submissions });
     }
 
+    if (action === 'inspect_lead') {
+      const { lead_id, email, phone } = body;
+      let query = db.from('leads').select('*');
+      if (lead_id) query = query.eq('id', lead_id);
+      else if (email) query = query.eq('email', email.trim().toLowerCase());
+      else if (phone) query = query.or(`phone_raw.ilike.%${phone}%,phone_e164.ilike.%${phone}%`);
+      const { data: lead } = await query.maybeSingle();
+
+      if (!lead) return errorResponse('NOT_FOUND', 'Lead not found', 404);
+
+      const [outboundRes, tasksRes, activitiesRes, formsRes] = await Promise.all([
+        db.from('outbound_messages').select('*').eq('lead_id', lead.id).order('created_at', { ascending: false }),
+        db.from('tasks').select('*').eq('lead_id', lead.id).order('created_at', { ascending: false }),
+        db.from('lead_activities').select('*').eq('lead_id', lead.id).order('created_at', { ascending: false }),
+        db.from('form_submissions').select('*').eq('lead_id', lead.id).order('submitted_at', { ascending: false }),
+      ]);
+
+      return jsonResponse({
+        lead,
+        outbound_messages: outboundRes.data || [],
+        tasks: tasksRes.data || [],
+        activities: activitiesRes.data || [],
+        submissions: formsRes.data || [],
+      });
+    }
+
     if (action === 'test_rpc') {
       const rpcName = body.rpc_name || 'process_form_submission_transaction';
       const { data, error } = await db.rpc(rpcName, body.params);
       return jsonResponse({ data, error });
+    }
+
+    if (action === 'manage_suppression') {
+      const { op, email, reason = 'hard_bounce' } = body;
+      const normalizedEmail = (email || '').trim().toLowerCase();
+      if (op === 'add') {
+        const { error } = await db.from('email_suppressions').upsert({
+          normalized_email: normalizedEmail,
+          reason,
+          provider: 'resend',
+          metadata: { test: true },
+        }, { onConflict: 'normalized_email' });
+        return jsonResponse({ success: !error, error });
+      } else if (op === 'remove') {
+        const { error } = await db.from('email_suppressions').delete().eq('normalized_email', normalizedEmail);
+        return jsonResponse({ success: !error, error });
+      }
+      return errorResponse('INVALID_OP', 'Unknown suppression operation', 400);
+    }
+
+    if (action === 'cleanup_test_leads') {
+      const { emails = [], lead_ids = [] } = body;
+      const targetLeadIds: string[] = [...lead_ids];
+      if (emails.length > 0) {
+        const { data: found } = await db
+          .from('leads')
+          .select('id')
+          .in('email', emails.map((e: string) => e.trim().toLowerCase()));
+        if (found) {
+          for (const row of found) {
+            targetLeadIds.push(row.id);
+          }
+        }
+      }
+      if (body.pattern) {
+        const { data: foundPat } = await db
+          .from('leads')
+          .select('id')
+          .or(`email.ilike.%${body.pattern}%,phone_raw.ilike.%${body.pattern}%,phone_e164.ilike.%${body.pattern}%`);
+        if (foundPat) {
+          for (const row of foundPat) {
+            targetLeadIds.push(row.id);
+          }
+        }
+      }
+
+      const uniqueIds = Array.from(new Set(targetLeadIds.filter(Boolean)));
+      if (uniqueIds.length > 0) {
+        await db.from('outbound_messages').delete().in('lead_id', uniqueIds);
+        await db.from('tasks').delete().in('lead_id', uniqueIds);
+        await db.from('lead_activities').delete().in('lead_id', uniqueIds);
+        await db.from('lead_course_interests').delete().in('lead_id', uniqueIds);
+        await db.from('lead_stage_history').delete().in('lead_id', uniqueIds);
+        await db.from('form_submissions').delete().in('lead_id', uniqueIds);
+        await db.from('lead_intake_events').delete().in('lead_id', uniqueIds);
+        await db.from('conversations').delete().in('lead_id', uniqueIds);
+        await db.from('integration_entity_links').delete().in('eds_entity_id', uniqueIds);
+        await db.from('leads').delete().in('id', uniqueIds);
+      }
+      return jsonResponse({ success: true, cleaned_lead_ids: uniqueIds });
     }
 
     // =========================================================================

@@ -181,7 +181,6 @@ Deno.serve(async (req) => {
     delete fields.certificate_name;
     delete fields.coat_size;
     delete fields.signature;
-    delete fields.email_confirmation;
     delete fields.date;
     delete fields.formData;
     delete fields.raw_form_data;
@@ -306,6 +305,25 @@ Deno.serve(async (req) => {
       }
     }
 
+    const rawEmailConfirmation = (fields.email_confirmation || fields.confirm_email || fields.confirm_your_email || fields.confirme_seu_email)
+      ? String(fields.email_confirmation || fields.confirm_email || fields.confirm_your_email || fields.confirme_seu_email).trim().toLowerCase()
+      : null;
+    if (rawEmailConfirmation) {
+      fields.email_confirmation = rawEmailConfirmation;
+      const confRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!confRegex.test(rawEmailConfirmation)) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid confirmation email address format' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    const emailMismatch = Boolean(rawEmail && rawEmailConfirmation && rawEmail !== rawEmailConfirmation);
+    if (emailMismatch) {
+      fields.email_mismatch = true;
+    }
+
     let phoneE164: string | null = null;
     if (fields.phone) {
       const cleaned = String(fields.phone).replace(/[^\d+]/g, '');
@@ -426,8 +444,11 @@ Deno.serve(async (req) => {
           first_name: fields.first_name ? String(fields.first_name).trim() : undefined,
           last_name: fields.last_name ? String(fields.last_name).trim() : undefined,
           email: rawEmail || undefined,
+          email_confirmation: rawEmailConfirmation || undefined,
           phone: phoneE164 || undefined,
           contact_preference: (contactPref as 'email' | 'sms' | 'call' | 'whatsapp') || undefined,
+          course_interest: courseInterest || undefined,
+          course_title: courseInterest || undefined,
           raw_payload: fields,
         };
 

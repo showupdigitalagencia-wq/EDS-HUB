@@ -243,22 +243,23 @@ Deno.serve(async (req) => {
       Boolean(payload.raw_payload && (payload.raw_payload.is_test === true || payload.raw_payload.test === true));
 
     const isHistoricalSync =
-      ['hubspot', 'csv_import', 'legacy_import', 'historical_migration'].includes((payload.source || '').toLowerCase()) ||
+      ['csv_import', 'legacy_import', 'historical_migration'].includes((payload.source || '').toLowerCase()) ||
       ['hubspot_sync', 'hubspot_historical', 'hubspot_reconcile', 'csv_import', 'legacy_import', 'historical_migration'].includes((payload.source_detail || '').toLowerCase());
 
+    const isWebsiteIncomplete =
+      ['website incomplete registration', 'website_incomplete_registration', 'incomplete_registration', 'incomplete-registration'].includes((payload.source_detail || '').toLowerCase()) ||
+      (payload.source_detail || '').toLowerCase().includes('incomplete');
+
     const isWebsiteLead =
-      ['form', 'website'].includes((payload.source || '').toLowerCase()) ||
-      ['website', 'website-register', 'website_register', 'website incomplete registration', 'website_incomplete_registration', 'incomplete_registration', 'incomplete-registration'].includes((payload.source_detail || '').toLowerCase()) ||
-      (payload.source_detail || '').toLowerCase().includes('website');
+      payload.source === 'form' ||
+      payload.source_detail === 'website' ||
+      payload.source_detail === 'website-form';
 
     const isMetaLead =
-      !isTestLead &&
-      !isHistoricalSync &&
-      !isWebsiteLead &&
-      (
-        ['meta', 'facebook', 'instagram', 'fb', 'ig'].includes((payload.source || '').toLowerCase()) ||
-        ['meta', 'facebook', 'instagram', 'fb', 'ig', 'meta_ad', 'instagram_ad', 'facebook_ad'].includes((payload.source_detail || '').toLowerCase())
-      );
+      payload.source === 'meta' ||
+      payload.source_detail === 'meta_lead_ad' ||
+      payload.source_detail === 'facebook' ||
+      payload.source_detail === 'instagram';
 
     if (isTestLead) {
       // TEST LEAD RULE:
@@ -284,513 +285,195 @@ Deno.serve(async (req) => {
         metadata: { source: payload.source, source_detail: payload.source_detail },
       });
       actionSucceeded = true;
-    } else if (isWebsiteLead) {
-      // WEBSITE LEAD RULE:
-      // Must NOT receive first-contact automation.
-      // Remains in Novo Lead for manual client response.
+    } else if (isWebsiteIncomplete) {
+      // INCOMPLETE WEBSITE REGISTRATION:
+      // Held until complete registration occurs.
       await db.from('lead_activities').insert({
         lead_id: leadId,
         intake_event_id: intakeEventId,
         activity_type: 'intake_received',
         actor_type: 'system',
-        summary: 'Website lead intake received. Automated first-contact outreach is suppressed per business rule (manual client response required).',
+        summary: 'Incomplete website registration received. Automated first-contact outreach is held until registration completion.',
         metadata: { source: payload.source, source_detail: payload.source_detail },
       });
       actionSucceeded = true;
     } else if (!isNewLead) {
       // EXISTING LEAD RULE:
-      // First-contact automatic outreach is triggered only for genuinely new leads.
+      // Resurfacing returning lead. Preserve created_at & stage. Do NOT resend first-contact email!
       await db.from('lead_activities').insert({
         lead_id: leadId,
         intake_event_id: intakeEventId,
         activity_type: 'intake_received',
         actor_type: 'system',
         summary: 'Intake event received for existing lead. First-contact automatic outreach is suppressed.',
-        metadata: { source: payload.source, source_detail: payload.source_detail },
+        metadata: { source: payload.source, source_detail: payload.source_detail, resurfaced: true },
       });
       actionSucceeded = true;
-    } else if (isMetaLead) {
-      // BATCH 7.5: META / INSTAGRAM FIRST EMAIL AUTOMATION (EMAIL-ONLY SAFE ACTIVATION)
-      // SMS is strictly disabled (zero Twilio calls, zero SMS sends).
-      const isMetaAutoEmailActive = Deno.env.get('ENABLE_META_FIRST_EMAIL_AUTOMATION') === 'true';
+    } else {
+      // GENUINELY NEW INBOUND LEAD FROM APPROVED SOURCE (Meta, HubSpot inbound, Website completed registration)
+      // Contact preference normalized
+      const rawPref = payload.contact_preference ? String(payload.contact_preference).trim().toLowerCase() : '';
+      let pref: 'email' | 'sms' | 'call' | 'whatsapp' = 'email';
+      if (rawPref === 'sms' || rawPref === 'text' || rawPref.includes('sms')) {
+        pref = 'sms';
+      } else if (rawPref === 'call' || rawPref === 'phone' || rawPref.includes('call') || rawPref.includes('phone') || rawPref.includes('lig')) {
+        pref = 'call';
+      } else if (rawPref === 'whatsapp' || rawPref === 'whats' || rawPref === 'zap' || rawPref.includes('whats') || rawPref.includes('zap')) {
+        pref = 'whatsapp';
+      } else if (rawPref === 'email' || rawPref === 'mail') {
+        pref = 'email';
+      }
 
-      if (!isMetaAutoEmailActive) {
-        // Dormant Mode: deployed safely without dispatching live emails until explicitly activated
+      if (pref === 'call') {
+        // Manual call task
+        const fullName = [payload.first_name, payload.last_name].filter(Boolean).join(' ') || 'Novo Lead';
+        await db.from('tasks').insert({
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          task_type: 'call',
+          title: `Ligação Telefônica — ${fullName}`,
+          description: `Lead indicou preferência por Ligação Telefônica. Contatar pelo telefone: ${payload.phone || 'não informado'}.`,
+          status: 'pending',
+          created_by: 'system',
+        });
         await db.from('lead_activities').insert({
           lead_id: leadId,
           intake_event_id: intakeEventId,
-          activity_type: 'intake_received',
+          activity_type: 'contact_preference_detected',
           actor_type: 'system',
-          summary: 'Meta first email automation is currently dormant (ENABLE_META_FIRST_EMAIL_AUTOMATION is inactive). Lead retained in Novo Lead for manual outreach.',
-          metadata: { source: payload.source, source_detail: payload.source_detail, dormant: true },
+          summary: 'Contato preferencial por Ligação Telefônica. Tarefa de ligação criada.',
+          metadata: { preference: 'call', manual_task: true },
         });
+        tasksCreated++;
+        actionSucceeded = true;
+      } else if (pref === 'whatsapp') {
+        // Manual WhatsApp task
+        const fullName = [payload.first_name, payload.last_name].filter(Boolean).join(' ') || 'Novo Lead';
+        await db.from('tasks').insert({
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          task_type: 'follow_up',
+          title: `WhatsApp Manual — ${fullName}`,
+          description: `Lead indicou preferência por WhatsApp. Contatar pelo WhatsApp: ${payload.phone || 'não informado'}.`,
+          status: 'pending',
+          created_by: 'system',
+        });
+        await db.from('lead_activities').insert({
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'contact_preference_detected',
+          actor_type: 'system',
+          summary: 'Contato preferencial por WhatsApp. Tarefa de WhatsApp criada.',
+          metadata: { preference: 'whatsapp', manual_task: true },
+        });
+        tasksCreated++;
         actionSucceeded = true;
       } else {
-        const metaPref = payload.contact_preference
-          ? String(payload.contact_preference).trim().toLowerCase()
-          : null;
+        // PREFERENCE = 'email' OR 'sms'
+        // Rule: Both send approved first-contact email!
+        // SMS preference must NOT block the approved email from being sent.
+        const hasValidEmail = Boolean(
+          (payload.email && payload.email.trim().length > 3 && payload.email.includes('@')) ||
+          (payload.email_confirmation && payload.email_confirmation.trim().length > 3 && payload.email_confirmation.includes('@'))
+        );
 
-        // 1. Explicit SMS preference -> NÃO email automático, SMS Manual Assistido/task
-        if (metaPref === 'sms' || metaPref === 'text') {
-          await db.from('tasks').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            task_type: 'follow_up',
-            title: 'SMS Manual Assistido — Meta Lead',
-            description: `Lead indicou preferência explícita por SMS. Envio automático de SMS está desabilitado. Contatar manualmente via SMS Assistido no Inbox ou WhatsApp Web. Telefone: ${payload.phone || 'não informado'}.`,
-            status: 'pending',
-            created_by: 'system',
-          });
-          await db.from('lead_activities').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'email',
-            actor_type: 'system',
-            summary: 'Email automático suprimido: lead possui preferência explícita por SMS. Tarefa de SMS Manual Assistido criada.',
-            metadata: { preference: 'sms', suppressed_channel: 'email', manual_assisted: true },
-          });
-          tasksCreated++;
-          actionSucceeded = true;
-        }
-        // 2. Phone / Call -> ligação manual/task
-        else if (metaPref === 'call' || metaPref === 'phone') {
-          await db.from('tasks').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            task_type: 'call',
-            title: 'Ligação Telefônica — Meta Lead',
-            description: `Lead indicou preferência por Ligação Telefônica. Contatar pelo telefone: ${payload.phone || 'não informado'}.`,
-            status: 'pending',
-            created_by: 'system',
-          });
-          await db.from('lead_activities').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'email',
-            actor_type: 'system',
-            summary: 'Email automático suprimido: lead possui preferência por Ligação Telefônica. Tarefa de ligação criada.',
-            metadata: { preference: 'call', suppressed_channel: 'email', manual_task: true },
-          });
-          tasksCreated++;
-          actionSucceeded = true;
-        }
-        // 3. WhatsApp -> manual/task
-        else if (metaPref === 'whatsapp') {
-          await db.from('tasks').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            task_type: 'follow_up',
-            title: 'WhatsApp Manual — Meta Lead',
-            description: `Lead indicou preferência por WhatsApp. Contatar pelo WhatsApp: ${payload.phone || 'não informado'}.`,
-            status: 'pending',
-            created_by: 'system',
-          });
-          await db.from('lead_activities').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'email',
-            actor_type: 'system',
-            summary: 'Email automático suprimido: lead possui preferência por WhatsApp. Tarefa manual criada.',
-            metadata: { preference: 'whatsapp', suppressed_channel: 'email', manual_task: true },
-          });
-          tasksCreated++;
-          actionSucceeded = true;
-        }
-        // 4. Unknown / Null / Unspecified -> NÃO assumir Email
-        else if (!metaPref || metaPref === 'unknown' || metaPref === 'unspecified') {
-          await db.from('tasks').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            task_type: 'data_review',
-            title: 'Revisão de Preferência de Contato — Meta Lead',
-            description: 'Lead capturado sem preferência de contato especificada. Não presumir Email automaticamente. Verificar canal preferido antes de disparar.',
-            status: 'pending',
-            created_by: 'system',
-          });
-          await db.from('lead_activities').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'email',
-            actor_type: 'system',
-            summary: 'Email automático suprimido: preferência de contato não informada (não presumir Email). Lead retido para revisão manual.',
-            metadata: { preference: null, suppressed_channel: 'email', manual_review: true },
-          });
-          tasksCreated++;
-          actionSucceeded = true;
-        }
-        // 5. Email preference -> email automático somente se todas as demais regras passarem
-        else if (metaPref === 'email') {
-          const hasValidEmail = Boolean(
-            payload.email &&
-            payload.email.trim().length > 3 &&
-            payload.email.includes('@') &&
-            payload.email.includes('.')
-          );
-          const hasValidPhone = Boolean(payload.phone && payload.phone.replace(/\D/g, '').length >= 8);
+        if (hasValidEmail) {
+          // Check lead-level exactly-once idempotency:
+          const { data: existingFirstContact } = await db
+            .from('outbound_messages')
+            .select('id, status, provider_message_id')
+            .eq('lead_id', leadId)
+            .eq('channel', 'email')
+            .in('status', ['sent', 'delivered', 'pending'])
+            .maybeSingle();
 
-          if (hasValidEmail) {
-            // Stable lead-level first-contact idempotency:
-            // Check if an automatic first email was already attempted or accepted for this lead
-            const { data: existingFirstContact } = await db
-              .from('outbound_messages')
-              .select('id, status, provider_message_id')
-              .eq('lead_id', leadId)
-              .eq('channel', 'email')
-              .in('template_key', ['lead_intake_email', 'zygomatic_course_details', 'intensive_course_details'])
-              .in('status', ['sent', 'delivered', 'pending'])
-              .maybeSingle();
-
-            if (existingFirstContact) {
-              await db.from('lead_activities').insert({
-                lead_id: leadId,
-                intake_event_id: intakeEventId,
-                activity_type: 'intake_received',
-                actor_type: 'system',
-                summary: 'First automatic email has already been accepted/sent for this lead. Duplicate send skipped.',
-                metadata: { outbound_message_id: existingFirstContact.id, provider_message_id: existingFirstContact.provider_message_id },
-              });
-              actionSucceeded = true;
-            } else {
-              const emailRes = await handleEmailPreference(
-                db, payload, leadId, intakeEventId, salutation, idempotencyKey,
-              );
-              messagesSent += emailRes.sent;
-              messagesFailed += emailRes.failed;
-              tasksCreated += emailRes.tasksCreated;
-              errors.push(...emailRes.errors);
-              actionSucceeded = emailRes.allSucceeded;
-            }
-          } else if (hasValidPhone && !hasValidEmail) {
-            // Phone-only Meta lead:
-            // In this email-only phase, SMS is inactive. Send NOTHING automatically.
-            // Retain lead in Novo Lead for manual follow-up without creating a failure state.
+          if (existingFirstContact) {
             await db.from('lead_activities').insert({
               lead_id: leadId,
               intake_event_id: intakeEventId,
               activity_type: 'intake_received',
               actor_type: 'system',
-              summary: 'Meta lead has phone only. Automated SMS is inactive in email-only phase; lead retained in Novo Lead for manual follow-up.',
-              metadata: { source: payload.source, source_detail: payload.source_detail, has_phone: true, has_email: false },
+              summary: 'First automatic email has already been accepted/sent for this lead. Duplicate send skipped.',
+              metadata: { outbound_message_id: existingFirstContact.id, provider_message_id: existingFirstContact.provider_message_id },
             });
             actionSucceeded = true;
           } else {
-            // Neither valid email nor valid phone
+            const emailRes = await handleEmailPreference(
+              db, payload, leadId, intakeEventId, salutation, idempotencyKey,
+            );
+            messagesSent += emailRes.sent;
+            messagesFailed += emailRes.failed;
+            tasksCreated += emailRes.tasksCreated;
+            errors.push(...emailRes.errors);
+            actionSucceeded = emailRes.allSucceeded;
+          }
+        } else {
+          // No valid email at all
+          await db.from('lead_activities').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'processing_failed',
+            actor_type: 'system',
+            summary: 'Lead has no valid email address for first contact automation.',
+            metadata: { source: payload.source, source_detail: payload.source_detail },
+          });
+          actionSucceeded = false;
+          errors.push('Lead has no valid email address for first contact automation');
+        }
+
+        // IF PREFERENCE === 'sms':
+        // DO NOT automatically send SMS (Twilio auto-SMS remains strictly disabled).
+        // Create manual SMS follow-up task + send mobile push notification to admins!
+        if (pref === 'sms') {
+          const fullName = [payload.first_name, payload.last_name].filter(Boolean).join(' ') || 'Novo Lead';
+          const courseName = payload.course_title || payload.course_interest || 'Curso';
+
+          const { data: existingSmsTask } = await db
+            .from('tasks')
+            .select('id')
+            .eq('lead_id', leadId)
+            .eq('task_type', 'follow_up')
+            .ilike('title', '%SMS%')
+            .maybeSingle();
+
+          if (!existingSmsTask) {
+            await db.from('tasks').insert({
+              lead_id: leadId,
+              intake_event_id: intakeEventId,
+              task_type: 'follow_up',
+              title: `SMS Manual — ${fullName}`,
+              description: `Lead indicou preferência por SMS. O e-mail inicial foi enviado automaticamente. Realizar contato manual por SMS. Telefone: ${payload.phone || 'não informado'}.`,
+              status: 'pending',
+              created_by: 'system',
+            });
+            tasksCreated++;
+
             await db.from('lead_activities').insert({
               lead_id: leadId,
               intake_event_id: intakeEventId,
-              activity_type: 'processing_failed',
+              activity_type: 'contact_preference_detected',
               actor_type: 'system',
-              summary: 'Meta lead has neither valid email nor valid phone for first contact.',
-              metadata: { source: payload.source, source_detail: payload.source_detail },
+              summary: 'Lead prefere SMS. E-mail inicial enviado; tarefa de SMS manual criada.',
+              metadata: { preference: 'sms', manual_sms_pending: true },
             });
-            actionSucceeded = false;
-            errors.push('Meta lead has neither valid email nor valid phone for first contact');
           }
-        } else {
-          // Any other raw preference value
-          await db.from('tasks').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            task_type: 'data_review',
-            title: `Revisão de Canal Desconhecido (${metaPref}) — Meta Lead`,
-            description: `Preferência de contato "${metaPref}" não suportada para disparo automático. Avaliar contato manual.`,
-            status: 'pending',
-            created_by: 'system',
-          });
-          actionSucceeded = true;
-          tasksCreated++;
+
+          // Mobile push notification to administrators
+          try {
+            await db.functions.invoke('send-push-notification', {
+              body: {
+                event_type: 'sms_preference',
+                event_id: leadId,
+                idempotency_key: `sms_pref_${intakeEventId}`,
+                title: 'Novo lead prefere SMS',
+                body: `${fullName} demonstrou interesse em ${courseName}. O e-mail inicial foi enviado e o contato por SMS está pendente.`,
+                deep_link: `/leads/${leadId}?tab=communication`,
+              },
+            });
+          } catch (pushErr) {
+            console.warn('[process-lead-intake] SMS preference push notification warning:', pushErr);
+          }
         }
-      }
-    } else {
-      const rawPref = payload.contact_preference ? String(payload.contact_preference).trim().toLowerCase() : null;
-      const isValidPreference =
-        rawPref === 'email' ||
-        rawPref === 'sms' ||
-        rawPref === 'call' ||
-        rawPref === 'phone' ||
-        rawPref === 'whatsapp';
-      const pref = rawPref;
-
-      if (!isValidPreference) {
-        // Preference missing, invalid, or unsupported
-        // Audit decision in lead_activities
-        await db.from('lead_activities').insert([
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'contact_preference_detected',
-            actor_type: 'system',
-            summary: `Invalid or missing contact preference detected: "${pref ?? 'none'}"`,
-            metadata: { preference: pref ?? null, valid: false },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'email',
-            actor_type: 'system',
-            summary: 'Email channel skipped: invalid or missing contact preference',
-            metadata: { channel: 'email', reason: 'invalid_or_missing_preference' },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'sms',
-            actor_type: 'system',
-            summary: 'SMS channel skipped: invalid or missing contact preference',
-            metadata: { channel: 'sms', reason: 'invalid_or_missing_preference' },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'call',
-            actor_type: 'system',
-            summary: 'Call channel skipped: invalid or missing contact preference',
-            metadata: { channel: 'call', reason: 'invalid_or_missing_preference' },
-          },
-        ]);
-
-        // Create administrative data_review task (internal review, not customer contact)
-        const { data: existingReviewTask } = await db
-          .from('tasks')
-          .select('id')
-          .eq('intake_event_id', intakeEventId)
-          .eq('task_type', 'data_review')
-          .single();
-
-        if (!existingReviewTask) {
-          await db.from('tasks').insert({
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            task_type: 'data_review',
-            title: 'Review lead contact preference',
-            description: `Contact preference '${pref || 'none'}' is missing or invalid. Internal data review required before initiating contact.`,
-            status: 'pending',
-            created_by: 'system',
-          });
-        }
-
-        tasksCreated = 1;
-        actionSucceeded = false;
-        errors.push(`Invalid or missing contact_preference: "${pref ?? 'none'}"`);
-      } else if (pref === 'email') {
-        await db.from('lead_activities').insert([
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'contact_preference_detected',
-            actor_type: 'system',
-            summary: 'Contact preference detected: email',
-            metadata: { preference: 'email', valid: true },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'email_selected',
-            channel: 'email',
-            actor_type: 'system',
-            summary: 'Email channel selected based on lead contact preference',
-            metadata: { channel: 'email' },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'sms',
-            actor_type: 'system',
-            summary: 'SMS channel skipped: contact preference is email',
-            metadata: { channel: 'sms', reason: 'preference_exclusion', preferred: 'email' },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'call',
-            actor_type: 'system',
-            summary: 'Call channel skipped: contact preference is email',
-            metadata: { channel: 'call', reason: 'preference_exclusion', preferred: 'email' },
-          },
-        ]);
-
-        const result = await handleEmailPreference(
-          db, payload, leadId, intakeEventId, salutation, idempotencyKey,
-        );
-        messagesSent = result.sent;
-        messagesFailed = result.failed;
-        tasksCreated = result.tasksCreated;
-        actionSucceeded = result.allSucceeded;
-        errors.push(...result.errors);
-      } else if (pref === 'sms') {
-        await db.from('lead_activities').insert([
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'contact_preference_detected',
-            actor_type: 'system',
-            summary: 'Contact preference detected: sms',
-            metadata: { preference: 'sms', valid: true },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'sms_selected',
-            channel: 'sms',
-            actor_type: 'system',
-            summary: 'SMS channel selected based on lead contact preference',
-            metadata: { channel: 'sms' },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'email',
-            actor_type: 'system',
-            summary: 'Email channel skipped: contact preference is sms',
-            metadata: { channel: 'email', reason: 'preference_exclusion', preferred: 'sms' },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'call',
-            actor_type: 'system',
-            summary: 'Call channel skipped: contact preference is sms',
-            metadata: { channel: 'call', reason: 'preference_exclusion', preferred: 'sms' },
-          },
-        ]);
-
-        const result = await handleSmsPreference(
-          db, payload, leadId, intakeEventId, salutation, idempotencyKey,
-        );
-        messagesSent = result.sent;
-        messagesFailed = result.failed;
-        tasksCreated = result.tasksCreated;
-        actionSucceeded = result.allSucceeded;
-        errors.push(...result.errors);
-      } else if (pref === 'call') {
-        await db.from('lead_activities').insert([
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'contact_preference_detected',
-            actor_type: 'system',
-            summary: 'Contact preference detected: call',
-            metadata: { preference: 'call', valid: true },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'call_selected',
-            channel: 'call',
-            actor_type: 'system',
-            summary: 'Call task selected based on lead contact preference',
-            metadata: { channel: 'call' },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'email',
-            actor_type: 'system',
-            summary: 'Email channel skipped: contact preference is call',
-            metadata: { channel: 'email', reason: 'preference_exclusion', preferred: 'call' },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'sms',
-            actor_type: 'system',
-            summary: 'SMS channel skipped: contact preference is call',
-            metadata: { channel: 'sms', reason: 'preference_exclusion', preferred: 'call' },
-          },
-        ]);
-
-        const result = await handleCallPreference(
-          db, leadId, intakeEventId, salutation,
-        );
-        tasksCreated = result.tasksCreated;
-        actionSucceeded = result.success;
-        errors.push(...result.errors);
-      } else if (pref === 'whatsapp') {
-        // Explicit WhatsApp branch: ZERO auto-email, create manual task
-        await db.from('lead_activities').insert([
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'contact_preference_detected',
-            actor_type: 'system',
-            summary: 'Contact preference detected: whatsapp',
-            metadata: { preference: 'whatsapp', valid: true },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'email',
-            actor_type: 'system',
-            summary: 'Email channel skipped: contact preference is whatsapp',
-            metadata: { channel: 'email', reason: 'preference_exclusion', preferred: 'whatsapp' },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'sms',
-            actor_type: 'system',
-            summary: 'SMS channel skipped: contact preference is whatsapp',
-            metadata: { channel: 'sms', reason: 'preference_exclusion', preferred: 'whatsapp' },
-          },
-        ]);
-
-        const { error: taskErr } = await db.from('tasks').insert({
-          lead_id: leadId,
-          title: `Contato WhatsApp — ${payload.first_name || 'Lead'} ${payload.last_name || ''}`.trim(),
-          description: `Lead solicitou preferência por WhatsApp. Telefone: ${payload.phone_raw || payload.phone_e164 || 'N/A'}. Realizar contato manual via aparelho ou WhatsApp corporativo.`,
-          status: 'pending',
-          priority: 'high',
-          due_date: new Date().toISOString(),
-        });
-        if (!taskErr) tasksCreated++;
-        actionSucceeded = true;
-      } else {
-        // NULL / Unspecified preference: ZERO auto-email, create review task
-        await db.from('lead_activities').insert([
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'contact_preference_detected',
-            actor_type: 'system',
-            summary: 'Contact preference not specified: manual review required',
-            metadata: { preference: null, valid: false },
-          },
-          {
-            lead_id: leadId,
-            intake_event_id: intakeEventId,
-            activity_type: 'channel_skipped',
-            channel: 'email',
-            actor_type: 'system',
-            summary: 'Email channel skipped: preference not specified (no automatic fallback to email)',
-            metadata: { channel: 'email', reason: 'unspecified_preference_protection' },
-          },
-        ]);
-
-        const { error: taskErr } = await db.from('tasks').insert({
-          lead_id: leadId,
-          title: `Revisão Manual — ${payload.first_name || 'Lead'} ${payload.last_name || ''}`.trim(),
-          description: `Preferência de contato não informada pelo lead. Não é permitido presumir e-mail automaticamente. Verificar dados cadastrais e definir melhor abordagem humana.`,
-          status: 'pending',
-          priority: 'medium',
-          due_date: new Date().toISOString(),
-        });
-        if (!taskErr) tasksCreated++;
-        actionSucceeded = true;
       }
     }
 
@@ -857,36 +540,21 @@ Deno.serve(async (req) => {
       })
       .eq('id', intakeEventId);
 
-    // Supplementary non-blocking push notification for new lead & preferences
+    // Supplementary non-blocking push notification for new lead
     if (actionSucceeded && leadId) {
       try {
         const leadName = `${payload.first_name || ''} ${payload.last_name || ''}`.trim() || 'Novo interessado';
-        const courseName = payload.course_title || 'curso de especialização';
+        const courseName = payload.course_title || payload.course_interest || 'curso de especialização';
         await db.functions.invoke('send-push-notification', {
           body: {
             event_type: 'new_lead',
             event_id: leadId,
-            idempotency_key: `lead_${leadId}_${Date.now()}`,
+            idempotency_key: `lead_${leadId}_${intakeEventId}`,
             title: 'Novo lead recebido',
             body: `${leadName} demonstrou interesse em ${courseName}.`,
             deep_link: `/leads/${leadId}`,
           },
         });
-
-        // Supplementary notification if lead prefers SMS
-        const prefClean = payload.contact_preference ? String(payload.contact_preference).trim().toLowerCase() : '';
-        if (prefClean === 'sms') {
-          await db.functions.invoke('send-push-notification', {
-            body: {
-              event_type: 'sms_preference',
-              event_id: leadId,
-              idempotency_key: `sms_pref_${leadId}_${Date.now()}`,
-              title: 'Lead aguardando contato por SMS',
-              body: `${leadName} prefere contato por SMS.`,
-              deep_link: `/leads/${leadId}`,
-            },
-          });
-        }
       } catch (pushErr) {
         console.warn('[process-lead-intake] Supplementary push notification notice:', pushErr);
       }
@@ -906,7 +574,11 @@ Deno.serve(async (req) => {
   } catch (err) {
     console.error('[process-lead-intake] Unhandled error:', err instanceof Error ? err.message : 'Unknown');
     return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
+      JSON.stringify({
+        error: 'Internal server error',
+        details: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
@@ -985,6 +657,78 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
     }
   }
 
+  // Try to find existing lead by normalized email
+  if (payload.email) {
+    const cleanEmail = payload.email.trim().toLowerCase();
+    const { data: existing } = await db
+      .from('leads')
+      .select('id, created_at, pipeline_stage_id, course_interest, course_interests')
+      .or(`email.eq.${cleanEmail},email_confirmation.eq.${cleanEmail}`)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      // Existing lead matched! Non-destructive resurfacing:
+      // Preserves original created_at and pipeline_stage_id!
+      const updateData: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+        last_inbound_activity_at: new Date().toISOString(),
+        has_new_submission: true,
+        new_submission_at: new Date().toISOString(),
+      };
+      if (payload.course_interest) {
+        const curInterests: string[] = Array.isArray(existing.course_interests) ? existing.course_interests : [];
+        const hasCourse = curInterests.some((c) => c.toLowerCase().trim() === payload.course_interest!.toLowerCase().trim());
+        if (!hasCourse) {
+          updateData.course_interests = [...curInterests, payload.course_interest];
+          updateData.course_interest = existing.course_interest ? `${existing.course_interest}, ${payload.course_interest}` : payload.course_interest;
+        }
+      }
+      if (payload.email_confirmation && payload.email_confirmation.trim().toLowerCase() !== cleanEmail) {
+        updateData.email_confirmation = payload.email_confirmation.trim().toLowerCase();
+        updateData.email_mismatch = true;
+      }
+      await db.from('leads').update(updateData).eq('id', existing.id);
+      return { leadId: existing.id, isNewLead: false };
+    }
+  }
+
+  // Try to find existing lead by normalized phone
+  if (payload.phone) {
+    const cleanDigits = payload.phone.replace(/\D/g, '');
+    if (cleanDigits.length >= 8) {
+      const { data: existing } = await db
+        .from('leads')
+        .select('id, created_at, pipeline_stage_id, course_interest, course_interests')
+        .or(`phone_raw.ilike.%${cleanDigits}%,phone_e164.ilike.%${cleanDigits}%`)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        const updateData: Record<string, unknown> = {
+          updated_at: new Date().toISOString(),
+          last_inbound_activity_at: new Date().toISOString(),
+          has_new_submission: true,
+          new_submission_at: new Date().toISOString(),
+        };
+        if (payload.course_interest) {
+          const curInterests: string[] = Array.isArray(existing.course_interests) ? existing.course_interests : [];
+          const hasCourse = curInterests.some((c) => c.toLowerCase().trim() === payload.course_interest!.toLowerCase().trim());
+          if (!hasCourse) {
+            updateData.course_interests = [...curInterests, payload.course_interest];
+            updateData.course_interest = existing.course_interest ? `${existing.course_interest}, ${payload.course_interest}` : payload.course_interest;
+          }
+        }
+        await db.from('leads').update(updateData).eq('id', existing.id);
+        return { leadId: existing.id, isNewLead: false };
+      }
+    }
+  }
+
   // Get Capture stage
   const { data: captureStage } = await db
     .from('pipeline_stages')
@@ -1006,6 +750,10 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
   }
 
   // Create new lead
+  const cleanEmail = payload.email ? payload.email.trim().toLowerCase() : null;
+  const cleanEmailConf = payload.email_confirmation ? payload.email_confirmation.trim().toLowerCase() : null;
+  const isEmailMismatch = Boolean(cleanEmail && cleanEmailConf && cleanEmail !== cleanEmailConf);
+
   const { data: newLead, error: createError } = await db
     .from('leads')
     .insert({
@@ -1014,14 +762,16 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
       external_lead_id: payload.external_lead_id || null,
       first_name: payload.first_name || null,
       last_name: payload.last_name || null,
-      email: payload.email ? payload.email.trim().toLowerCase() : null,
-      email_confirmation: payload.email_confirmation
-        ? payload.email_confirmation.trim().toLowerCase()
-        : null,
+      email: cleanEmail,
+      email_confirmation: cleanEmailConf || cleanEmail,
+      email_mismatch: isEmailMismatch,
       phone_raw: payload.phone || null,
       phone_e164: payload.phone && payload.phone.startsWith('+') ? payload.phone : null,
       contact_preference: dbContactPreference,
       pipeline_stage_id: captureStage!.id,
+      course_interest: payload.course_interest || null,
+      course_interests: payload.course_interest ? [payload.course_interest] : [],
+      last_inbound_activity_at: payload.source_created_at || new Date().toISOString(),
       source_created_at: payload.source_created_at || new Date().toISOString(),
     })
     .select('id')
@@ -1438,7 +1188,7 @@ async function handleEmailPreference(
     sent,
     failed,
     tasksCreated: 0,
-    allSucceeded: failed === 0 && sent > 0,
+    allSucceeded: sent > 0 || (recipients.length === 0 ? false : failed === 0),
     errors,
   };
 }

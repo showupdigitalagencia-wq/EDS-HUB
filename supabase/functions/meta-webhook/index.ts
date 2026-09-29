@@ -325,6 +325,15 @@ Deno.serve(async (req) => {
     const rawEmail = fieldMap['email'] || null;
     const cleanEmail = rawEmail && rawEmail.includes('@') ? rawEmail.toLowerCase().trim() : null;
 
+    const rawEmailConf =
+      fieldMap['email_confirmation'] ||
+      fieldMap['confirm_email'] ||
+      fieldMap['confirm_your_email'] ||
+      fieldMap['confirme_seu_email'] ||
+      null;
+    const cleanEmailConf = rawEmailConf && rawEmailConf.includes('@') ? rawEmailConf.toLowerCase().trim() : null;
+    const emailMismatch = Boolean(cleanEmail && cleanEmailConf && cleanEmail !== cleanEmailConf);
+
     const rawPhone = fieldMap['phone_number'] || fieldMap['phone'] || null;
     // Phone Normalization: preserve raw; normalize to E.164 only if country safely determinable (+)
     let phoneE164: string | null = null;
@@ -459,13 +468,14 @@ Deno.serve(async (req) => {
           first_name: firstName,
           last_name: lastName,
           email: cleanEmail,
-          email_confirmation: cleanEmail,
+          email_confirmation: cleanEmailConf || cleanEmail,
           phone_raw: rawPhone,
           phone_e164: phoneE164,
           contact_preference: metaContactPreference,
           pipeline_stage_id: captureStage.id, // Strictly Novo Lead
           course_interest: resolvedCourse?.courseName || null,
           course_interests: resolvedCourse?.courseName ? [resolvedCourse.courseName] : [],
+          last_inbound_activity_at: new Date().toISOString(),
         })
         .select('id')
         .single();
@@ -547,15 +557,46 @@ Deno.serve(async (req) => {
         }
       }
     } else {
-      // Existing lead — non-destructive update
+      // Existing lead — non-destructive update, resurface via last_inbound_activity_at
       targetLeadId = matchedLead.id;
 
       const updateData: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
+        last_inbound_activity_at: new Date().toISOString(),
+        has_new_submission: true,
+        new_submission_at: new Date().toISOString(),
       };
 
       if (!matchedLead.phone_e164 && phoneE164) {
         updateData.phone_e164 = phoneE164;
+      }
+
+      if (cleanEmailConf) {
+        updateData.email_confirmation = cleanEmailConf;
+      }
+
+      // Merge course interest if new course provided
+      if (resolvedCourse?.courseName) {
+        const { data: existingLead } = await db
+          .from('leads')
+          .select('course_interest, course_interests')
+          .eq('id', targetLeadId)
+          .maybeSingle();
+
+        const currentInterests: string[] = Array.isArray(existingLead?.course_interests)
+          ? existingLead.course_interests
+          : [];
+        const hasCourse = currentInterests.some(
+          (c) => c.toLowerCase().trim() === resolvedCourse.courseName.toLowerCase().trim()
+        );
+
+        if (!hasCourse) {
+          const mergedList = [...currentInterests, resolvedCourse.courseName];
+          updateData.course_interests = mergedList;
+          updateData.course_interest = existingLead?.course_interest
+            ? `${existingLead.course_interest}, ${resolvedCourse.courseName}`
+            : resolvedCourse.courseName;
+        }
       }
 
       // Attach Meta external_lead_id if not already present on existing lead
@@ -660,7 +701,11 @@ Deno.serve(async (req) => {
         external_form_id: formId,
         external_submission_id: leadgenId,
         submitted_at: graphLead.created_time || new Date().toISOString(),
-        submitted_data: dynamicSubmittedData,
+        submitted_data: {
+          ...dynamicSubmittedData,
+          ...(cleanEmailConf ? { email_confirmation: cleanEmailConf } : {}),
+          ...(emailMismatch ? { email_mismatch: true } : {}),
+        },
         email: cleanEmail,
         phone_e164: phoneE164,
         contact_preference: metaContactPreference,
@@ -677,6 +722,47 @@ Deno.serve(async (req) => {
       console.error('[meta-webhook] Failed to upsert form_submissions record:', formSubErr);
     } else {
       console.log(`[meta-webhook] Form submission persisted immediately for lead ${targetLeadId}`);
+    }
+
+    // --- Automatic First-Contact Automation (New Leads Only) ---
+    if (isNewLead) {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+        const intakePayload = {
+          source: 'meta',
+          source_detail: sourceDetail,
+          intake_event_id: intakeEventId,
+          lead_id: targetLeadId,
+          external_event_id: leadgenId,
+          external_lead_id: leadgenId,
+          first_name: firstName || undefined,
+          last_name: lastName || undefined,
+          email: cleanEmail || undefined,
+          email_confirmation: cleanEmailConf || undefined,
+          phone: phoneE164 || rawPhone || undefined,
+          contact_preference: metaContactPreference,
+          course_interest: resolvedCourse?.courseName || undefined,
+          course_title: resolvedCourse?.courseName || undefined,
+          raw_payload: dynamicSubmittedData,
+        };
+
+        const intakeRes = await fetch(`${supabaseUrl}/functions/v1/process-lead-intake`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
+          body: JSON.stringify(intakePayload),
+        });
+
+        if (!intakeRes.ok) {
+          console.warn(`[meta-webhook] process-lead-intake returned ${intakeRes.status}:`, await intakeRes.text());
+        }
+      } catch (intakeErr) {
+        console.error('[meta-webhook] Failed calling process-lead-intake:', intakeErr);
+      }
     }
 
     // Operational log: strictly no secrets, no raw passwords/tokens

@@ -311,7 +311,8 @@ export function PipelineKanbanPage() {
         qMore = qMore.is('deleted_at', null);
       }
       if (typeof qMore?.order === 'function') {
-        const o1 = qMore.order('source_created_at', { ascending: false, nullsFirst: false });
+        const o0 = qMore.order('last_inbound_activity_at', { ascending: false, nullsFirst: false });
+        const o1 = (o0 && typeof o0.order === 'function') ? o0.order('source_created_at', { ascending: false, nullsFirst: false }) : o0;
         if (o1 && typeof o1.order === 'function') {
           const o2 = o1.order('created_at', { ascending: false });
           qMore = (o2 && typeof o2.order === 'function') ? o2.order('id', { ascending: false }) : (o2 || o1);

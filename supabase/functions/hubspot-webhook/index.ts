@@ -169,6 +169,53 @@ Deno.serve(async (req) => {
       .update({ last_webhook_at: new Date().toISOString() })
       .eq('provider', 'hubspot');
 
+    // 6. Real-time First Contact Automation handoff for genuinely new leads
+    if (result && Array.isArray(result.created_leads)) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (supabaseUrl && supabaseServiceKey) {
+        for (const newLead of result.created_leads) {
+          if (
+            newLead.source_detail === 'meta_lead_ad' ||
+            newLead.source_detail === 'website' ||
+            newLead.source_detail === 'hubspot_inbound' ||
+            newLead.source === 'meta' ||
+            newLead.source === 'form'
+          ) {
+            try {
+              const intakePayload = {
+                source: newLead.source || 'hubspot',
+                source_detail: newLead.source_detail || 'hubspot_inbound',
+                lead_id: newLead.lead_id,
+                email: newLead.email,
+                email_confirmation: newLead.email_confirmation,
+                phone: newLead.phone,
+                first_name: newLead.first_name,
+                last_name: newLead.last_name,
+                contact_preference: newLead.contact_preference,
+                course_interest: newLead.course_interest,
+                course_title: newLead.course_interest,
+                idempotency_key: `hubspot_first_contact_${newLead.lead_id}`,
+              };
+              const intakeRes = await fetch(`${supabaseUrl}/functions/v1/process-lead-intake`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                },
+                body: JSON.stringify(intakePayload),
+              });
+              if (!intakeRes.ok) {
+                console.warn(`[hubspot-webhook] process-lead-intake returned ${intakeRes.status}:`, await intakeRes.text());
+              }
+            } catch (intakeErr) {
+              console.error('[hubspot-webhook] Failed calling process-lead-intake:', intakeErr);
+            }
+          }
+        }
+      }
+    }
+
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

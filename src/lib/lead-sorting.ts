@@ -31,10 +31,18 @@ export interface HasCreationTimestamps {
  * Preserves original created_at while ensuring newly active inbound submissions move to the top!
  */
 export function getLeadCanonicalTimestamp(lead: HasCreationTimestamps): number {
-  const ts = lead.last_inbound_activity_at || lead.source_created_at || lead.created_at;
-  if (!ts) return 0;
-  const time = new Date(ts).getTime();
-  return isNaN(time) ? 0 : time;
+  const inbound = lead.last_inbound_activity_at ? new Date(lead.last_inbound_activity_at).getTime() : 0;
+  const source = lead.source_created_at ? new Date(lead.source_created_at).getTime() : 0;
+  const created = lead.created_at ? new Date(lead.created_at).getTime() : 0;
+
+  const validInbound = !isNaN(inbound) ? inbound : 0;
+  const validSource = !isNaN(source) ? source : 0;
+  const validCreated = !isNaN(created) ? created : 0;
+
+  if (validInbound > 0) {
+    return Math.max(validInbound, validSource || validCreated);
+  }
+  return validSource || validCreated || 0;
 }
 
 /**
