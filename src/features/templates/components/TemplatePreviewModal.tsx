@@ -7,8 +7,8 @@ import {
   renderTemplateWithSampleData,
   calculateSmsSegments,
   SAMPLE_PREVIEW_DATA,
-  getApprovedZygomaticHtml,
   getApprovedZygomaticSmsText,
+  APPROVED_COURSE_TEMPLATES,
 } from '../../../utils/template-variables';
 import type { EmailTemplate } from '../../../types';
 import {
@@ -32,16 +32,52 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
   const [device, setDevice] = useState<PreviewDevice>('desktop');
   const channel = useMemo(() => getTemplateChannel(template), [template]);
 
+  const approvedPackage = useMemo(() => {
+    if (!template || channel !== 'email') return null;
+    if (template.template_key && APPROVED_COURSE_TEMPLATES[template.template_key]) {
+      return APPROVED_COURSE_TEMPLATES[template.template_key];
+    }
+    const nameLower = (template.name || '').toLowerCase();
+    if (nameLower.includes('zygomatic') && !nameLower.includes('sms')) {
+      return APPROVED_COURSE_TEMPLATES.zygomatic_course_details;
+    }
+    if (nameLower.includes('periodontal')) {
+      return APPROVED_COURSE_TEMPLATES.periodontal_course_details;
+    }
+    if (nameLower.includes('endo')) {
+      return APPROVED_COURSE_TEMPLATES.endodontic_course_details;
+    }
+    if (nameLower.includes('implant') || nameLower.includes('intensive') || nameLower.includes('advanced')) {
+      return APPROVED_COURSE_TEMPLATES.implant_course_details;
+    }
+    if (nameLower.includes('wisdom')) {
+      return APPROVED_COURSE_TEMPLATES.wisdom_course_details;
+    }
+    if (nameLower.includes('rehab')) {
+      return APPROVED_COURSE_TEMPLATES.rehabilitation_course_details;
+    }
+    return null;
+  }, [template, channel]);
+
+  const templateAttachments = useMemo(() => {
+    if (approvedPackage) {
+      return approvedPackage.attachmentNames;
+    }
+    if (template?.attachment_name) {
+      return [template.attachment_name];
+    }
+    if (template?.has_attachment) {
+      return ['Documento PDF'];
+    }
+    return [];
+  }, [approvedPackage, template]);
+
   const emailData = useMemo(() => {
     if (!template || channel !== 'email') return null;
-    const isZygomatic =
-      template.template_key === 'zygomatic_course_details' ||
-      (template.name?.toLowerCase().includes('zygomatic') && !template.name?.toLowerCase().includes('sms'));
-
-    if (isZygomatic) {
+    if (approvedPackage) {
       return {
-        subject: 'Zygomatic Course Details – Hands-On Training in Rio',
-        html: sanitizeHtml(getApprovedZygomaticHtml(SAMPLE_PREVIEW_DATA)),
+        subject: approvedPackage.subject,
+        html: sanitizeHtml(approvedPackage.getHtml(SAMPLE_PREVIEW_DATA)),
       };
     }
 
@@ -54,7 +90,7 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
       subject: substitutedSubject,
       html: safeHtml,
     };
-  }, [template, channel]);
+  }, [template, channel, approvedPackage]);
 
   const smsData = useMemo(() => {
     if (!template || channel !== 'sms') return null;
@@ -174,17 +210,18 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
                       {emailData.subject || '(Sem assunto definido)'}
                     </span>
                   </div>
-                  {Boolean(template.has_attachment || template.attachment_name || template.template_key === 'zygomatic_course_details') && (
-                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-                      <span className="text-slate-400 font-medium w-16">Anexo:</span>
-                      <div className="flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-lg text-xs font-medium">
-                        <span className="font-bold text-[10px] bg-rose-200 px-1 rounded">PDF</span>
-                        <span>
-                          {template.attachment_name ||
-                            (template.template_key === 'zygomatic_course_details'
-                              ? 'Zygomatic Course (2).pdf'
-                              : 'Documento PDF')}
-                        </span>
+                  {templateAttachments.length > 0 && (
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100 flex-wrap">
+                      <span className="text-slate-400 font-medium w-16">
+                        {templateAttachments.length > 1 ? 'Anexos:' : 'Anexo:'}
+                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {templateAttachments.map((attName, idx) => (
+                          <div key={idx} className="flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-lg text-xs font-medium">
+                            <span className="font-bold text-[10px] bg-rose-200 px-1 rounded">PDF</span>
+                            <span>{attName}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}

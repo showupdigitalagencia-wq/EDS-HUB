@@ -257,7 +257,19 @@ export function MinimalLeadCard({
         <h4 className="text-xs font-bold font-heading text-[#08254f] leading-snug line-clamp-1 group-hover:text-[#449bd5] transition-colors">
           {fullName}
         </h4>
-        <GripVertical className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500 shrink-0 mt-0.5" />
+        <div className="flex items-center gap-1 shrink-0 mt-0.5">
+          {lead.has_new_submission && (
+            <span
+              data-testid="lead-card-new-submission-badge"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-2xs select-none"
+              title="Novo formulário recebido"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span>Novo formulário</span>
+            </span>
+          )}
+          <GripVertical className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500" />
+        </div>
       </div>
 
       {/* 2 & 3. Phone & Email (Display-only, non-clickable to prevent accidental actions) */}

@@ -18,6 +18,7 @@ import {
   resolveZygomaticSalutation,
   getApprovedZygomaticText,
   getApprovedZygomaticHtml,
+  APPROVED_COURSE_TEMPLATES,
 } from '../_shared/salutation.ts';
 
 interface SendMessagePayload {
@@ -318,9 +319,14 @@ Deno.serve(async (req) => {
       const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
       const replyTo = 'info@expdentalsolutions.com';
       const finalSubject = effectiveSubject;
-      const htmlBody = isZygomaticTpl
-        ? getApprovedZygomaticHtml(lead)
-        : (effectiveBody.includes('<p>') ? effectiveBody : `<p>${effectiveBody.replace(/\n/g, '<br/>')}</p>`);
+      let htmlBody: string;
+      if (requestedTemplateKey && APPROVED_COURSE_TEMPLATES[requestedTemplateKey]) {
+        htmlBody = APPROVED_COURSE_TEMPLATES[requestedTemplateKey].getHtml(lead);
+      } else if (isZygomaticTpl) {
+        htmlBody = getApprovedZygomaticHtml(lead);
+      } else {
+        htmlBody = effectiveBody.includes('<p>') ? effectiveBody : `<p>${effectiveBody.replace(/\n/g, '<br/>')}</p>`;
+      }
 
       const headers: Record<string, string> = {};
       if (in_reply_to_provider_message_id) {
@@ -336,96 +342,96 @@ Deno.serve(async (req) => {
 
       if (requestedTemplateKey && shouldIncludeAttachment) {
         // Query template_attachments join course_materials
-        const { data: tmplAtt } = await db
+        const { data: tmplAtts } = await db
           .from('template_attachments')
           .select('is_required, display_name, material_id')
-          .eq('template_key', requestedTemplateKey)
-          .maybeSingle();
+          .eq('template_key', requestedTemplateKey);
 
-        if (tmplAtt && tmplAtt.material_id) {
-          const { data: material } = await db
-            .from('course_materials')
-            .select('id, title, file_name, storage_bucket, storage_path, content_type, is_active')
-            .eq('id', tmplAtt.material_id)
-            .single();
+        if (tmplAtts && tmplAtts.length > 0) {
+          for (const tmplAtt of tmplAtts) {
+            if (!tmplAtt.material_id) continue;
+            const { data: material } = await db
+              .from('course_materials')
+              .select('id, title, file_name, storage_bucket, storage_path, content_type, is_active')
+              .eq('id', tmplAtt.material_id)
+              .maybeSingle();
 
-          if (material && material.is_active) {
-            // Attempt to retrieve PDF binary from Supabase Storage
-            const { data: fileData, error: downloadErr } = await db.storage
-              .from(material.storage_bucket)
-              .download(material.storage_path);
+            if (material && material.is_active) {
+              const { data: fileData, error: downloadErr } = await db.storage
+                .from(material.storage_bucket)
+                .download(material.storage_path);
 
-            if (downloadErr || !fileData) {
-              console.error('Attachment download failed:', downloadErr);
-              if (tmplAtt.is_required || requestedTemplateKey === 'zygomatic_course_details') {
-                return new Response(
-                  JSON.stringify({
-                    error: 'ATTACHMENT_REQUIRED_MISSING',
-                    message: `O arquivo PDF oficial do curso (${material.file_name}) é obrigatório para este modelo e não foi encontrado no armazenamento. O envio foi cancelado para garantir a integridade comercial.`,
-                  }),
-                  { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-                );
+              if (downloadErr || !fileData) {
+                console.error('Attachment download failed:', downloadErr);
+                if (tmplAtt.is_required || requestedTemplateKey === 'zygomatic_course_details' || APPROVED_COURSE_TEMPLATES[requestedTemplateKey]) {
+                  return new Response(
+                    JSON.stringify({
+                      error: 'ATTACHMENT_REQUIRED_MISSING',
+                      message: `O arquivo PDF oficial do curso (${material.file_name}) é obrigatório para este modelo e não foi encontrado no armazenamento. O envio foi cancelado para garantir a integridade comercial.`,
+                    }),
+                    { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                  );
+                }
+              } else {
+                const mimeType = fileData.type || material.content_type || 'application/pdf';
+                if (mimeType !== 'application/pdf') {
+                  return new Response(
+                    JSON.stringify({
+                      error: 'INVALID_ATTACHMENT_MIME',
+                      message: `O arquivo anexado deve ser do tipo application/pdf (encontrado: ${mimeType}).`,
+                    }),
+                    { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                  );
+                }
+
+                if (fileData.size === 0) {
+                  return new Response(
+                    JSON.stringify({
+                      error: 'EMPTY_ATTACHMENT',
+                      message: 'O arquivo PDF anexado está vazio (0 bytes).',
+                    }),
+                    { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                  );
+                }
+
+                if (fileData.size > 40 * 1024 * 1024) {
+                  return new Response(
+                    JSON.stringify({
+                      error: 'ATTACHMENT_TOO_LARGE',
+                      message: 'O arquivo PDF excede o limite de tamanho suportado (40MB).',
+                    }),
+                    { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                  );
+                }
+
+                const arrayBuffer = await fileData.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer);
+                let binary = '';
+                const chunkSize = 8192;
+                for (let i = 0; i < bytes.length; i += chunkSize) {
+                  const chunk = bytes.subarray(i, i + chunkSize);
+                  binary += String.fromCharCode.apply(null, chunk as any);
+                }
+                const base64Content = btoa(binary);
+
+                const finalFilename = tmplAtt.display_name || material.file_name;
+                attachmentsToSend.push({
+                  filename: finalFilename,
+                  content: base64Content,
+                  contentType: 'application/pdf',
+                });
               }
-            } else {
-              // Validate MIME type
-              const mimeType = fileData.type || material.content_type || 'application/pdf';
-              if (mimeType !== 'application/pdf') {
-                return new Response(
-                  JSON.stringify({
-                    error: 'INVALID_ATTACHMENT_MIME',
-                    message: `O arquivo anexado deve ser do tipo application/pdf (encontrado: ${mimeType}).`,
-                  }),
-                  { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-                );
-              }
-
-              // Validate non-empty
-              if (fileData.size === 0) {
-                return new Response(
-                  JSON.stringify({
-                    error: 'EMPTY_ATTACHMENT',
-                    message: 'O arquivo PDF anexado está vazio (0 bytes).',
-                  }),
-                  { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-                );
-              }
-
-              // Validate size (max 40MB for Resend)
-              if (fileData.size > 40 * 1024 * 1024) {
-                return new Response(
-                  JSON.stringify({
-                    error: 'ATTACHMENT_TOO_LARGE',
-                    message: 'O arquivo PDF excede o limite de tamanho suportado (40MB).',
-                  }),
-                  { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-                );
-              }
-
-              // Convert ArrayBuffer to base64
-              const arrayBuffer = await fileData.arrayBuffer();
-              const bytes = new Uint8Array(arrayBuffer);
-              let binary = '';
-              const chunkSize = 8192;
-              for (let i = 0; i < bytes.length; i += chunkSize) {
-                const chunk = bytes.subarray(i, i + chunkSize);
-                binary += String.fromCharCode.apply(null, chunk as any);
-              }
-              const base64Content = btoa(binary);
-
-              attachmentsToSend.push({
-                filename: material.file_name || 'Zygomatic Course Details.pdf',
-                content: base64Content,
-                contentType: 'application/pdf',
-              });
-
-              attachmentMetadata = {
-                included: true,
-                filename: material.file_name,
-                materialId: material.id,
-              };
             }
           }
-        } else if (requestedTemplateKey === 'zygomatic_course_details') {
+
+          if (attachmentsToSend.length > 0) {
+            attachmentMetadata = {
+              included: true,
+              filename: attachmentsToSend.map((a) => a.filename).join(', '),
+              materialId: tmplAtts[0]?.material_id || null,
+            };
+          }
+        } else if (requestedTemplateKey === 'zygomatic_course_details' || APPROVED_COURSE_TEMPLATES[requestedTemplateKey]) {
           return new Response(
             JSON.stringify({
               error: 'ATTACHMENT_REQUIRED_MISSING',

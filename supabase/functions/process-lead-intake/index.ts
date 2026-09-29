@@ -15,6 +15,7 @@ import {
   resolveZygomaticSalutation,
   getApprovedZygomaticText,
   getApprovedZygomaticHtml,
+  APPROVED_COURSE_TEMPLATES,
 } from '../_shared/salutation.ts';
 import { resolveEmailRecipients, escapeHtml } from '../_shared/email-utils.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
@@ -1097,12 +1098,16 @@ async function handleEmailPreference(
     const normalizedCourse = payload.course_interest.trim().toLowerCase();
     if (normalizedCourse === 'zygomatic' || normalizedCourse === 'zit-01' || normalizedCourse.includes('zygomatic')) {
       templateKey = 'zygomatic_course_details';
-    } else if (normalizedCourse === 'intensive' || normalizedCourse === 'idit-01' || normalizedCourse.includes('intensive')) {
-      templateKey = 'intensive_course_details';
-    } else if (normalizedCourse === 'endodontic' || normalizedCourse === 'et-01' || normalizedCourse.includes('endo')) {
+    } else if (normalizedCourse === 'periodontal' || normalizedCourse === 'periodontal plastic' || normalizedCourse.includes('perio')) {
+      templateKey = 'periodontal_course_details';
+    } else if (normalizedCourse === 'endodontic' || normalizedCourse === 'endodontics' || normalizedCourse === 'et-01' || normalizedCourse.includes('endo')) {
       templateKey = 'endodontic_course_details';
-    } else if (normalizedCourse === 'wisdom' || normalizedCourse === 'wtt-01' || normalizedCourse.includes('wisdom')) {
+    } else if (normalizedCourse === 'intensive' || normalizedCourse === 'advanced' || normalizedCourse === 'idit-01' || normalizedCourse.includes('intensive') || normalizedCourse.includes('implant')) {
+      templateKey = 'implant_course_details';
+    } else if (normalizedCourse === 'wisdom' || normalizedCourse === 'wtt-01' || normalizedCourse.includes('wisdom') || normalizedCourse.includes('molar')) {
       templateKey = 'wisdom_course_details';
+    } else if (normalizedCourse === 'rehabilitation' || normalizedCourse.includes('rehab')) {
+      templateKey = 'rehabilitation_course_details';
     } else {
       isCourseUnidentified = true;
     }
@@ -1138,6 +1143,7 @@ async function handleEmailPreference(
   const replyTo = 'info@expdentalsolutions.com';
 
   const isZygomatic = templateKey === 'zygomatic_course_details';
+  const approvedTpl = APPROVED_COURSE_TEMPLATES[templateKey];
   const zygomaticSalutation = resolveZygomaticSalutation(payload);
 
   const templateVars = {
@@ -1150,21 +1156,27 @@ async function handleEmailPreference(
     course_tuition: '$17,500',
   };
 
-  const subject = isZygomatic
-    ? (template.subject_template || 'Zygomatic Course Details – Hands-On Training in Rio')
-    : renderTemplate(template.subject_template || '', templateVars);
+  let subject: string;
+  let body: string;
+  let escapedHtmlBody: string;
 
-  const body = isZygomatic
-    ? getApprovedZygomaticText(payload)
-    : renderTemplate(template.body_template, templateVars);
-
-  const escapedHtmlBody = isZygomatic
-    ? getApprovedZygomaticHtml(payload)
-    : renderTemplate(template.body_template, {
-        ...templateVars,
-        salutation: escapeHtml(templateVars.salutation),
-        first_name: escapeHtml(templateVars.first_name),
-      }).replace(/\n/g, '<br>');
+  if (approvedTpl) {
+    subject = approvedTpl.subject;
+    body = approvedTpl.getText(payload);
+    escapedHtmlBody = approvedTpl.getHtml(payload);
+  } else if (isZygomatic) {
+    subject = template.subject_template || 'Zygomatic Course Details – Hands-On Training in Rio';
+    body = getApprovedZygomaticText(payload);
+    escapedHtmlBody = getApprovedZygomaticHtml(payload);
+  } else {
+    subject = renderTemplate(template.subject_template || '', templateVars);
+    body = renderTemplate(template.body_template, templateVars);
+    escapedHtmlBody = renderTemplate(template.body_template, {
+      ...templateVars,
+      salutation: escapeHtml(templateVars.salutation),
+      first_name: escapeHtml(templateVars.first_name),
+    }).replace(/\n/g, '<br>');
+  }
 
   // Attachment handling: Query template_attachments for this template
   const attachmentsToSend: Array<{ filename: string; content: string; contentType?: string }> = [];
@@ -1174,14 +1186,13 @@ async function handleEmailPreference(
     materialId: null as string | null,
   };
 
-  let { data: tmplAtt } = await db
+  let { data: tmplAtts } = await db
     .from('template_attachments')
     .select('is_required, display_name, material_id')
-    .eq('template_key', templateKey)
-    .maybeSingle();
+    .eq('template_key', templateKey);
 
   // Fallback for zygomatic_course_details if material_id was not linked in template_attachments
-  if ((!tmplAtt || !tmplAtt.material_id) && isZygomatic) {
+  if ((!tmplAtts || tmplAtts.length === 0) && isZygomatic) {
     const { data: zygMat } = await db
       .from('course_materials')
       .select('id, title, file_name, storage_bucket, storage_path, content_type, is_active')
@@ -1192,53 +1203,58 @@ async function handleEmailPreference(
       .maybeSingle();
 
     if (zygMat) {
-      tmplAtt = { is_required: true, display_name: zygMat.file_name, material_id: zygMat.id };
+      tmplAtts = [{ is_required: true, display_name: zygMat.file_name, material_id: zygMat.id }];
     }
   }
 
-  if (tmplAtt && tmplAtt.material_id) {
-    const { data: material } = await db
-      .from('course_materials')
-      .select('id, title, file_name, storage_bucket, storage_path, content_type, is_active')
-      .eq('id', tmplAtt.material_id)
-      .single();
+  if (tmplAtts && tmplAtts.length > 0) {
+    for (const tmplAtt of tmplAtts) {
+      if (!tmplAtt.material_id) continue;
+      const { data: material } = await db
+        .from('course_materials')
+        .select('id, title, file_name, storage_bucket, storage_path, content_type, is_active')
+        .eq('id', tmplAtt.material_id)
+        .maybeSingle();
 
-    if (material && material.is_active) {
-      const { data: fileData, error: downloadErr } = await db.storage
-        .from(material.storage_bucket)
-        .download(material.storage_path);
+      if (material && material.is_active) {
+        const { data: fileData, error: downloadErr } = await db.storage
+          .from(material.storage_bucket)
+          .download(material.storage_path);
 
-      if (!downloadErr && fileData && fileData.size > 0) {
-        const arrayBuffer = await fileData.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        let binary = '';
-        const chunkSize = 8192;
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-          const chunk = bytes.subarray(i, i + chunkSize);
-          binary += String.fromCharCode.apply(null, chunk as any);
+        if (!downloadErr && fileData && fileData.size > 0) {
+          const arrayBuffer = await fileData.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          const chunkSize = 8192;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            const chunk = bytes.subarray(i, i + chunkSize);
+            binary += String.fromCharCode.apply(null, chunk as any);
+          }
+          const base64Content = btoa(binary);
+
+          attachmentsToSend.push({
+            filename: tmplAtt.display_name || material.file_name,
+            content: base64Content,
+            contentType: 'application/pdf',
+          });
+        } else if (tmplAtt.is_required || isZygomatic || approvedTpl) {
+          return {
+            sent: 0,
+            failed: 1,
+            tasksCreated: 1,
+            allSucceeded: false,
+            errors: [`Required course attachment (${material?.file_name || 'PDF'}) could not be retrieved from storage`],
+          };
         }
-        const base64Content = btoa(binary);
-
-        attachmentsToSend.push({
-          filename: material.file_name || 'Zygomatic Course (2).pdf',
-          content: base64Content,
-          contentType: 'application/pdf',
-        });
-
-        attachmentMetadata = {
-          included: true,
-          filename: material.file_name,
-          materialId: material.id,
-        };
-      } else if (tmplAtt.is_required || isZygomatic) {
-        return {
-          sent: 0,
-          failed: 1,
-          tasksCreated: 1,
-          allSucceeded: false,
-          errors: [`Required course attachment (${material?.file_name || 'PDF'}) could not be retrieved from storage`],
-        };
       }
+    }
+
+    if (attachmentsToSend.length > 0) {
+      attachmentMetadata = {
+        included: true,
+        filename: attachmentsToSend.map((a) => a.filename).join(', '),
+        materialId: tmplAtts[0]?.material_id || null,
+      };
     }
   }
 

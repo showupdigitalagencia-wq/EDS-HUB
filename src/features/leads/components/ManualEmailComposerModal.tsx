@@ -25,7 +25,7 @@ import {
   resolveSalutation,
   resolveSafeFirstName,
   resolveZygomaticSalutation,
-  getApprovedZygomaticText,
+  APPROVED_COURSE_TEMPLATES,
 } from '../../../utils/salutation';
 import { getTemplateSubject, getTemplateChannel } from '../../../utils/template-variables';
 import type { Lead, EmailTemplate } from '../../../types';
@@ -62,6 +62,7 @@ export function ManualEmailComposerModal({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string | null>(null);
   const [attachment, setAttachment] = useState<{ displayName: string; canRemove: boolean; isRequired?: boolean } | null>(null);
+  const [attachmentsList, setAttachmentsList] = useState<Array<{ displayName: string; canRemove: boolean; isRequired?: boolean }>>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
 
   // Suppression state
@@ -170,28 +171,58 @@ export function ManualEmailComposerModal({
         setSelectedTemplateId('');
         setSelectedTemplateKey(null);
         setAttachment(null);
+        setAttachmentsList([]);
         return;
       }
 
-      // Check attachment configuration (Zygomatic Course Details email requires PDF)
-      const isZygomatic = tpl.template_key === 'zygomatic_course_details' || (tpl.name.toLowerCase().includes('zygomatic') && !tpl.name.toLowerCase().includes('sms'));
-      const hasAtt = Boolean(tpl.has_attachment || (tpl.content_json as any)?.has_attachment || isZygomatic);
-      if (hasAtt) {
-        const isRequired = isZygomatic || Boolean((tpl as any).is_attachment_required || (tpl.content_json as any)?.is_attachment_required);
-        setAttachment({
-          displayName: isZygomatic ? 'Zygomatic Course (2).pdf' : (tpl.attachment_name || (tpl.content_json as any)?.attachment_name || 'Documento PDF'),
-          canRemove: !isRequired,
-          isRequired,
-        });
-      } else {
-        setAttachment(null);
+      // Check if this matches any of the canonical approved course packages
+      let approvedPkg = tpl.template_key ? APPROVED_COURSE_TEMPLATES[tpl.template_key] : null;
+      if (!approvedPkg) {
+        const nameLower = tpl.name.toLowerCase();
+        if (nameLower.includes('zygomatic') && !nameLower.includes('sms')) {
+          approvedPkg = APPROVED_COURSE_TEMPLATES.zygomatic_course_details;
+        } else if (nameLower.includes('periodontal')) {
+          approvedPkg = APPROVED_COURSE_TEMPLATES.periodontal_course_details;
+        } else if (nameLower.includes('endo')) {
+          approvedPkg = APPROVED_COURSE_TEMPLATES.endodontic_course_details;
+        } else if (nameLower.includes('implant') || nameLower.includes('intensive') || nameLower.includes('advanced')) {
+          approvedPkg = APPROVED_COURSE_TEMPLATES.implant_course_details;
+        } else if (nameLower.includes('wisdom')) {
+          approvedPkg = APPROVED_COURSE_TEMPLATES.wisdom_course_details;
+        } else if (nameLower.includes('rehab')) {
+          approvedPkg = APPROVED_COURSE_TEMPLATES.rehabilitation_course_details;
+        }
       }
-      setSelectedTemplateKey(tpl.template_key || (isZygomatic ? 'zygomatic_course_details' : null));
 
-      if (isZygomatic) {
-        setSubject('Zygomatic Course Details – Hands-On Training in Rio');
-        setBody(getApprovedZygomaticText(lead));
+      if (approvedPkg) {
+        setSelectedTemplateKey(approvedPkg.templateKey);
+        setSubject(approvedPkg.subject);
+        setBody(approvedPkg.getText(lead));
+        const attList = approvedPkg.attachmentNames.map((name) => ({
+          displayName: name,
+          canRemove: false,
+          isRequired: true,
+        }));
+        setAttachmentsList(attList);
+        setAttachment(attList[0] || null);
       } else {
+        const isZygomatic = tpl.template_key === 'zygomatic_course_details' || (tpl.name.toLowerCase().includes('zygomatic') && !tpl.name.toLowerCase().includes('sms'));
+        const hasAtt = Boolean(tpl.has_attachment || (tpl.content_json as any)?.has_attachment || isZygomatic);
+        if (hasAtt) {
+          const isRequired = isZygomatic || Boolean((tpl as any).is_attachment_required || (tpl.content_json as any)?.is_attachment_required);
+          const attItem = {
+            displayName: isZygomatic ? 'Zygomatic Course (2).pdf' : (tpl.attachment_name || (tpl.content_json as any)?.attachment_name || 'Documento PDF'),
+            canRemove: !isRequired,
+            isRequired,
+          };
+          setAttachment(attItem);
+          setAttachmentsList([attItem]);
+        } else {
+          setAttachment(null);
+          setAttachmentsList([]);
+        }
+        setSelectedTemplateKey(tpl.template_key || (isZygomatic ? 'zygomatic_course_details' : null));
+
         // Resolve variables with lead data safely using canonical rule
         const firstName = resolveSafeFirstName(lead.first_name, 'Doctor');
         const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doctor');
@@ -261,8 +292,8 @@ export function ManualEmailComposerModal({
     }
 
     // Strict enforcement: if template requires an attachment, it cannot be sent without it
-    const isZygomaticTpl = selectedTemplateKey === 'zygomatic_course_details';
-    if ((isZygomaticTpl || attachment?.isRequired) && !attachment) {
+    const isApprovedCourseTpl = Boolean(selectedTemplateKey && APPROVED_COURSE_TEMPLATES[selectedTemplateKey]);
+    if ((isApprovedCourseTpl || attachment?.isRequired) && !attachment && attachmentsList.length === 0) {
       setError('O anexo PDF oficial é obrigatório para este modelo e não pode ser removido.');
       return;
     }
@@ -563,7 +594,52 @@ export function ManualEmailComposerModal({
           </div>
 
           {/* Attachment Preview Section */}
-          {attachment && (
+          {attachmentsList.length > 0 ? (
+            <div className="space-y-2">
+              {attachmentsList.map((att, idx) => (
+                <div key={idx} className="bg-slate-50 border border-slate-200/90 rounded-xl p-3 flex items-center justify-between animate-in fade-in duration-150">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 font-bold text-[10px] flex items-center justify-center border border-rose-200 shrink-0">
+                      PDF
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-slate-800">{att.displayName}</span>
+                        {att.isRequired ? (
+                          <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                            Obrigatório
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            Anexo Oficial
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-400">PDF • Documento oficial do curso incluído</p>
+                    </div>
+                  </div>
+                  {att.canRemove ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = attachmentsList.filter((_, i) => i !== idx);
+                        setAttachmentsList(next);
+                        setAttachment(next[0] || null);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/50 transition-colors cursor-pointer"
+                      title="Remover anexo apenas deste envio"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 italic">
+                      Anexo fixo
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : attachment ? (
             <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-3 flex items-center justify-between animate-in fade-in duration-150">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 font-bold text-[10px] flex items-center justify-center border border-rose-200 shrink-0">
@@ -600,7 +676,7 @@ export function ManualEmailComposerModal({
                 </span>
               )}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Footer — Sticky with Actions & Mobile Safe Area */}

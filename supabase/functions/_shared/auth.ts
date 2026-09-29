@@ -13,7 +13,8 @@ export interface AuthResult {
 
 /**
  * Verifies that the request comes from an authenticated user
- * who is an active member of app_user.
+ * who is an active member of app_user, OR from an internal service
+ * using the Supabase Service Role Key.
  */
 export async function verifyAuth(authHeader: string | null): Promise<AuthResult> {
   if (!authHeader) {
@@ -21,8 +22,15 @@ export async function verifyAuth(authHeader: string | null): Promise<AuthResult>
   }
 
   try {
-    // Verify the JWT and get user
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+    // Allow internal service-to-service calls using the Supabase Service Role Key
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (serviceRoleKey && token === serviceRoleKey) {
+      return { isAuthorized: true, userId: 'system:service_role', error: null, statusCode: 200 };
+    }
+
+    // Verify the JWT and get user
     const userClient = createUserClient(authHeader);
     const { data: { user }, error: authError } = await userClient.auth.getUser(token);
 

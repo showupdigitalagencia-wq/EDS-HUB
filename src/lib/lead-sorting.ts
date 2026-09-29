@@ -18,17 +18,20 @@
 
 export interface HasCreationTimestamps {
   id?: string;
+  last_inbound_activity_at?: string | null;
   source_created_at?: string | null;
   created_at?: string | null;
   [key: string]: any;
 }
 
 /**
- * Resolves the canonical creation timestamp in milliseconds.
- * Prefers source_created_at, falling back to created_at.
+ * Resolves the canonical recency timestamp in milliseconds.
+ * Prioritizes last_inbound_activity_at (resurfacing returning leads with new form submissions),
+ * then source_created_at, falling back to created_at.
+ * Preserves original created_at while ensuring newly active inbound submissions move to the top!
  */
 export function getLeadCanonicalTimestamp(lead: HasCreationTimestamps): number {
-  const ts = lead.source_created_at || lead.created_at;
+  const ts = lead.last_inbound_activity_at || lead.source_created_at || lead.created_at;
   if (!ts) return 0;
   const time = new Date(ts).getTime();
   return isNaN(time) ? 0 : time;

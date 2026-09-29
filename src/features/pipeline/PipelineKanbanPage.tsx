@@ -167,7 +167,8 @@ export function PipelineKanbanPage() {
               q = q.is('deleted_at', null);
             }
             if (typeof q?.order === 'function') {
-              const o1 = q.order('source_created_at', { ascending: false, nullsFirst: false });
+              const o0 = q.order('last_inbound_activity_at', { ascending: false, nullsFirst: false });
+              const o1 = (o0 && typeof o0.order === 'function') ? o0.order('source_created_at', { ascending: false, nullsFirst: false }) : o0;
               if (o1 && typeof o1.order === 'function') {
                 const o2 = o1.order('created_at', { ascending: false });
                 q = (o2 && typeof o2.order === 'function') ? o2.order('id', { ascending: false }) : (o2 || o1);
@@ -515,6 +516,23 @@ export function PipelineKanbanPage() {
     };
   }, [loadPipelineData]);
 
+  // Handle lead card selection and new submission acknowledgment
+  const handleCardClick = (lead: Lead) => {
+    setSelectedLeadId(lead.id);
+    if (lead.has_new_submission) {
+      setLeadsByStage((prev) => {
+        const next = { ...prev };
+        for (const stageId in next) {
+          next[stageId] = next[stageId].map((l) =>
+            l.id === lead.id ? { ...l, has_new_submission: false } : l
+          );
+        }
+        return next;
+      });
+      void supabase.rpc('acknowledge_lead_new_submission', { p_lead_id: lead.id });
+    }
+  };
+
   // Handle stage drag and drop
   const handleDragStart = (e: React.DragEvent, leadId: string) => {
     setDraggedLeadId(leadId);
@@ -596,7 +614,7 @@ export function PipelineKanbanPage() {
           detail: { leadId, stageId: targetStageId },
         })
       );
-    } catch (_err) {
+    } catch {
       // Rollback on failure
       setLeadsByStage(previousGrouped);
       setStageCounts(previousCounts);
@@ -864,7 +882,7 @@ export function PipelineKanbanPage() {
                                   stageName={stage.name}
                                   isDragging={isDragging}
                                   onDragStart={(e) => handleDragStart(e, lead.id)}
-                                  onClick={() => setSelectedLeadId(lead.id)}
+                                  onClick={() => handleCardClick(lead)}
                                 />
                               );
                             })}

@@ -204,6 +204,9 @@ export interface Lead {
   source_detail?: string | null;
   source_created_at: string | null;
   last_response_at?: string | null;
+  last_inbound_activity_at?: string | null;
+  has_new_submission?: boolean;
+  new_submission_at?: string | null;
   lead_score?: number;
   lead_score_updated_at?: string | null;
   created_at: string;

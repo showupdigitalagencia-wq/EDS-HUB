@@ -15,10 +15,22 @@ export {
   resolveSafeFirstName,
   resolveSafeLastName,
   resolveSalutation,
+  resolveDoctorSalutation,
   resolveZygomaticSalutation,
   getApprovedZygomaticText,
   getApprovedZygomaticHtml,
   getApprovedZygomaticSmsText,
+  getApprovedPeriodontalText,
+  getApprovedPeriodontalHtml,
+  getApprovedEndodonticText,
+  getApprovedEndodonticHtml,
+  getApprovedImplantText,
+  getApprovedImplantHtml,
+  getApprovedWisdomText,
+  getApprovedWisdomHtml,
+  getApprovedRehabilitationText,
+  getApprovedRehabilitationHtml,
+  APPROVED_COURSE_TEMPLATES,
 } from './salutation';
 
 export type TemplateChannel = 'email' | 'sms';

@@ -212,13 +212,13 @@ Deno.serve(async (req) => {
           .from('template_attachments')
           .select('id')
           .eq('template_key', templateKey)
+          .eq('material_id', materialId)
           .maybeSingle();
 
         if (existingAtt) {
           await db
             .from('template_attachments')
             .update({
-              material_id: materialId,
               is_required: isRequired,
               display_name: fileName,
             })
@@ -254,8 +254,68 @@ Deno.serve(async (req) => {
       });
     }
 
-    const body = await req.json();
+    let body: Record<string, any> = {};
+    if (req.method === 'GET') {
+      const url = new URL(req.url);
+      body = {
+        action: url.searchParams.get('action') || 'get',
+        template_key: url.searchParams.get('template_key'),
+      };
+    } else {
+      try {
+        body = await req.json();
+      } catch (_e) {
+        body = {};
+      }
+    }
     const action = body.action || 'get';
+    if (action === 'list_all') {
+      const { data: courses } = await db.from('courses').select('id, code, name');
+      const { data: materials } = await db.from('course_materials').select('*');
+      const { data: attachments } = await db.from('template_attachments').select('*');
+      return jsonResponse({ courses, materials, attachments });
+    }
+
+    if (action === 'associate') {
+      const { template_key, material_id, display_name, is_required = true } = body;
+      const { data, error } = await db.from('template_attachments').upsert({
+        template_key,
+        material_id,
+        display_name,
+        is_required,
+      }, { onConflict: 'template_key,material_id' }).select();
+      return jsonResponse({ success: !error, data, error });
+    }
+
+    if (action === 'inspect_submission') {
+      const { submission_id } = body;
+      const { data: submission } = await db
+        .from('form_submissions')
+        .select('*')
+        .eq('id', submission_id)
+        .maybeSingle();
+
+      if (!submission) return errorResponse('NOT_FOUND', 'Submission not found', 404);
+
+      const { data: lead } = await db
+        .from('leads')
+        .select('*')
+        .eq('id', submission.lead_id)
+        .maybeSingle();
+
+      const { data: submissions } = await db
+        .from('form_submissions')
+        .select('*')
+        .eq('lead_id', submission.lead_id)
+        .order('submitted_at', { ascending: false });
+
+      return jsonResponse({ submission, lead, submissions });
+    }
+
+    if (action === 'test_rpc') {
+      const { data, error } = await db.rpc('process_form_submission_transaction', body.params);
+      return jsonResponse({ data, error });
+    }
 
     // =========================================================================
     // ACTION: get_template_attachment
@@ -266,40 +326,50 @@ Deno.serve(async (req) => {
         return errorResponse('MISSING_TEMPLATE_KEY', 'Chave do template é obrigatória.');
       }
 
-      const { data: attachment, error: attErr } = await db
+      const { data: attachments, error: attErr } = await db
         .from('template_attachments')
         .select('id, is_required, display_name, material_id, created_at')
-        .eq('template_key', templateKey)
-        .maybeSingle();
+        .eq('template_key', templateKey);
 
       if (attErr) {
         return errorResponse('DB_ERROR', attErr.message, 500);
       }
 
-      if (!attachment || !attachment.material_id) {
-        return jsonResponse({ has_attachment: false, attachment: null });
+      if (!attachments || attachments.length === 0) {
+        return jsonResponse({ has_attachment: false, attachment: null, attachments: [] });
       }
 
-      const { data: material, error: matErr } = await db
-        .from('course_materials')
-        .select('id, title, file_name, file_size_bytes, content_type, is_active, is_required_for_outreach')
-        .eq('id', attachment.material_id)
-        .maybeSingle();
+      const attachmentsList: Array<{
+        file_name: string;
+        display_name: string;
+        is_required: boolean;
+        file_size_bytes: number;
+        is_pdf: boolean;
+      }> = [];
 
-      if (matErr || !material) {
-        return jsonResponse({ has_attachment: false, attachment: null });
+      for (const att of attachments) {
+        if (!att.material_id) continue;
+        const { data: material } = await db
+          .from('course_materials')
+          .select('id, title, file_name, file_size_bytes, content_type, is_active, is_required_for_outreach')
+          .eq('id', att.material_id)
+          .maybeSingle();
+
+        if (material && material.is_active) {
+          attachmentsList.push({
+            file_name: material.file_name,
+            display_name: att.display_name || material.file_name,
+            is_required: Boolean(att.is_required),
+            file_size_bytes: material.file_size_bytes || 0,
+            is_pdf: true,
+          });
+        }
       }
 
-      // Return clean, user-friendly presentation (no UUIDs, buckets, private storage paths)
       return jsonResponse({
-        has_attachment: true,
-        attachment: {
-          file_name: material.file_name,
-          display_name: attachment.display_name || material.file_name,
-          is_required: Boolean(attachment.is_required),
-          file_size_bytes: material.file_size_bytes || 0,
-          is_pdf: true,
-        },
+        has_attachment: attachmentsList.length > 0,
+        attachment: attachmentsList[0] || null,
+        attachments: attachmentsList,
       });
     }
 
@@ -484,13 +554,13 @@ Deno.serve(async (req) => {
           .from('template_attachments')
           .select('id')
           .eq('template_key', template_key)
+          .eq('material_id', materialId)
           .maybeSingle();
 
         if (existingAtt) {
           await db
             .from('template_attachments')
             .update({
-              material_id: materialId,
               is_required,
               display_name: file_name,
             })

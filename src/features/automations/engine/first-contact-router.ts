@@ -90,6 +90,7 @@ export interface FirstContactTemplateResolution {
   templateName: string;
   hasPdfAttachment: boolean;
   pdfAttachmentName?: string;
+  pdfAttachmentNames?: string[];
 }
 
 /**
@@ -158,7 +159,8 @@ export function resolveFirstContactTemplateForCourse(course?: string | null): Fi
   if (
     normalized === 'zygomatic' ||
     normalized === 'zit-01' ||
-    normalized.includes('zygomatic')
+    normalized.includes('zygomatic') ||
+    normalized.includes('zygoma')
   ) {
     return {
       courseCode: 'ZIT-01',
@@ -167,27 +169,33 @@ export function resolveFirstContactTemplateForCourse(course?: string | null): Fi
       templateName: 'Zygomatic Course Details',
       hasPdfAttachment: true,
       pdfAttachmentName: 'Zygomatic Course (2).pdf',
+      pdfAttachmentNames: ['Zygomatic Course (2).pdf'],
     };
   }
 
-  // 2. Intensive -> IDIT-01 -> Intensive Course Details
+  // 2. Periodontal Plastic -> PST-01 -> Periodontal Plastic with PDF attachment
   if (
-    normalized === 'intensive' ||
-    normalized === 'idit-01' ||
-    normalized.includes('intensive')
+    normalized === 'periodontal' ||
+    normalized === 'periodontal plastic' ||
+    normalized === 'pst-01' ||
+    normalized.includes('periodont') ||
+    normalized.includes('perio')
   ) {
     return {
-      courseCode: 'IDIT-01',
-      courseName: 'Intensive Dental Implant Training',
-      templateKey: 'intensive_course_details',
-      templateName: 'Intensive Course Details',
-      hasPdfAttachment: false,
+      courseCode: 'PST-01',
+      courseName: 'Periodontal Surgery Training',
+      templateKey: 'periodontal_course_details',
+      templateName: 'Periodontal Plastic',
+      hasPdfAttachment: true,
+      pdfAttachmentName: '_Perio and Peri-implant Plastic Surgery.pdf',
+      pdfAttachmentNames: ['_Perio and Peri-implant Plastic Surgery.pdf'],
     };
   }
 
-  // 3. Endodontic -> ET-01 -> Endodontic Course Details
+  // 3. Endodontic / Endodontics -> ET-01 -> Endodontics with PDF attachment
   if (
     normalized === 'endodontic' ||
+    normalized === 'endodontics' ||
     normalized === 'et-01' ||
     normalized.includes('endodontic') ||
     normalized.includes('endo')
@@ -196,12 +204,36 @@ export function resolveFirstContactTemplateForCourse(course?: string | null): Fi
       courseCode: 'ET-01',
       courseName: 'Endodontics Training',
       templateKey: 'endodontic_course_details',
-      templateName: 'Endodontic Course Details',
-      hasPdfAttachment: false,
+      templateName: 'Endodontics',
+      hasPdfAttachment: true,
+      pdfAttachmentName: 'Endodontics course.pdf',
+      pdfAttachmentNames: ['Endodontics course.pdf'],
     };
   }
 
-  // 4. Wisdom -> WTT-01 -> Wisdom Course Details
+  // 4. Intensive OR Advanced -> Shared combined Implant email attaching BOTH PDFs
+  if (
+    normalized === 'intensive' ||
+    normalized === 'idit-01' ||
+    normalized.includes('intensive') ||
+    normalized === 'advanced' ||
+    normalized === 'adie-01' ||
+    normalized.includes('advanced') ||
+    normalized.includes('implant')
+  ) {
+    const isAdv = normalized.includes('advanced') || normalized === 'adie-01';
+    return {
+      courseCode: isAdv ? 'ADIE-01' : 'IDIT-01',
+      courseName: 'Intensive + Advanced Implant',
+      templateKey: 'implant_course_details',
+      templateName: 'Intensive + Advanced Implant',
+      hasPdfAttachment: true,
+      pdfAttachmentName: 'Intensive implant .pdf',
+      pdfAttachmentNames: ['Intensive implant .pdf', 'Advanced implant course (1).pdf'],
+    };
+  }
+
+  // 5. Wisdom -> WTT-01 -> Wisdom with PDF attachment
   if (
     normalized === 'wisdom' ||
     normalized === 'wtt-01' ||
@@ -211,12 +243,31 @@ export function resolveFirstContactTemplateForCourse(course?: string | null): Fi
       courseCode: 'WTT-01',
       courseName: 'Wisdom Teeth Training',
       templateKey: 'wisdom_course_details',
-      templateName: 'Wisdom Course Details',
-      hasPdfAttachment: false,
+      templateName: 'Wisdom',
+      hasPdfAttachment: true,
+      pdfAttachmentName: 'Third molar course.pdf',
+      pdfAttachmentNames: ['Third molar course.pdf'],
     };
   }
 
-  // 5. Unmapped / Uncertain values: Advanced, Periodontal Plastic, Rehabilitation, Free courses
+  // 6. Rehabilitation -> AIRE-01 -> Rehabilitation with PDF attachment
+  if (
+    normalized === 'rehabilitation' ||
+    normalized === 'aire-01' ||
+    normalized.includes('rehab')
+  ) {
+    return {
+      courseCode: 'AIRE-01',
+      courseName: 'Advanced Implant Rehabilitation Experience',
+      templateKey: 'rehabilitation_course_details',
+      templateName: 'Rehabilitation',
+      hasPdfAttachment: true,
+      pdfAttachmentName: 'Oral Rehabilitation Course.pdf',
+      pdfAttachmentNames: ['Oral Rehabilitation Course.pdf'],
+    };
+  }
+
+  // 7. Unmapped / Uncertain values (e.g. Free courses or unknown)
   // MUST NOT BE GUESSED - Returns null to block automated dispatch until human approval
   return null;
 }
