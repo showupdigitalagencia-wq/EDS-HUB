@@ -175,13 +175,15 @@ Deno.serve(async (req) => {
       const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
       if (supabaseUrl && supabaseServiceKey) {
         for (const newLead of result.created_leads) {
-          if (
-            newLead.source_detail === 'meta_lead_ad' ||
-            newLead.source_detail === 'website' ||
-            newLead.source_detail === 'hubspot_inbound' ||
+          // Automatic first-contact email is ADS ONLY:
+          // Strictly restricted to approved advertising Lead Ads (Meta, Facebook, Instagram Lead Ads)
+          const isProvenAd =
             newLead.source === 'meta' ||
-            newLead.source === 'form'
-          ) {
+            newLead.source_detail === 'meta_lead_ad' ||
+            newLead.source_detail === 'facebook' ||
+            newLead.source_detail === 'instagram';
+
+          if (isProvenAd) {
             try {
               const intakePayload = {
                 source: newLead.source || 'hubspot',

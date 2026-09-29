@@ -235,6 +235,7 @@ Deno.serve(async (req) => {
     let messagesFailed = 0;
     let tasksCreated = 0;
     let actionSucceeded = false;
+    let pref: 'email' | 'sms' | 'call' | 'whatsapp' = 'email';
     const errors: string[] = [];
 
     const isTestLead =
@@ -309,11 +310,25 @@ Deno.serve(async (req) => {
         metadata: { source: payload.source, source_detail: payload.source_detail, resurfaced: true },
       });
       actionSucceeded = true;
+    } else if (!isProvenAdLead(payload)) {
+      // NON-AD SOURCE RULE:
+      // Automatic first-contact email is strictly restricted to approved advertising Lead Ads (Meta / Facebook / Instagram Lead Ads).
+      // Website /register, organic HubSpot, manual leads, historical imports, etc. are safely ingested
+      // and preserved, but do NOT receive the automatic Ad email.
+      await db.from('lead_activities').insert({
+        lead_id: leadId,
+        intake_event_id: intakeEventId,
+        activity_type: 'intake_received',
+        actor_type: 'system',
+        summary: `Lead intake received from non-ad source (${payload.source || 'direct'} / ${payload.source_detail || 'organic'}). Automated first-contact email is restricted to approved advertising Lead Ads.`,
+        metadata: { source: payload.source, source_detail: payload.source_detail, ad_eligible: false },
+      });
+      actionSucceeded = true;
     } else {
-      // GENUINELY NEW INBOUND LEAD FROM APPROVED SOURCE (Meta, HubSpot inbound, Website completed registration)
+      // GENUINELY NEW INBOUND AD LEAD (Meta / Facebook / Instagram Lead Ads, or HubSpot contact proven to be Ad Lead)
       // Contact preference normalized
       const rawPref = payload.contact_preference ? String(payload.contact_preference).trim().toLowerCase() : '';
-      let pref: 'email' | 'sms' | 'call' | 'whatsapp' = 'email';
+      pref = 'email';
       if (rawPref === 'sms' || rawPref === 'text' || rawPref.includes('sms')) {
         pref = 'sms';
       } else if (rawPref === 'call' || rawPref === 'phone' || rawPref.includes('call') || rawPref.includes('phone') || rawPref.includes('lig')) {
@@ -540,8 +555,8 @@ Deno.serve(async (req) => {
       })
       .eq('id', intakeEventId);
 
-    // Supplementary non-blocking push notification for new lead
-    if (actionSucceeded && leadId) {
+    // Supplementary non-blocking push notification for new lead (only when SMS preference push was not already dispatched)
+    if (actionSucceeded && leadId && isNewLead && pref !== 'sms' && isProvenAdLead(payload)) {
       try {
         const leadName = `${payload.first_name || ''} ${payload.last_name || ''}`.trim() || 'Novo interessado';
         const courseName = payload.course_title || payload.course_interest || 'curso de especialização';
@@ -590,11 +605,71 @@ Deno.serve(async (req) => {
 
 function validatePayload(p: LeadIntakePayload): string[] {
   const errors: string[] = [];
-  const validSources = ['meta', 'google', 'manual', 'test', 'form', 'facebook', 'instagram'];
+  const validSources = ['meta', 'google', 'manual', 'test', 'form', 'facebook', 'instagram', 'hubspot'];
   if (!p.source || !validSources.includes(p.source.toLowerCase())) {
     errors.push('Invalid or missing source');
   }
   return errors;
+}
+
+function isProvenAdLead(payload: LeadIntakePayload): boolean {
+  const source = (payload.source || '').toLowerCase().trim();
+  const sourceDetail = (payload.source_detail || '').toLowerCase().trim();
+  const raw = payload.raw_payload || {};
+
+  // Disqualify explicit non-ad sources
+  if (source === 'manual' || sourceDetail === 'manual') return false;
+  if (source === 'form' && (sourceDetail === 'website' || sourceDetail === 'website-form' || !sourceDetail)) return false;
+  if (sourceDetail.includes('website') || sourceDetail.includes('register')) return false;
+
+  // 1. Explicitly approved ad sources
+  const adSources = ['meta', 'facebook', 'instagram', 'meta_ads', 'lead_ads'];
+  if (adSources.includes(source)) return true;
+
+  const adDetails = [
+    'meta_lead_ad',
+    'facebook_lead_ad',
+    'instagram_lead_ad',
+    'facebook',
+    'instagram',
+    'paid_social',
+    'lead_ad',
+    'ad_lead',
+  ];
+  if (adDetails.includes(sourceDetail)) return true;
+
+  // 2. HubSpot or other transport payload properties with proven Ad attribution
+  const props = (raw.properties && typeof raw.properties === 'object') ? raw.properties : raw;
+
+  const origem = String(props.origem_do_lead || props.origem || '').toLowerCase();
+  const leadSource = String(props.lead_source || '').toLowerCase();
+  const hsAnalytics = String(props.hs_analytics_source || '').toLowerCase();
+  const firstConv = String(props.first_conversion_event_name || '').toLowerCase();
+  const recentConv = String(props.recent_conversion_event_name || '').toLowerCase();
+  const adId = props.ad_id || raw.ad_id;
+  const leadgenId = props.leadgen_id || raw.leadgen_id;
+
+  if (adId || leadgenId) return true;
+
+  if (
+    origem.includes('meta') ||
+    origem.includes('facebook') ||
+    origem.includes('instagram') ||
+    leadSource.includes('meta') ||
+    leadSource.includes('facebook') ||
+    leadSource.includes('instagram') ||
+    hsAnalytics === 'paid_social' ||
+    firstConv.includes('facebook lead ads') ||
+    firstConv.includes('meta lead ads') ||
+    firstConv.includes('instagram') ||
+    recentConv.includes('facebook lead ads') ||
+    recentConv.includes('meta lead ads') ||
+    recentConv.includes('instagram')
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function generateIdempotencyKey(p: LeadIntakePayload): string {

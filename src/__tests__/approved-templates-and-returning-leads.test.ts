@@ -284,9 +284,9 @@ describe('Approved Email Templates Suite', () => {
     });
   });
 
-  // 8. Returning Lead Resurfacing & Ordering
-  describe('8. Returning Lead Resurfacing & Ordering', () => {
-    it('prioritizes last_inbound_activity_at over created_at to resurface returning leads to the top of their pipeline stage', () => {
+  // 8. Canonical Ordering: created_at DESC
+  describe('8. Canonical Ordering: created_at DESC', () => {
+    it('strictly prioritizes original created_at DESC for primary Pipeline and Contacts ordering', () => {
       const olderLead: Partial<Lead> = {
         id: 'lead-1',
         created_at: '2026-01-01T00:00:00Z',
@@ -295,24 +295,24 @@ describe('Approved Email Templates Suite', () => {
 
       const newerLead: Partial<Lead> = {
         id: 'lead-2',
-        created_at: '2026-09-28T10:00:00Z', // created yesterday
+        created_at: '2026-09-28T10:00:00Z', // created recently
         last_inbound_activity_at: null,
       };
 
       const tsOlder = getLeadCanonicalTimestamp(olderLead as Lead);
       const tsNewer = getLeadCanonicalTimestamp(newerLead as Lead);
 
-      expect(tsOlder).toBeGreaterThan(tsNewer);
+      expect(tsNewer).toBeGreaterThan(tsOlder);
 
-      // Verify comparator sorts returning lead FIRST
+      // Verify comparator sorts newest created lead FIRST
       const sortResult = compareLeadsNewestFirst(olderLead as Lead, newerLead as Lead);
-      expect(sortResult).toBeLessThan(0); // olderLead comes before newerLead
+      expect(sortResult).toBeGreaterThan(0); // newerLead comes before olderLead
     });
 
-    it('falls back to created_at when last_inbound_activity_at is null', () => {
+    it('falls back to source_created_at when created_at is undefined', () => {
       const lead: Partial<Lead> = {
-        created_at: '2026-05-10T15:00:00Z',
-        last_inbound_activity_at: null,
+        created_at: undefined,
+        source_created_at: '2026-05-10T15:00:00Z',
       };
       expect(getLeadCanonicalTimestamp(lead as Lead)).toBe(new Date('2026-05-10T15:00:00Z').getTime());
     });

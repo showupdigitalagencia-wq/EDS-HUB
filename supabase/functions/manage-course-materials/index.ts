@@ -344,6 +344,15 @@ Deno.serve(async (req) => {
       return jsonResponse({ data, error });
     }
 
+    if (action === 'query_leads') {
+      const { stage_id, order_by = 'created_at', ascending = false, limit = 20 } = body;
+      let q = db.from('leads').select('id, first_name, last_name, email, phone_raw, created_at, source_created_at, last_inbound_activity_at, pipeline_stage_id, deleted_at').is('deleted_at', null);
+      if (stage_id) q = q.eq('pipeline_stage_id', stage_id);
+      q = q.order(order_by, { ascending }).order('id', { ascending: false }).limit(limit);
+      const { data: leads, error } = await q;
+      return jsonResponse({ leads, error });
+    }
+
     if (action === 'manage_suppression') {
       const { op, email, reason = 'hard_bounce' } = body;
       const normalizedEmail = (email || '').trim().toLowerCase();

@@ -67,8 +67,8 @@ export function LeadsListPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Sorting
-  const sortBy = sortParam === 'score' ? 'lead_score' : 'source_created_at';
+  // Sorting: Primary default = original created_at descending
+  const sortBy = sortParam === 'score' ? 'lead_score' : 'created_at';
   const sortOrder: 'asc' | 'desc' = 'desc';
 
   // Primary Client Filters

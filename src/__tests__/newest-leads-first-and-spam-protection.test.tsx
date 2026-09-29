@@ -27,25 +27,25 @@ describe('NEWEST LEADS FIRST + SPAM / COMPLAINT PROTECTION', () => {
   // PART 1: CANONICAL RECENCY SORTING ENGINE
   // ===========================================================================
   describe('1. Canonical Recency Sorting Engine', () => {
-    it('uses source_created_at when present, falling back to created_at', () => {
-      const leadWithSource = {
+    it('uses original created_at as canonical recency timestamp, falling back to source_created_at', () => {
+      const leadWithCreated = {
         source_created_at: '2026-09-26T10:00:00.000Z',
         created_at: '2026-09-26T11:00:00.000Z',
       };
       const leadFallback = {
-        source_created_at: null,
-        created_at: '2026-09-26T12:00:00.000Z',
+        source_created_at: '2026-09-26T10:00:00.000Z',
+        created_at: null,
       };
       const leadEmpty = {
         source_created_at: null,
         created_at: null,
       };
 
-      expect(getLeadCanonicalTimestamp(leadWithSource)).toBe(
-        new Date('2026-09-26T10:00:00.000Z').getTime()
+      expect(getLeadCanonicalTimestamp(leadWithCreated)).toBe(
+        new Date('2026-09-26T11:00:00.000Z').getTime()
       );
       expect(getLeadCanonicalTimestamp(leadFallback)).toBe(
-        new Date('2026-09-26T12:00:00.000Z').getTime()
+        new Date('2026-09-26T10:00:00.000Z').getTime()
       );
       expect(getLeadCanonicalTimestamp(leadEmpty)).toBe(0);
     });

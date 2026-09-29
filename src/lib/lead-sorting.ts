@@ -26,23 +26,19 @@ export interface HasCreationTimestamps {
 
 /**
  * Resolves the canonical recency timestamp in milliseconds.
- * Prioritizes last_inbound_activity_at (resurfacing returning leads with new form submissions),
- * then source_created_at, falling back to created_at.
- * Preserves original created_at while ensuring newly active inbound submissions move to the top!
+ * Primary ordering rule: original created_at DESC.
+ * Falls back to source_created_at if created_at is not populated.
+ * Strictly preserves original created_at while ordering newest-created leads first.
  */
 export function getLeadCanonicalTimestamp(lead: HasCreationTimestamps): number {
-  const inbound = lead.last_inbound_activity_at ? new Date(lead.last_inbound_activity_at).getTime() : 0;
-  const source = lead.source_created_at ? new Date(lead.source_created_at).getTime() : 0;
   const created = lead.created_at ? new Date(lead.created_at).getTime() : 0;
-
-  const validInbound = !isNaN(inbound) ? inbound : 0;
-  const validSource = !isNaN(source) ? source : 0;
   const validCreated = !isNaN(created) ? created : 0;
-
-  if (validInbound > 0) {
-    return Math.max(validInbound, validSource || validCreated);
+  if (validCreated > 0) {
+    return validCreated;
   }
-  return validSource || validCreated || 0;
+  const source = lead.source_created_at ? new Date(lead.source_created_at).getTime() : 0;
+  const validSource = !isNaN(source) ? source : 0;
+  return validSource;
 }
 
 /**

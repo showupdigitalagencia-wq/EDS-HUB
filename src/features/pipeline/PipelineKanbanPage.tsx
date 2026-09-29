@@ -167,14 +167,8 @@ export function PipelineKanbanPage() {
               q = q.is('deleted_at', null);
             }
             if (typeof q?.order === 'function') {
-              const o0 = q.order('last_inbound_activity_at', { ascending: false, nullsFirst: false });
-              const o1 = (o0 && typeof o0.order === 'function') ? o0.order('source_created_at', { ascending: false, nullsFirst: false }) : o0;
-              if (o1 && typeof o1.order === 'function') {
-                const o2 = o1.order('created_at', { ascending: false });
-                q = (o2 && typeof o2.order === 'function') ? o2.order('id', { ascending: false }) : (o2 || o1);
-              } else {
-                q = o1;
-              }
+              const o0 = q.order('created_at', { ascending: false });
+              q = (o0 && typeof o0.order === 'function') ? o0.order('id', { ascending: false }) : o0;
             }
             if (q && typeof q?.range === 'function') {
               q = q.range(0, STAGE_PAGE_SIZE - 1);
@@ -311,14 +305,8 @@ export function PipelineKanbanPage() {
         qMore = qMore.is('deleted_at', null);
       }
       if (typeof qMore?.order === 'function') {
-        const o0 = qMore.order('last_inbound_activity_at', { ascending: false, nullsFirst: false });
-        const o1 = (o0 && typeof o0.order === 'function') ? o0.order('source_created_at', { ascending: false, nullsFirst: false }) : o0;
-        if (o1 && typeof o1.order === 'function') {
-          const o2 = o1.order('created_at', { ascending: false });
-          qMore = (o2 && typeof o2.order === 'function') ? o2.order('id', { ascending: false }) : (o2 || o1);
-        } else {
-          qMore = o1;
-        }
+        const o0 = qMore.order('created_at', { ascending: false });
+        qMore = (o0 && typeof o0.order === 'function') ? o0.order('id', { ascending: false }) : o0;
       }
       if (qMore && typeof qMore?.range === 'function') {
         qMore = qMore.range(from, to);
