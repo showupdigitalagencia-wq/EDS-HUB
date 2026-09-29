@@ -94,6 +94,378 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (body.action === 'audit_hubspot_missing_leads') {
+      const propList = [
+        'firstname', 'lastname', 'email', 'phone', 'mobilephone',
+        'hs_lead_status', 'status_de_qualificacao',
+        'course_interest', 'curso_de_interesse', 'curso_de_interesse_2', 'curso_de_interesse_3',
+        'data_do_curso_de_interesse', 'origem_do_lead', 'lead_source',
+        'what_is_your_preferred_contact_method', 'what_is_your_preferred_method_of_contact', 'preferencia_de_contato',
+        'hs_analytics_source', 'hs_analytics_source_data_1', 'hs_analytics_source_data_2',
+        'first_conversion_event_name', 'recent_conversion_event_name',
+        'createdate', 'lastmodifieddate'
+      ];
+
+      // 1. Fetch recent contacts from HubSpot (by createdate DESC)
+      const contacts: any[] = [];
+      let afterCursor: string | undefined = undefined;
+      let pages = 0;
+
+      do {
+        pages++;
+        const searchPayload: any = {
+          sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+          properties: propList,
+          limit: 100,
+        };
+        if (afterCursor) {
+          searchPayload.after = afterCursor;
+        }
+
+        const hsRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/search`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(searchPayload),
+        });
+
+        if (!hsRes.ok) {
+          const errText = await hsRes.text();
+          return new Response(JSON.stringify({ error: `HubSpot Search API error ${hsRes.status}: ${errText}` }), {
+            status: 502,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const hsData = await hsRes.json();
+        const pageResults: any[] = hsData.results || [];
+        contacts.push(...pageResults);
+        afterCursor = hsData.paging?.next?.after;
+      } while (afterCursor && pages < 10);
+
+      // 2. Fetch connection status & sync events
+      const { data: conn } = await db.from('integration_connections').select('*').eq('provider', 'hubspot').maybeSingle();
+      const { data: syncEvents } = await db.from('hubspot_sync_events').select('*').order('created_at', { ascending: false }).limit(15);
+      const { data: syncBatches } = await db.from('hubspot_sync_batches').select('*').order('created_at', { ascending: false }).limit(10);
+
+      // 3. Reconcile against EDS HUB leads (in-memory O(1) indexing with range pagination)
+      const allLeads: any[] = [];
+      let leadOffset = 0;
+      while (true) {
+        const { data: page } = await db
+          .from('leads')
+          .select('id, first_name, last_name, email, phone_e164, phone_raw, course_interest, pipeline_stage_id, created_at, hubspot_contact_id, source')
+          .is('deleted_at', null)
+          .range(leadOffset, leadOffset + 999);
+        if (!page || page.length === 0) break;
+        allLeads.push(...page);
+        if (page.length < 1000) break;
+        leadOffset += 1000;
+      }
+
+      const allLinks: any[] = [];
+      let linkOffset = 0;
+      while (true) {
+        const { data: page } = await db
+          .from('integration_entity_links')
+          .select('external_entity_id, eds_entity_id')
+          .eq('integration', 'hubspot')
+          .eq('status', 'active')
+          .range(linkOffset, linkOffset + 999);
+        if (!page || page.length === 0) break;
+        allLinks.push(...page);
+        if (page.length < 1000) break;
+        linkOffset += 1000;
+      }
+
+      const leadsById = new Map<string, any>();
+      const leadsByHsId = new Map<string, any>();
+      const leadsByEmail = new Map<string, any>();
+      const leadsByPhoneDigits = new Map<string, any>();
+
+      for (const lead of allLeads || []) {
+        leadsById.set(lead.id, lead);
+        if (lead.hubspot_contact_id) {
+          leadsByHsId.set(String(lead.hubspot_contact_id).trim(), lead);
+        }
+        if (lead.email) {
+          leadsByEmail.set(lead.email.trim().toLowerCase(), lead);
+        }
+        const p1 = (lead.phone_e164 || '').replace(/\D/g, '');
+        const p2 = (lead.phone_raw || '').replace(/\D/g, '');
+        if (p1.length >= 8) leadsByPhoneDigits.set(p1.slice(-8), lead);
+        if (p2.length >= 8) leadsByPhoneDigits.set(p2.slice(-8), lead);
+      }
+
+      for (const link of allLinks || []) {
+        const lead = leadsById.get(link.eds_entity_id);
+        if (lead && link.external_entity_id) {
+          leadsByHsId.set(String(link.external_entity_id).trim(), lead);
+        }
+      }
+
+      const matched: any[] = [];
+      const missing: any[] = [];
+
+      for (const c of contacts) {
+        const cId = String(c.id).trim();
+        const p = c.properties || {};
+        const email = p.email ? p.email.trim().toLowerCase() : null;
+        const phone = p.phone || p.mobilephone || null;
+        const cleanPhone = phone ? phone.replace(/\D/g, '') : null;
+
+        let lead = leadsByHsId.get(cId);
+
+        if (!lead && email) {
+          lead = leadsByEmail.get(email);
+        }
+
+        if (!lead && cleanPhone && cleanPhone.length >= 8) {
+          lead = leadsByPhoneDigits.get(cleanPhone.slice(-8));
+        }
+
+        const contactSummary = {
+          hubspot_contact_id: cId,
+          name: `${p.firstname || ''} ${p.lastname || ''}`.trim() || 'Sem nome',
+          email: p.email || null,
+          phone: p.phone || p.mobilephone || null,
+          createdate: p.createdate,
+          lastmodifieddate: p.lastmodifieddate,
+          source: p.origem_do_lead || p.hs_analytics_source || p.lead_source || 'hubspot',
+          course: p.curso_de_interesse || p.course_interest || p.first_conversion_event_name || null,
+          contact_preference: p.what_is_your_preferred_contact_method || p.what_is_your_preferred_method_of_contact || p.preferencia_de_contato || null,
+        };
+
+        if (lead) {
+          matched.push({
+            ...contactSummary,
+            eds_lead_id: lead.id,
+            eds_stage: lead.pipeline_stage_id,
+            eds_created_at: lead.created_at,
+          });
+        } else {
+          missing.push(contactSummary);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          total_scanned: contacts.length,
+          matched_count: matched.length,
+          missing_count: missing.length,
+          missing_contacts: missing,
+          sample_matched: matched.slice(0, 5),
+          integration_connection: conn,
+          recent_sync_events: syncEvents || [],
+          recent_sync_batches: syncBatches || [],
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (body.action === 'get_cron_status') {
+      const { data, error } = await db.rpc('get_cron_job_status');
+      return new Response(
+        JSON.stringify({ success: !error, data, error }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (body.action === 'test_process_single') {
+      const { data: rpcRes, error: rpcErr } = await db.rpc('process_hubspot_inbound_batch', {
+        p_events: [body.contact],
+      });
+      const cId = body.contact.id || body.contact.contact_id;
+      const { data: link } = await db.from('integration_entity_links').select('*').eq('external_entity_id', cId);
+      const { data: lead } = await db.from('leads').select('*').eq('hubspot_contact_id', cId);
+      const { data: syncEvent } = await db.from('integration_sync_events').select('*').eq('external_entity_id', cId).order('created_at', { ascending: false }).limit(3);
+      return new Response(
+        JSON.stringify({
+          rpcRes,
+          rpcErr,
+          link,
+          lead,
+          syncEvent,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (body.action === 'backfill_all_missing_hubspot_leads') {
+      const propList = [
+        'firstname', 'lastname', 'email', 'phone', 'mobilephone',
+        'hs_calculated_phone_number', 'hs_lead_status', 'status_de_qualificacao',
+        'course_interest', 'curso_de_interesse', 'curso_de_interesse_2', 'curso_de_interesse_3',
+        'data_do_curso_de_interesse', 'origem_do_lead', 'lead_source',
+        'what_is_your_preferred_contact_method', 'what_is_your_preferred_method_of_contact', 'preferencia_de_contato',
+        'hs_analytics_source', 'hs_analytics_source_data_1', 'hs_analytics_source_data_2',
+        'first_conversion_event_name', 'recent_conversion_event_name', 'hs_full_name_or_email',
+        'createdate', 'lastmodifieddate'
+      ];
+
+      // 1. Fetch all contacts from HubSpot
+      const contacts: any[] = [];
+      let afterCursor: string | undefined = undefined;
+      let pages = 0;
+      const maxPages = body.max_pages || 10;
+
+      do {
+        pages++;
+        const searchPayload: any = {
+          sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+          properties: propList,
+          limit: 100,
+        };
+        if (afterCursor) searchPayload.after = afterCursor;
+
+        const hsRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/search`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(searchPayload),
+        });
+
+        if (!hsRes.ok) {
+          const errText = await hsRes.text();
+          return new Response(JSON.stringify({ error: `HubSpot API error ${hsRes.status}: ${errText}` }), {
+            status: 502,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const hsData = await hsRes.json();
+        const pageResults: any[] = hsData.results || [];
+        contacts.push(...pageResults);
+        afterCursor = hsData.paging?.next?.after;
+      } while (afterCursor && pages < maxPages);
+
+      // 2. Fetch existing leads to filter only genuinely missing contacts (with range pagination)
+      const allLeads: any[] = [];
+      let leadOffset = 0;
+      while (true) {
+        const { data: page } = await db
+          .from('leads')
+          .select('id, email, phone_e164, phone_raw, hubspot_contact_id')
+          .is('deleted_at', null)
+          .range(leadOffset, leadOffset + 999);
+        if (!page || page.length === 0) break;
+        allLeads.push(...page);
+        if (page.length < 1000) break;
+        leadOffset += 1000;
+      }
+
+      const allLinks: any[] = [];
+      let linkOffset = 0;
+      while (true) {
+        const { data: page } = await db
+          .from('integration_entity_links')
+          .select('external_entity_id')
+          .eq('integration', 'hubspot')
+          .eq('status', 'active')
+          .range(linkOffset, linkOffset + 999);
+        if (!page || page.length === 0) break;
+        allLinks.push(...page);
+        if (page.length < 1000) break;
+        linkOffset += 1000;
+      }
+
+      const existingHsIds = new Set<string>();
+      const existingEmails = new Set<string>();
+      const existingPhoneDigits = new Set<string>();
+
+      for (const l of allLeads || []) {
+        if (l.hubspot_contact_id) existingHsIds.add(String(l.hubspot_contact_id).trim());
+        if (l.email) existingEmails.add(l.email.trim().toLowerCase());
+        const p1 = (l.phone_e164 || '').replace(/\D/g, '');
+        const p2 = (l.phone_raw || '').replace(/\D/g, '');
+        if (p1.length >= 8) existingPhoneDigits.add(p1.slice(-8));
+        if (p2.length >= 8) existingPhoneDigits.add(p2.slice(-8));
+      }
+
+      for (const link of allLinks || []) {
+        if (link.external_entity_id) existingHsIds.add(String(link.external_entity_id).trim());
+      }
+
+      const contactsToBackfill: any[] = [];
+      const alreadyPresent: any[] = [];
+
+      for (const c of contacts) {
+        const cId = String(c.id).trim();
+        const p = c.properties || {};
+        const email = p.email ? p.email.trim().toLowerCase() : null;
+        const phone = (p.phone || p.mobilephone || p.hs_calculated_phone_number || '').replace(/\D/g, '');
+
+        const isKnown = existingHsIds.has(cId) ||
+          (email && existingEmails.has(email)) ||
+          (phone && phone.length >= 8 && existingPhoneDigits.has(phone.slice(-8)));
+
+        if (!isKnown) {
+          contactsToBackfill.push({
+            id: cId,
+            contact_id: cId,
+            objectId: cId,
+            properties: p,
+            timestamp: p.lastmodifieddate || p.createdate || new Date().toISOString(),
+          });
+        } else {
+          alreadyPresent.push(cId);
+        }
+      }
+
+      // 3. Process missing contacts in batches of 50
+      let totalCreated = 0;
+      let totalUpdated = 0;
+      let totalIgnored = 0;
+      let totalConflicts = 0;
+      const batchSize = 50;
+
+      for (let i = 0; i < contactsToBackfill.length; i += batchSize) {
+        const batch = contactsToBackfill.slice(i, i + batchSize);
+        const { data: batchResult, error: batchErr } = await db.rpc('process_hubspot_inbound_batch', {
+          p_events: batch,
+        });
+
+        if (batchErr) {
+          console.error('Backfill batch error at chunk ' + i + ':', batchErr);
+        } else if (batchResult) {
+          totalCreated += batchResult.created_count || 0;
+          totalUpdated += batchResult.updated_count || 0;
+          totalIgnored += batchResult.ignored_count || 0;
+          totalConflicts += batchResult.conflict_count || 0;
+        }
+      }
+
+      // 4. Update integration_connections watermark
+      const nowIso = new Date().toISOString();
+      await db
+        .from('integration_connections')
+        .update({
+          last_sync_at: nowIso,
+          last_reconciliation_at: nowIso,
+          last_successful_api_call_at: nowIso,
+        })
+        .eq('provider', 'hubspot');
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          total_scanned: contacts.length,
+          already_present: alreadyPresent.length,
+          attempted_backfill: contactsToBackfill.length,
+          created_count: totalCreated,
+          updated_count: totalUpdated,
+          ignored_count: totalIgnored,
+          conflict_count: totalConflicts,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (body.action === 'check_lead_safety') {
       const { data: messages } = await db.from('outbound_messages').select('*').eq('lead_id', body.lead_id);
       const { data: activities } = await db.from('lead_activities').select('*').eq('lead_id', body.lead_id);

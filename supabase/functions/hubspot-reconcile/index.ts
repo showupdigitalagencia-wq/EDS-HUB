@@ -100,6 +100,7 @@ Deno.serve(async (req) => {
           'email',
           'phone',
           'mobilephone',
+          'hs_calculated_phone_number',
           'hs_lead_status',
           'status_de_qualificacao',
           'course_interest',
@@ -110,9 +111,16 @@ Deno.serve(async (req) => {
           'contact_preference',
           'preferencia_de_contato',
           'preferred_contact_method',
+          'what_is_your_preferred_contact_method',
+          'what_is_your_preferred_method_of_contact',
+          'origem_do_lead',
+          'lead_source',
           'hs_analytics_source',
           'hs_analytics_source_data_1',
           'hs_analytics_source_data_2',
+          'first_conversion_event_name',
+          'recent_conversion_event_name',
+          'hs_full_name_or_email',
           'createdate',
           'lastmodifieddate',
         ],
@@ -142,7 +150,7 @@ Deno.serve(async (req) => {
       const results = searchData.results || [];
       allContacts.push(...results);
       afterCursor = searchData.paging?.next?.after;
-    } while (afterCursor && allContacts.length < 500);
+    } while (afterCursor && allContacts.length < (body.max_contacts || 500));
 
     if (allContacts.length === 0) {
       await db
@@ -166,14 +174,22 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 3. Process reconciliation batch in PostgreSQL
+    // 3. Normalize contacts and process reconciliation batch in PostgreSQL
+    const normalizedEvents = allContacts.map((c: any) => ({
+      id: String(c.id),
+      contact_id: String(c.id),
+      objectId: c.id,
+      properties: c.properties || {},
+      timestamp: c.properties?.lastmodifieddate || c.updatedAt || new Date().toISOString(),
+    }));
+
     const { data: batchResult, error: syncErr } = await db.rpc('process_hubspot_inbound_batch', {
-      p_events: allContacts,
+      p_events: normalizedEvents,
     });
 
     if (syncErr) throw syncErr;
 
-    // 4. Update integration_connections status
+    // 4. Update integration_connections status (only on success)
     const nowIso = new Date().toISOString();
     await db
       .from('integration_connections')
