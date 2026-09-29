@@ -19,7 +19,15 @@ import {
   Clock,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
-import { resolveSafeFirstName, getApprovedZygomaticSmsText } from '../../../utils/salutation';
+import {
+  resolveSafeFirstName,
+  getApprovedZygomaticSmsText,
+  getApprovedIntensiveAdvancedSmsText,
+  getApprovedEndodonticsSmsText,
+  getApprovedWisdomSmsText,
+  getApprovedRehabilitationSmsText,
+  getApprovedPeriodontalSmsText,
+} from '../../../utils/salutation';
 import { formatContactPreferenceLabel, resolveCanonicalPreference } from '../../../utils/contact-preference';
 import type { Lead } from '../../../types';
 
@@ -33,17 +41,19 @@ export interface ManualSmsComposerModalProps {
 interface SmsTemplate {
   id: string;
   name: string;
-  body: string;
+  generator?: (leadOrSalutation?: any) => string;
+  body?: string;
 }
 
-export const OFFICIAL_ZYGOMATIC_SMS_BODY = `Hello Dr.
+export const OFFICIAL_ZYGOMATIC_SMS_BODY = `Hello Dr. [SURNAME]
+
 This is Natália from Expert Dental Solutions. Thank you for your interest in our Zygomatic Implant Training in Brazil.
 
 I just sent you an email with all the course details.
 
 To help you choose the best option, could you tell me a little about your implant experience?
 
-We currently have openings for our November 7 to 10 course. Would those dates work for you?
+We currently have openings on November 7 to 10, 2026 and March 1 to 4, 2027. Would either of those dates work for you?
 
 I’m happy to answer any questions and help you find the course that best matches your goals.`;
 
@@ -52,9 +62,34 @@ export const OFFICIAL_GENERAL_SMS_BODY =
 
 const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
   {
+    id: 'intensive_advanced_followup_sms',
+    name: 'Contato SMS inicial — Intensive + Advanced',
+    generator: getApprovedIntensiveAdvancedSmsText,
+  },
+  {
+    id: 'endodontics_followup_sms',
+    name: 'Contato SMS inicial — Endodontics',
+    generator: getApprovedEndodonticsSmsText,
+  },
+  {
     id: 'zygomatic_followup_sms',
-    name: 'Contato SMS inicial',
-    body: OFFICIAL_ZYGOMATIC_SMS_BODY,
+    name: 'Contato SMS inicial — Zygomatic',
+    generator: getApprovedZygomaticSmsText,
+  },
+  {
+    id: 'wisdom_followup_sms',
+    name: 'Contato SMS inicial — Wisdom',
+    generator: getApprovedWisdomSmsText,
+  },
+  {
+    id: 'rehabilitation_followup_sms',
+    name: 'Contato SMS inicial — Rehabilitation',
+    generator: getApprovedRehabilitationSmsText,
+  },
+  {
+    id: 'periodontal_followup_sms',
+    name: 'Contato SMS inicial — Periodontal Plastic',
+    generator: getApprovedPeriodontalSmsText,
   },
   {
     id: 'general_inquiry_sms',
@@ -62,6 +97,27 @@ const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
     body: OFFICIAL_GENERAL_SMS_BODY,
   },
 ];
+
+function resolveDefaultSmsTemplateId(lead: Lead): string {
+  const interestStr = `${lead.course_interest || ''} ${JSON.stringify(lead.course_interests || [])}`.toLowerCase();
+  if (interestStr.includes('zygoma')) return 'zygomatic_followup_sms';
+  if (interestStr.includes('endo')) return 'endodontics_followup_sms';
+  if (interestStr.includes('wisdom') || interestStr.includes('molar')) return 'wisdom_followup_sms';
+  if (interestStr.includes('rehab')) return 'rehabilitation_followup_sms';
+  if (interestStr.includes('perio')) return 'periodontal_followup_sms';
+  if (interestStr.includes('implant') || interestStr.includes('intensive') || interestStr.includes('advanced')) {
+    return 'intensive_advanced_followup_sms';
+  }
+  return 'zygomatic_followup_sms';
+}
+
+function renderSmsBody(tpl: SmsTemplate, lead: Lead): string {
+  if (tpl.generator) {
+    return tpl.generator(lead);
+  }
+  const firstName = resolveSafeFirstName(lead.first_name, 'Doctor');
+  return (tpl.body || '').replace(/\{\{\s*first_name\s*\}\}/g, firstName);
+}
 
 export function ManualSmsComposerModal({
   isOpen,
@@ -78,7 +134,6 @@ export function ManualSmsComposerModal({
 
   const rawPhone = lead.phone_e164 || lead.phone_raw || '';
   const digitsOnly = rawPhone.replace(/\D/g, '');
-  const firstName = resolveSafeFirstName(lead.first_name, 'Doctor');
 
   // Initialize template text with safe variable replacement
   useEffect(() => {
@@ -87,15 +142,12 @@ export function ManualSmsComposerModal({
     setError(null);
     submittingRef.current = false;
 
-    const tpl = DEFAULT_SMS_TEMPLATES.find((t) => t.id === selectedTemplateId) || DEFAULT_SMS_TEMPLATES[0];
-    if (tpl.id === 'zygomatic_followup_sms') {
-      setMessageText(getApprovedZygomaticSmsText(lead));
-    } else {
-      const greetingName = firstName || 'Doctor';
-      const filled = tpl.body.replace(/\{\{\s*first_name\s*\}\}/g, greetingName);
-      setMessageText(filled);
-    }
-  }, [isOpen, selectedTemplateId, firstName, lead]);
+    const defaultTplId = resolveDefaultSmsTemplateId(lead);
+    setSelectedTemplateId(defaultTplId);
+
+    const tpl = DEFAULT_SMS_TEMPLATES.find((t) => t.id === defaultTplId) || DEFAULT_SMS_TEMPLATES[0];
+    setMessageText(renderSmsBody(tpl, lead));
+  }, [isOpen, lead]);
 
   if (!isOpen) return null;
 
@@ -103,12 +155,7 @@ export function ManualSmsComposerModal({
     setSelectedTemplateId(templateId);
     const tpl = DEFAULT_SMS_TEMPLATES.find((t) => t.id === templateId);
     if (tpl) {
-      if (tpl.id === 'zygomatic_followup_sms') {
-        setMessageText(getApprovedZygomaticSmsText(lead));
-      } else {
-        const greetingName = firstName || 'Doctor';
-        setMessageText(tpl.body.replace(/\{\{\s*first_name\s*\}\}/g, greetingName));
-      }
+      setMessageText(renderSmsBody(tpl, lead));
     }
   };
 
@@ -180,7 +227,7 @@ export function ManualSmsComposerModal({
 
         if (pendingTasks && pendingTasks.length > 0) {
           const smsTask = pendingTasks.find(
-            (t) =>
+            (t: { id: string; title: string }) =>
               t.title.toLowerCase().includes('sms') ||
               t.title.toLowerCase().includes('contato') ||
               t.title.toLowerCase().includes('responder')

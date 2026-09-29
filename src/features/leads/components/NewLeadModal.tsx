@@ -177,7 +177,22 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
       } catch {}
       onClose();
     } catch (err: any) {
-      setError(err?.message || 'Falha ao criar o lead.');
+      console.error('[NewLeadModal] Failed to create lead manually:', err);
+      const rawMsg = String(err?.message || '');
+      if (
+        rawMsg.includes('constraint') ||
+        rawMsg.includes('ON CONFLICT') ||
+        rawMsg.includes('unique') ||
+        rawMsg.includes('exclusion') ||
+        rawMsg.includes('syntax') ||
+        rawMsg.includes('SQLSTATE')
+      ) {
+        setError('Não foi possível cadastrar o lead. Tente novamente.');
+      } else if (rawMsg) {
+        setError(rawMsg);
+      } else {
+        setError('Não foi possível cadastrar o lead. Tente novamente.');
+      }
     } finally {
       setIsSubmitting(false);
     }

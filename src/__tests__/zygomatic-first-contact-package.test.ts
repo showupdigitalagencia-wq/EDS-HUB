@@ -78,8 +78,8 @@ describe('EDS HUB — Zygomatic First-Contact Package Verification', () => {
     });
 
     it('does not resolve unmapped or uncertain courses automatically', () => {
-      expect(resolveFirstContactTemplateForCourse('Rehabilitation')).toBeNull();
-      expect(resolveFirstContactTemplateForCourse('Advanced Periodontal')).toBeNull();
+      expect(resolveFirstContactTemplateForCourse('Random Unmapped Dental Course')).toBeNull();
+      expect(resolveFirstContactTemplateForCourse('Orthodontic Aligners Training')).toBeNull();
       expect(resolveFirstContactTemplateForCourse('Unknown Course')).toBeNull();
     });
   });

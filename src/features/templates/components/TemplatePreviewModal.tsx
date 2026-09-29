@@ -7,8 +7,8 @@ import {
   renderTemplateWithSampleData,
   calculateSmsSegments,
   SAMPLE_PREVIEW_DATA,
-  getApprovedZygomaticSmsText,
   APPROVED_COURSE_TEMPLATES,
+  APPROVED_SMS_TEMPLATES,
 } from '../../../utils/template-variables';
 import type { EmailTemplate } from '../../../types';
 import {
@@ -94,15 +94,29 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
 
   const smsData = useMemo(() => {
     if (!template || channel !== 'sms') return null;
-    const isZygomaticSms =
-      template.template_key === 'zygomatic_followup_sms' ||
-      template.template_key === 'zygomatic_initial_sms' ||
-      template.name === 'Contato SMS inicial' ||
-      (template.name?.toLowerCase().includes('zygomatic') && template.name?.toLowerCase().includes('sms'));
+
+    if (template.template_key && APPROVED_SMS_TEMPLATES[template.template_key]) {
+      const substitutedText = APPROVED_SMS_TEMPLATES[template.template_key].getText(SAMPLE_PREVIEW_DATA);
+      return {
+        text: substitutedText,
+        segments: calculateSmsSegments(substitutedText),
+      };
+    }
+
+    const nameLower = (template.name || '').toLowerCase();
+    let pkg = null;
+    if (nameLower.includes('zygomatic')) pkg = APPROVED_SMS_TEMPLATES.zygomatic_followup_sms;
+    else if (nameLower.includes('endo')) pkg = APPROVED_SMS_TEMPLATES.endodontics_followup_sms;
+    else if (nameLower.includes('wisdom')) pkg = APPROVED_SMS_TEMPLATES.wisdom_followup_sms;
+    else if (nameLower.includes('rehab')) pkg = APPROVED_SMS_TEMPLATES.rehabilitation_followup_sms;
+    else if (nameLower.includes('perio')) pkg = APPROVED_SMS_TEMPLATES.periodontal_followup_sms;
+    else if (nameLower.includes('implant') || nameLower.includes('intensive') || nameLower.includes('advanced')) {
+      pkg = APPROVED_SMS_TEMPLATES.intensive_advanced_followup_sms;
+    }
 
     let substitutedText: string;
-    if (isZygomaticSms) {
-      substitutedText = getApprovedZygomaticSmsText(SAMPLE_PREVIEW_DATA);
+    if (pkg) {
+      substitutedText = pkg.getText(SAMPLE_PREVIEW_DATA);
     } else {
       substitutedText = renderTemplateWithSampleData(template.text_template, 'global');
     }

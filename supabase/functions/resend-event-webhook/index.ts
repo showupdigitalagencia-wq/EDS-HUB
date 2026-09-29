@@ -27,6 +27,7 @@ async function dispatchCriticalDeliverabilityAlert(
   db: any,
   params: {
     eventType: 'complaint' | 'bounce';
+    event_type?: 'deliverability_critical';
     providerEventId: string;
     providerMessageId?: string;
     leadId: string | null;
@@ -549,6 +550,7 @@ Deno.serve(async (req) => {
 
       const alertResult = await dispatchCriticalDeliverabilityAlert(db, {
         eventType: 'bounce',
+        event_type: 'deliverability_critical',
         providerEventId,
         providerMessageId,
         leadId: outboundLeadId,

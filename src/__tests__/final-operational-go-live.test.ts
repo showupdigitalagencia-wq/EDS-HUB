@@ -353,7 +353,8 @@ I\u2019m happy to answer any questions and help you find the course that best ma
       const unknownCourseLead: FirstContactLeadInput = {
         source: 'meta',
         email: 'unknown@example.com',
-        course_interest: 'Advanced Implant Rehabilitation Experience', // Unapproved automated template
+        contact_preference: 'email',
+        course_interest: 'Completely Unknown Specialty Course',
       };
 
       const eligibility = evaluateMetaLiveAutomationEligibility(unknownCourseLead);
@@ -365,8 +366,9 @@ I\u2019m happy to answer any questions and help you find the course that best ma
     it('9. Never falls back to Zygomatic email/PDF for another course', () => {
       const endoTemplate = resolveFirstContactTemplateForCourse('ET-01');
       expect(endoTemplate?.templateKey).toBe('endodontic_course_details');
-      expect(endoTemplate?.hasPdfAttachment).toBe(false);
-      expect(endoTemplate?.pdfAttachmentName).toBeUndefined();
+      expect(endoTemplate?.hasPdfAttachment).toBe(true);
+      expect(endoTemplate?.pdfAttachmentName).toBe('Endodontics course.pdf');
+      expect(endoTemplate?.pdfAttachmentName).not.toBe('Zygomatic Course (2).pdf');
     });
 
     it('10. Provider rejection retains lead in Novo Lead (capture)', () => {

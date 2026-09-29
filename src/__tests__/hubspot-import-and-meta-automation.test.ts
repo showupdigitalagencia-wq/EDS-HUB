@@ -210,35 +210,38 @@ describe('EDS HUB — HubSpot Import, Meta-Origin Automation & Course Mapping', 
       expect(res?.pdfAttachmentName).toBe('Zygomatic Course (2).pdf');
     });
 
-    it('resolves Intensive to IDIT-01 and intensive_course_details', () => {
+    it('resolves Intensive to IDIT-01 and implant_course_details (shared Intensive+Advanced)', () => {
       const res = resolveFirstContactTemplateForCourse('Intensive');
       expect(res).not.toBeNull();
       expect(res?.courseCode).toBe('IDIT-01');
-      expect(res?.templateKey).toBe('intensive_course_details');
-      expect(res?.hasPdfAttachment).toBe(false);
+      expect(res?.templateKey).toBe('implant_course_details');
+      expect(res?.hasPdfAttachment).toBe(true);
+      expect(res?.pdfAttachmentNames).toContain('Intensive implant .pdf');
+      expect(res?.pdfAttachmentNames).toContain('Advanced implant course (1).pdf');
     });
 
-    it('resolves Endodontic to ET-01 and endodontic_course_details', () => {
+    it('resolves Endodontic to ET-01 and endodontic_course_details with approved PDF', () => {
       const res = resolveFirstContactTemplateForCourse('Endodontic');
       expect(res).not.toBeNull();
       expect(res?.courseCode).toBe('ET-01');
       expect(res?.templateKey).toBe('endodontic_course_details');
-      expect(res?.hasPdfAttachment).toBe(false);
+      expect(res?.hasPdfAttachment).toBe(true);
+      expect(res?.pdfAttachmentName).toBe('Endodontics course.pdf');
     });
 
-    it('resolves Wisdom to WTT-01 and wisdom_course_details', () => {
+    it('resolves Wisdom to WTT-01 and wisdom_course_details with approved PDF', () => {
       const res = resolveFirstContactTemplateForCourse('Wisdom');
       expect(res).not.toBeNull();
       expect(res?.courseCode).toBe('WTT-01');
       expect(res?.templateKey).toBe('wisdom_course_details');
-      expect(res?.hasPdfAttachment).toBe(false);
+      expect(res?.hasPdfAttachment).toBe(true);
+      expect(res?.pdfAttachmentName).toBe('Third molar course.pdf');
     });
 
-    it('does NOT guess unmapped courses (Advanced, Periodontal Plastic, Rehabilitation, Free courses)', () => {
-      expect(resolveFirstContactTemplateForCourse('Advanced')).toBeNull();
-      expect(resolveFirstContactTemplateForCourse('Periodontal Plastic')).toBeNull();
-      expect(resolveFirstContactTemplateForCourse('Rehabilitation')).toBeNull();
+    it('does NOT guess unmapped courses (Free courses, Random course, Unknown course)', () => {
       expect(resolveFirstContactTemplateForCourse('Free courses')).toBeNull();
+      expect(resolveFirstContactTemplateForCourse('Random course')).toBeNull();
+      expect(resolveFirstContactTemplateForCourse('Unknown course')).toBeNull();
     });
 
     it('unmapped course blocks automatic outreach until approved', () => {
@@ -247,14 +250,14 @@ describe('EDS HUB — HubSpot Import, Meta-Origin Automation & Course Mapping', 
         source_detail: 'hubspot_meta_lead_ad',
         email: 'doctor@example.com',
         phone_raw: '+1 407 555 0199',
-        course_interest: 'Periodontal Plastic',
+        course_interest: 'Completely Unmapped Special Training',
         hs_analytics_source: 'PAID_SOCIAL',
         hs_analytics_source_data_1: 'Facebook',
       };
 
       const eligibility = evaluateMetaFirstContactEligibility(leadWithUnmappedCourse);
       expect(eligibility.isEligible).toBe(false);
-      expect(eligibility.suppressedReason).toContain('Unmapped or uncertain course interest "Periodontal Plastic"');
+      expect(eligibility.suppressedReason).toContain('Unmapped or uncertain course interest "Completely Unmapped Special Training"');
     });
   });
 

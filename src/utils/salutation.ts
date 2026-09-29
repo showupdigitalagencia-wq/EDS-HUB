@@ -425,20 +425,172 @@ export function getApprovedZygomaticSmsText(leadOrSalutation?: any): string {
   if (typeof leadOrSalutation === 'string' && (leadOrSalutation.startsWith('Hello Dr.') || leadOrSalutation === 'Hello Doctor')) {
     salutationLine = leadOrSalutation;
   } else {
-    salutationLine = resolveZygomaticSalutation(leadOrSalutation);
+    salutationLine = resolveDoctorSalutation('Hello', leadOrSalutation);
   }
 
   return `${salutationLine}
+
 This is Natália from Expert Dental Solutions. Thank you for your interest in our Zygomatic Implant Training in Brazil.
 
 I just sent you an email with all the course details.
 
 To help you choose the best option, could you tell me a little about your implant experience?
 
-We currently have openings for our November 7 to 10 course. Would those dates work for you?
+We currently have openings on November 7 to 10, 2026 and March 1 to 4, 2027. Would either of those dates work for you?
 
 I’m happy to answer any questions and help you find the course that best matches your goals.`;
 }
+
+/**
+ * Returns the exact approved SMS copy for Intensive + Advanced Implant ("Contato SMS inicial — Intensive + Advanced").
+ */
+export function getApprovedIntensiveAdvancedSmsText(leadOrSalutation?: any): string {
+  let salutationLine: string;
+  if (typeof leadOrSalutation === 'string' && (leadOrSalutation.startsWith('Hello Dr.') || leadOrSalutation === 'Hello Doctor')) {
+    salutationLine = leadOrSalutation;
+  } else {
+    salutationLine = resolveDoctorSalutation('Hello', leadOrSalutation);
+  }
+
+  return `${salutationLine}
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Implant Training in Brazil.
+
+I just sent you an email with all the course details.
+
+To help you choose the best option, could you tell me a little about your implant experience?
+
+We currently have openings on November 11 to 14, 2026 and February 24 to 27, 2027. Would either of those dates work for you?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`;
+}
+
+/**
+ * Returns the exact approved SMS copy for Endodontics ("Contato SMS inicial — Endodontics").
+ */
+export function getApprovedEndodonticsSmsText(leadOrSalutation?: any): string {
+  let salutationLine: string;
+  if (typeof leadOrSalutation === 'string' && (leadOrSalutation.startsWith('Hello Dr.') || leadOrSalutation === 'Hello Doctor')) {
+    salutationLine = leadOrSalutation;
+  } else {
+    salutationLine = resolveDoctorSalutation('Hello', leadOrSalutation);
+  }
+
+  return `${salutationLine}
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Endodontic Training in Brazil.
+
+I just sent you an email with all the course details.
+
+We currently have openings for our April 26 to 29 course. Would those dates work for you?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`;
+}
+
+/**
+ * Returns the exact approved SMS copy for Wisdom ("Contato SMS inicial — Wisdom").
+ */
+export function getApprovedWisdomSmsText(leadOrSalutation?: any): string {
+  let salutationLine: string;
+  if (typeof leadOrSalutation === 'string' && (leadOrSalutation.startsWith('Hello Dr.') || leadOrSalutation === 'Hello Doctor')) {
+    salutationLine = leadOrSalutation;
+  } else {
+    salutationLine = resolveDoctorSalutation('Hello', leadOrSalutation);
+  }
+
+  return `${salutationLine}
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Wisdom Teeth Training in Brazil.
+
+I just sent you an email with all the course details.
+
+We currently have openings on November 7 to 10, 2026 and March 1 to 4, 2027. Would either of those dates work for you?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`;
+}
+
+/**
+ * Returns the exact approved SMS copy for Rehabilitation ("Contato SMS inicial — Rehabilitation").
+ */
+export function getApprovedRehabilitationSmsText(leadOrSalutation?: any): string {
+  let salutationLine: string;
+  if (typeof leadOrSalutation === 'string' && (leadOrSalutation.startsWith('Hello Dr.') || leadOrSalutation === 'Hello Doctor')) {
+    salutationLine = leadOrSalutation;
+  } else {
+    salutationLine = resolveDoctorSalutation('Hello', leadOrSalutation);
+  }
+
+  return `${salutationLine}
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Implant Rehabilitation Training in Brazil.
+
+I just sent you an email with all the course details.
+
+We currently have openings on November 7 to 10, 2026 and March 1 to 4, 2027. Would either of those dates work for you?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`;
+}
+
+/**
+ * Returns the exact approved SMS copy for Periodontal Plastic ("Contato SMS inicial — Periodontal Plastic").
+ */
+export function getApprovedPeriodontalSmsText(leadOrSalutation?: any): string {
+  let salutationLine: string;
+  if (typeof leadOrSalutation === 'string' && (leadOrSalutation.startsWith('Hello Dr.') || leadOrSalutation === 'Hello Doctor')) {
+    salutationLine = leadOrSalutation;
+  } else {
+    salutationLine = resolveDoctorSalutation('Hello', leadOrSalutation);
+  }
+
+  return `${salutationLine}
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Periodontal Plastic Surgery Training in Brazil.
+
+I just sent you an email with all the course details.
+
+We currently have openings on November 7 to 10, 2026 and March 1 to 4, 2027. Would either of those dates work for you?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`;
+}
+
+export interface ApprovedSmsTemplatePackage {
+  templateKey: string;
+  displayName: string;
+  getText: (leadOrSalutation?: any) => string;
+}
+
+export const APPROVED_SMS_TEMPLATES: Record<string, ApprovedSmsTemplatePackage> = {
+  intensive_advanced_followup_sms: {
+    templateKey: 'intensive_advanced_followup_sms',
+    displayName: 'Contato SMS inicial — Intensive + Advanced',
+    getText: getApprovedIntensiveAdvancedSmsText,
+  },
+  endodontics_followup_sms: {
+    templateKey: 'endodontics_followup_sms',
+    displayName: 'Contato SMS inicial — Endodontics',
+    getText: getApprovedEndodonticsSmsText,
+  },
+  zygomatic_followup_sms: {
+    templateKey: 'zygomatic_followup_sms',
+    displayName: 'Contato SMS inicial — Zygomatic',
+    getText: getApprovedZygomaticSmsText,
+  },
+  wisdom_followup_sms: {
+    templateKey: 'wisdom_followup_sms',
+    displayName: 'Contato SMS inicial — Wisdom',
+    getText: getApprovedWisdomSmsText,
+  },
+  rehabilitation_followup_sms: {
+    templateKey: 'rehabilitation_followup_sms',
+    displayName: 'Contato SMS inicial — Rehabilitation',
+    getText: getApprovedRehabilitationSmsText,
+  },
+  periodontal_followup_sms: {
+    templateKey: 'periodontal_followup_sms',
+    displayName: 'Contato SMS inicial — Periodontal Plastic',
+    getText: getApprovedPeriodontalSmsText,
+  },
+};
 
 // =============================================================================
 // APPROVED COURSE EMAIL GENERATORS (PERIODONTAL, ENDODONTICS, IMPLANT, WISDOM, REHABILITATION)

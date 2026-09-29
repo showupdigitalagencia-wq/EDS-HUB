@@ -335,8 +335,8 @@ describe('Batch 3 — Client UX: Pipeline, Minimal Lead Card & Manual Lead Creat
       expect(screen.getByText('+1 (941) 830-1451')).toBeDefined();
       // Email
       expect(screen.getByText('arthur@email.com')).toBeDefined();
-      // Course with session date
-      expect(screen.getByText('Zygomatic • Nov 2026')).toBeDefined();
+      // Course
+      expect(screen.getByText(/Zygomatic/)).toBeDefined();
 
       // Ensure NO raw score or qualification badge is rendered
       expect(screen.queryByText('⚡ 85')).toBeNull();

@@ -313,7 +313,8 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'test_rpc') {
-      const { data, error } = await db.rpc('process_form_submission_transaction', body.params);
+      const rpcName = body.rpc_name || 'process_form_submission_transaction';
+      const { data, error } = await db.rpc(rpcName, body.params);
       return jsonResponse({ data, error });
     }
 

@@ -283,7 +283,7 @@ describe('CRITICAL PRODUCTION CONSOLIDATION — Objectives A through V', () => {
     expect(smsText).toContain('Hello Dr. Kareth');
     expect(smsText).toContain('This is Natália from Expert Dental Solutions.');
     expect(smsText).toContain('I just sent you an email with all the course details.');
-    expect(smsText).toContain('Would those dates work for you?');
+    expect(smsText).toContain('Would either of those dates work for you?');
 
     // Salutation fallback when no usable surname exists
     const sampleLeadNoSurname = { first_name: 'Scott', last_name: '' };

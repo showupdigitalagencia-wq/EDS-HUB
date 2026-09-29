@@ -46,6 +46,8 @@ const ALLOWED_KEYS = new Set([
   'utm_campaign',
   'utm_term',
   'utm_content',
+  'status',
+  'error_code',
 ]);
 
 function isOriginAllowed(origin: string | null): boolean {
@@ -261,14 +263,22 @@ Deno.serve(async (req) => {
   // Supplementary push notification for incomplete enrollment
   if (txResult && txResult.success && txResult.lead_id) {
     try {
-      const leadName = `${sanitized.first_name || ''} ${sanitized.last_name || ''}`.trim() || 'Novo lead';
+      const leadName = `${sanitized.first_name || ''} ${sanitized.last_name || ''}`.trim() || 'Lead';
+      let courseDisplay = sanitized.course_code || 'um curso';
+      if (sanitized.course_id) {
+        const { data: cData } = await db.from('courses').select('name').eq('id', sanitized.course_id).maybeSingle();
+        if (cData?.name) courseDisplay = cData.name;
+      }
+      const pushTitle = 'Inscrição não concluída';
+      const pushBody = `${leadName} tentou se inscrever em ${courseDisplay}. Verifique o formulário e faça o acompanhamento.`;
+
       await db.functions.invoke('send-push-notification', {
         body: {
           event_type: 'incomplete_registration',
           event_id: txResult.lead_id,
-          idempotency_key: `incomplete_reg_${txResult.attempt_id || txResult.lead_id}_${Date.now()}`,
-          title: 'Inscrição não concluída',
-          body: `${leadName} precisa de acompanhamento.`,
+          idempotency_key: `incomplete_reg_${txResult.attempt_id || txResult.lead_id}`,
+          title: pushTitle,
+          body: pushBody,
           deep_link: `/leads/${txResult.lead_id}`,
         },
       });

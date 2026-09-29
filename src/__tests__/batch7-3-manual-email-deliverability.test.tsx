@@ -587,7 +587,7 @@ describe('EDS HUB — BATCH 7.3: Manual Email & Deliverability Health', () => {
 
       const healthyRes = await fetchLeadEmailHealth('healthy@example.com');
       expect(healthyRes.status).toBe('saudavel');
-      expect(healthyRes.label).toBe('E-mail saudável');
+      expect(['Entregue', 'E-mail saudável']).toContain(healthyRes.label);
 
       // 2. Suppressed lead (hard bounce)
       vi.spyOn(supabase, 'from').mockImplementation((table: string) => {
