@@ -398,7 +398,10 @@ export function LeadDetailPage() {
   // Operational attention state (evidence-backed only)
   const attentionState = resolveAttentionState(
     lead,
-    activities.map((a) => a.summary)
+    activities.map((a) => a.summary),
+    {
+      stageCode: currentStage?.code,
+    }
   );
 
   const phoneDisplay = lead.phone_raw || lead.phone_e164 || null;

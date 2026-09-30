@@ -15,6 +15,10 @@ export interface LeadIntakePayload {
   email_confirmation?: string;
   phone?: string;
   contact_preference?: 'email' | 'sms' | 'call' | 'whatsapp' | string;
+  course_interest?: string;
+  course_title?: string;
+  is_new_lead?: boolean;
+  idempotency_key?: string;
   source_created_at?: string;
   raw_payload?: Record<string, unknown>;
 }

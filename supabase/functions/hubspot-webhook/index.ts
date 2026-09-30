@@ -31,9 +31,9 @@ Deno.serve(async (req) => {
   const timestamp = req.headers.get('x-hubspot-request-timestamp') || req.headers.get('X-HubSpot-Request-Timestamp');
   const clientSecret = Deno.env.get('HUBSPOT_CLIENT_SECRET') || Deno.env.get('HUBSPOT_WEBHOOK_SECRET') || '';
   const adminKey = req.headers.get('x-admin-key') || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-  const INTERNAL_ADMIN_SECRET = 'eds_internal_course_materials_mgmt_2026';
+  const INTERNAL_ADMIN_SECRET = Deno.env.get('INTERNAL_ADMIN_SECRET');
 
-  const isAdminBypass = adminKey === INTERNAL_ADMIN_SECRET;
+  const isAdminBypass = Boolean(INTERNAL_ADMIN_SECRET && adminKey === INTERNAL_ADMIN_SECRET);
   const isTestBypass = !clientSecret && Deno.env.get('ALLOW_UNVERIFIED_WEBHOOKS') === 'true';
 
   if (!isAdminBypass && !isTestBypass) {
@@ -197,6 +197,7 @@ Deno.serve(async (req) => {
                 contact_preference: newLead.contact_preference,
                 course_interest: newLead.course_interest,
                 course_title: newLead.course_interest,
+                is_new_lead: true,
                 idempotency_key: `hubspot_first_contact_${newLead.lead_id}`,
               };
               const intakeRes = await fetch(`${supabaseUrl}/functions/v1/process-lead-intake`, {

@@ -20,6 +20,7 @@ import {
 import { resolveEmailRecipients, escapeHtml } from '../_shared/email-utils.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
 import { sendSms } from '../_shared/twilio-adapter.ts';
+import { syncEmailToTitanSent } from '../_shared/titan-imap.ts';
 import type { LeadIntakePayload, LeadIntakeResponse } from '../_shared/types.ts';
 
 Deno.serve(async (req) => {
@@ -492,18 +493,35 @@ Deno.serve(async (req) => {
       }
     }
 
-    // --- 9. Advance pipeline if successful (Website, Historical, Test, and Meta leads stay in Novo Lead) ---
+    // --- 9. Advance pipeline if successful (Step 8: Email preference Ad Leads advance upon successful send; SMS preference remains in Novo Lead) ---
     let stageAdvanced = false;
-    if (actionSucceeded) {
-      if (!isWebsiteLead && !isHistoricalSync && !isMetaLead && !isTestLead && isNewLead) {
-        // Check current stage — only advance if still in Capture (Novo Lead)
-        const { data: currentLead } = await db
-          .from('leads')
-          .select('pipeline_stage_id')
-          .eq('id', leadId)
-          .single();
+    if (actionSucceeded && isNewLead) {
+      // Check current stage — only advance if currently in Capture (Novo Lead)
+      const { data: currentLead } = await db
+        .from('leads')
+        .select('pipeline_stage_id')
+        .eq('id', leadId)
+        .single();
 
-        if (currentLead && currentLead.pipeline_stage_id === captureStage.id) {
+      if (currentLead && currentLead.pipeline_stage_id === captureStage.id) {
+        let shouldAdvanceToRespondido = false;
+
+        if (isProvenAdLead(payload)) {
+          // PROVEN AD LEAD (STEP 8):
+          // Preference = Email: Automatically move Novo Lead -> Respondido ONLY upon factual successful email send
+          // Preference = SMS: REMAINS in Novo Lead (advances only when user manually confirms SMS sent)
+          // Preference = Call / WhatsApp: REMAINS in Novo Lead
+          if (pref === 'email' && messagesSent > 0) {
+            shouldAdvanceToRespondido = true;
+          }
+        } else if (!isWebsiteLead && !isHistoricalSync && !isTestLead && !isMetaLead) {
+          // Other generic inbound leads with successful send
+          if (messagesSent > 0) {
+            shouldAdvanceToRespondido = true;
+          }
+        }
+
+        if (shouldAdvanceToRespondido) {
           await db
             .from('leads')
             .update({
@@ -525,8 +543,8 @@ Deno.serve(async (req) => {
             intake_event_id: intakeEventId,
             activity_type: 'stage_changed',
             actor_type: 'system',
-            summary: 'Lead advanced from Novo Lead to Respondido after successful intake processing',
-            metadata: { from: 'capture', to: 'qualification' },
+            summary: 'Lead avançado de Novo Lead para Respondido após envio com sucesso do e-mail inicial',
+            metadata: { from: 'capture', to: 'qualification', reason: 'auto_after_intake' },
           });
 
           stageAdvanced = true;
@@ -673,6 +691,9 @@ function isProvenAdLead(payload: LeadIntakePayload): boolean {
 }
 
 function generateIdempotencyKey(p: LeadIntakePayload): string {
+  if (p.idempotency_key) {
+    return p.idempotency_key;
+  }
   if (p.external_event_id) {
     return `${p.source}:${p.external_event_id}`;
   }
@@ -705,16 +726,30 @@ function sanitizeForStorage(p: LeadIntakePayload): Record<string, unknown> {
 
 // deno-lint-ignore no-explicit-any
 async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEventId: string) {
+  // If explicitly flagged as new lead (e.g. from hubspot-webhook or hubspot-reconcile created_leads handoff)
+  if (payload.is_new_lead === true && payload.lead_id) {
+    return { leadId: payload.lead_id, isNewLead: true };
+  }
+
   // Try direct lead_id lookup if provided
   if (payload.lead_id) {
     const { data: existing } = await db
       .from('leads')
-      .select('id')
+      .select('id, created_at')
       .eq('id', payload.lead_id)
       .single();
 
     if (existing) {
-      return { leadId: existing.id, isNewLead: false };
+      // Check if lead has ever had outbound first-contact outreach
+      const { count } = await db
+        .from('outbound_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('lead_id', existing.id);
+
+      const hasOutreach = (count || 0) > 0;
+      // If no outreach has occurred and it is an ad lead, treat as eligible for first-contact automation
+      const isNew = !hasOutreach && payload.is_new_lead !== false;
+      return { leadId: existing.id, isNewLead: isNew };
     }
   }
 
@@ -1243,6 +1278,57 @@ async function handleEmailPreference(
       });
 
       sent++;
+
+      // --- Titan Sent Mailbox Synchronization (Archival copy) ---
+      try {
+        const titanRes = await syncEmailToTitanSent({
+          from: sender,
+          to: recipient,
+          subject,
+          html: escapedHtmlBody,
+          text: body,
+          messageId: result.messageId || undefined,
+          date: new Date(),
+          attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
+          idempotencyKey: msgIdempotencyKey,
+        });
+
+        if (titanRes.status === 'synced') {
+          await db
+            .from('outbound_messages')
+            .update({
+              titan_sync_status: 'synced',
+              titan_synced_at: new Date().toISOString(),
+              titan_sent_folder: titanRes.folder || 'Sent',
+            })
+            .eq('id', messageId);
+        } else if (titanRes.status === 'CONFIG_REQUIRED') {
+          await db
+            .from('outbound_messages')
+            .update({
+              titan_sync_status: 'pending',
+              titan_sync_error: 'TITAN_IMAP_PASSWORD configuration required in Supabase secrets',
+            })
+            .eq('id', messageId);
+        } else if (titanRes.status === 'failed') {
+          await db
+            .from('outbound_messages')
+            .update({
+              titan_sync_status: 'failed',
+              titan_sync_error: titanRes.error || 'Titan IMAP sync failed',
+            })
+            .eq('id', messageId);
+        }
+      } catch (titanErr: any) {
+        console.warn('[process-lead-intake] Titan sync error (isolated from Resend delivery):', titanErr.message);
+        await db
+          .from('outbound_messages')
+          .update({
+            titan_sync_status: 'failed',
+            titan_sync_error: titanErr.message,
+          })
+          .eq('id', messageId);
+      }
     } else {
       await db
         .from('outbound_messages')

@@ -26,7 +26,8 @@ export async function verifyAuth(authHeader: string | null): Promise<AuthResult>
 
     // Allow internal service-to-service calls using the Supabase Service Role Key or internal admin secret
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if ((serviceRoleKey && token === serviceRoleKey) || token === 'eds_internal_course_materials_mgmt_2026') {
+    const internalAdminSecret = Deno.env.get('INTERNAL_ADMIN_SECRET');
+    if ((serviceRoleKey && token === serviceRoleKey) || (internalAdminSecret && token === internalAdminSecret)) {
       return { isAuthorized: true, userId: 'system:service_role', error: null, statusCode: 200 };
     }
 

@@ -1,18 +1,50 @@
 -- =============================================================================
--- Migration 00088: Fix HubSpot Inbound Batch Contact Extraction & Webhook Resilience
+-- Migration 00092: Fix HubSpot Course Interest Constraint, Reconciliation & Automation
 -- =============================================================================
--- Fixes critical production issue: HubSpot leads missing from EDS HUB
--- 1. Updates process_hubspot_inbound_batch to extract contact ID from:
---    COALESCE(v_event->>'contact_id', v_event->>'objectId', v_event->>'id', v_event->>'hubspot_contact_id', v_event->'properties'->>'hs_object_id')
--- 2. Normalizes v_props from COALESCE(v_event->'properties', v_event->'raw_properties', v_event)
--- 3. Robust Meta Lead Ads source detection (Instagram Lead, Facebook Lead Ads, PAID_SOCIAL)
--- 4. Course interest mapping with zero-data-loss fallback
--- 5. Contact preference normalization (email, sms, whatsapp, call)
--- 6. Canonical timestamp preservation (source_created_at from createdate)
--- 7. Audit & Observability logging to public.integration_sync_events
--- 8. Updates trigger_hubspot_reconcile with dual headers and 30-day lookback
+-- 1. Adds last_reconciliation_at column to integration_connections.
+-- 2. Expands lead_course_interests_source_check to include 'hubspot', 'hubspot_sync', 'meta'.
+-- 3. Updates process_hubspot_inbound_batch RPC:
+--    - Uses 'hubspot_sync' for lead_course_interests
+--    - Protects course interest insertion in sub-block to avoid rolling back lead creation
+--    - Accumulates v_created_leads with verified committed data
+-- 4. Updates trigger_hubspot_reconcile pg_net caller to include Authorization header
 -- =============================================================================
 
+-- 1. Add last_reconciliation_at column to integration_connections
+ALTER TABLE public.integration_connections
+  ADD COLUMN IF NOT EXISTS last_reconciliation_at TIMESTAMPTZ NULL;
+
+-- 2. Expand lead_course_interests_source_check constraint
+ALTER TABLE public.lead_course_interests
+  DROP CONSTRAINT IF EXISTS lead_course_interests_source_check;
+
+ALTER TABLE public.lead_course_interests
+  ADD CONSTRAINT lead_course_interests_source_check
+  CHECK (source IN ('manual', 'post_course', 'form', 'hubspot', 'hubspot_sync', 'meta'));
+
+-- 3. Update trigger_hubspot_reconcile
+CREATE OR REPLACE FUNCTION public.trigger_hubspot_reconcile()
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN net.http_post(
+    url := 'https://xogcexclqiornuscsdmn.supabase.co/functions/v1/hubspot-reconcile',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-admin-key', coalesce((select decrypted_secret from vault.decrypted_secrets where name = 'INTERNAL_ADMIN_SECRET' limit 1), ''),
+      'Authorization', 'Bearer ' || coalesce((select decrypted_secret from vault.decrypted_secrets where name = 'INTERNAL_ADMIN_SECRET' limit 1), '')
+    ),
+    body := jsonb_build_object(
+      'lookback_days', 3,
+      'batch_size', 50
+    )
+  );
+END;
+$$;
+
+-- 4. Update process_hubspot_inbound_batch
 CREATE OR REPLACE FUNCTION public.process_hubspot_inbound_batch(p_events JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -20,89 +52,119 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_event JSONB;
-  v_event_id TEXT;
-  v_contact_id TEXT;
-  v_props JSONB;
-  v_email TEXT;
-  v_phone TEXT;
-  v_first_name TEXT;
-  v_last_name TEXT;
-  v_raw_course_interest TEXT;
-  v_course_interest_val TEXT;
-  v_contact_pref TEXT;
-  v_source TEXT;
-  v_source_detail TEXT;
-  v_is_form_submission BOOLEAN;
-  v_payload_hash TEXT;
-  v_matched_lead_id UUID;
-  v_lead_matches UUID[];
-  v_event_ts TIMESTAMPTZ;
-  v_source_created_at TIMESTAMPTZ;
-  v_is_update BOOLEAN;
   v_created_count INT := 0;
   v_updated_count INT := 0;
   v_ignored_count INT := 0;
   v_conflict_count INT := 0;
+  v_created_leads JSONB := '[]'::jsonb;
+  v_event JSONB;
+  v_contact_id TEXT;
+  v_event_id TEXT;
+  v_event_ts TIMESTAMPTZ;
+  v_props JSONB;
+  v_email TEXT;
+  v_email_confirmation TEXT;
+  v_email_mismatch BOOLEAN := false;
+  v_phone TEXT;
+  v_first_name TEXT;
+  v_last_name TEXT;
+  v_course_interest_val TEXT;
+  v_raw_course_interest TEXT;
+  v_contact_pref TEXT;
+  v_source TEXT;
+  v_source_detail TEXT;
+  v_qual_status TEXT;
+  v_source_created_at TIMESTAMPTZ;
+  v_target_stage_id UUID;
+  v_capture_stage_id UUID;
+  v_matched_lead_id UUID;
+  v_lead_matches UUID[];
+  v_payload_hash TEXT;
+  v_is_update BOOLEAN;
+  v_is_form_submission BOOLEAN;
   v_existing_course_interest TEXT;
   v_existing_course_interests JSONB;
   v_merged_course_interests JSONB;
   v_merged_course_interest TEXT;
   v_resolved_course_id UUID;
-  v_qual_status TEXT;
-  v_target_stage_id UUID;
-  v_capture_stage_id UUID;
 BEGIN
-  -- Set transaction-local sync origin to suppress automated outreach loops
-  PERFORM set_config('app.sync_origin', 'hubspot_reconcile', true);
+  -- Resolve default capture stage
+  SELECT id INTO v_capture_stage_id
+  FROM public.pipeline_stages
+  WHERE code = 'capture'
+  LIMIT 1;
 
-  -- Retrieve default Capture pipeline stage ('Novo Lead')
-  SELECT id INTO v_capture_stage_id FROM public.pipeline_stages WHERE code = 'capture' LIMIT 1;
-  IF v_capture_stage_id IS NULL THEN
-    SELECT id INTO v_capture_stage_id FROM public.pipeline_stages WHERE is_default = true LIMIT 1;
-  END IF;
-
-  FOR v_event IN SELECT * FROM jsonb_array_elements(p_events)
-  LOOP
+  FOR v_event IN SELECT * FROM jsonb_array_elements(p_events) LOOP
     BEGIN
-      -- Extract contact ID from any supported key
-      v_contact_id := COALESCE(
-        v_event->>'contact_id',
+      -- Extract contact ID from hs_object_id, objectId, or id
+      v_contact_id := NULLIF(trim(COALESCE(
+        v_event->'properties'->>'hs_object_id',
         v_event->>'objectId',
+        v_event->>'hs_object_id',
         v_event->>'id',
-        v_event->>'hubspot_contact_id',
-        v_event->'properties'->>'hs_object_id'
-      );
+        ''
+      )), '');
 
-      IF v_contact_id IS NULL OR trim(v_contact_id) = '' THEN
+      IF v_contact_id IS NULL THEN
         v_ignored_count := v_ignored_count + 1;
         CONTINUE;
       END IF;
 
-      v_contact_id := trim(v_contact_id);
-      v_event_id := COALESCE(v_event->>'eventId', v_event->>'id', v_contact_id || ':' || extract(epoch from now())::text);
-      v_props := COALESCE(v_event->'properties', v_event->'raw_properties', v_event);
+      v_event_id := NULLIF(trim(COALESCE(v_event->>'eventId', v_event->>'id', '')), '');
+      
+      -- Event timestamp
+      IF v_event->>'occurredAt' IS NOT NULL THEN
+        v_event_ts := to_timestamp((v_event->>'occurredAt')::double precision / 1000.0);
+      ELSIF v_event->>'timestamp' IS NOT NULL THEN
+        v_event_ts := (v_event->>'timestamp')::timestamptz;
+      ELSE
+        v_event_ts := now();
+      END IF;
 
-      -- Timestamps
-      v_event_ts := COALESCE(
-        (v_props->>'lastmodifieddate')::timestamptz,
-        (v_event->>'occurredAt')::timestamptz,
-        (v_event->>'timestamp')::timestamptz,
-        now()
-      );
+      -- Source created_at detection
+      v_props := COALESCE(v_event->'properties', '{}'::jsonb);
+      IF v_props->>'createdate' IS NOT NULL THEN
+        BEGIN
+          IF v_props->>'createdate' ~ '^\d+$' THEN
+            v_source_created_at := to_timestamp((v_props->>'createdate')::double precision / 1000.0);
+          ELSE
+            v_source_created_at := (v_props->>'createdate')::timestamptz;
+          END IF;
+        EXCEPTION WHEN OTHERS THEN
+          v_source_created_at := v_event_ts;
+        END;
+      ELSE
+        v_source_created_at := v_event_ts;
+      END IF;
 
-      v_source_created_at := COALESCE(
-        (v_props->>'createdate')::timestamptz,
-        (v_props->>'hs_createdate')::timestamptz,
-        (v_event->>'createdate')::timestamptz,
-        v_event_ts,
-        now()
+      -- Merge top-level fields into properties if not present
+      v_props := v_props || jsonb_build_object(
+        'firstname', COALESCE(v_props->>'firstname', v_event->>'firstname'),
+        'lastname', COALESCE(v_props->>'lastname', v_event->>'lastname'),
+        'email', COALESCE(v_props->>'email', v_event->>'email'),
+        'phone', COALESCE(v_props->>'phone', v_event->>'phone')
       );
 
       v_payload_hash := md5(v_props::text);
 
       -- Normalize core identity fields
       v_email := NULLIF(lower(trim(COALESCE(v_props->>'email', v_event->>'email', ''))), '');
+      v_email_confirmation := NULLIF(lower(trim(COALESCE(
+        v_props->>'email_confirmation',
+        v_props->>'confirm_email',
+        v_props->>'confirmation_email',
+        v_props->>'confirm_your_email',
+        v_props->>'confirmar_email',
+        v_event->>'email_confirmation',
+        ''
+      ))), '');
+
+      IF v_email IS NOT NULL AND v_email_confirmation IS NOT NULL AND v_email != v_email_confirmation THEN
+        v_email_mismatch := true;
+      ELSE
+        v_email_mismatch := false;
+      END IF;
+
       v_phone := NULLIF(regexp_replace(COALESCE(v_props->>'phone', v_props->>'mobilephone', v_props->>'hs_calculated_phone_number', v_event->>'phone', ''), '\D', '', 'g'), '');
       v_first_name := NULLIF(trim(COALESCE(v_props->>'firstname', v_event->>'firstname', '')), '');
       v_last_name := NULLIF(trim(COALESCE(v_props->>'lastname', v_event->>'lastname', '')), '');
@@ -327,7 +389,7 @@ BEGIN
         END IF;
       END IF;
 
-      -- A. UPDATE EXISTING LEAD
+      -- A. UPDATE EXISTING LEAD (Preserves created_at, stage, and resurfaces via last_inbound_activity_at)
       IF v_matched_lead_id IS NOT NULL THEN
         v_is_update := true;
 
@@ -347,19 +409,11 @@ BEGIN
                OR (lower(v_course_interest_val) LIKE '%zygoma%' AND lower(trim(elem)) = 'zygomatic')
                OR (lower(v_course_interest_val) = 'wisdom' AND lower(trim(elem)) LIKE '%wisdom%')
                OR (lower(v_course_interest_val) LIKE '%wisdom%' AND lower(trim(elem)) = 'wisdom')
-               OR (lower(v_course_interest_val) = 'endodontics' AND lower(trim(elem)) LIKE '%endo%')
-               OR (lower(v_course_interest_val) LIKE '%endo%' AND lower(trim(elem)) = 'endodontics')
-               OR (lower(v_course_interest_val) = 'periodontal plastic' AND lower(trim(elem)) LIKE '%perio%')
-               OR (lower(v_course_interest_val) LIKE '%perio%' AND lower(trim(elem)) = 'periodontal plastic')
-               OR (lower(v_course_interest_val) = 'rehabilitation' AND lower(trim(elem)) LIKE '%rehab%')
-               OR (lower(v_course_interest_val) LIKE '%rehab%' AND lower(trim(elem)) = 'rehabilitation')
           ) THEN
             v_merged_course_interests := v_merged_course_interests || jsonb_build_array(v_course_interest_val);
-            IF v_merged_course_interest IS NULL OR trim(v_merged_course_interest) = '' THEN
-              v_merged_course_interest := v_course_interest_val;
-            ELSE
-              v_merged_course_interest := v_merged_course_interest || ', ' || v_course_interest_val;
-            END IF;
+          END IF;
+          IF v_merged_course_interest IS NULL OR trim(v_merged_course_interest) = '' THEN
+            v_merged_course_interest := v_course_interest_val;
           END IF;
         END IF;
 
@@ -367,19 +421,20 @@ BEGIN
         SET
           first_name = COALESCE(v_first_name, first_name),
           last_name = COALESCE(v_last_name, last_name),
-          email = COALESCE(v_email, email),
           phone_raw = COALESCE(v_phone, phone_raw),
+          email_confirmation = COALESCE(v_email_confirmation, email_confirmation),
+          email_mismatch = (v_email_mismatch OR email_mismatch),
           contact_preference = COALESCE(v_contact_pref, contact_preference),
-          course_interest = COALESCE(v_merged_course_interest, course_interest),
+          course_interest = v_merged_course_interest,
           course_interests = v_merged_course_interests,
-          hubspot_contact_id = v_contact_id,
-          last_inbound_activity_at = CASE WHEN v_is_form_submission THEN now() ELSE last_inbound_activity_at END,
-          has_new_submission = CASE WHEN v_is_form_submission THEN true ELSE has_new_submission END,
-          new_submission_at = CASE WHEN v_is_form_submission THEN now() ELSE new_submission_at END,
+          hubspot_contact_id = COALESCE(hubspot_contact_id, v_contact_id),
+          last_inbound_activity_at = GREATEST(last_inbound_activity_at, v_event_ts),
+          has_new_submission = (v_is_form_submission OR has_new_submission),
+          new_submission_at = CASE WHEN v_is_form_submission THEN v_event_ts ELSE new_submission_at END,
           updated_at = now()
         WHERE id = v_matched_lead_id;
 
-        -- Upsert active entity link
+        -- Update or insert active entity link
         INSERT INTO public.integration_entity_links (
           integration, entity_type, eds_entity_id, external_entity_id,
           status, last_synced_hash, external_updated_at, last_inbound_sync_at
@@ -400,13 +455,13 @@ BEGIN
       ELSE
         v_is_update := false;
         INSERT INTO public.leads (
-          first_name, last_name, email, phone_raw, contact_preference,
+          first_name, last_name, email, email_confirmation, email_mismatch, phone_raw, contact_preference,
           course_interest, course_interests,
           source, source_detail, pipeline_stage_id, hubspot_contact_id,
           last_inbound_activity_at, has_new_submission, new_submission_at,
           source_created_at, created_at, updated_at
         ) VALUES (
-          v_first_name, v_last_name, v_email, v_phone, v_contact_pref,
+          v_first_name, v_last_name, v_email, COALESCE(v_email_confirmation, v_email), v_email_mismatch, v_phone, v_contact_pref,
           v_course_interest_val,
           CASE WHEN v_course_interest_val IS NOT NULL 
                THEN jsonb_build_array(v_course_interest_val) 
@@ -419,7 +474,7 @@ BEGIN
           v_source_created_at, v_source_created_at, now()
         ) RETURNING id INTO v_matched_lead_id;
 
-        -- Create active entity link
+        -- Upsert active entity link
         INSERT INTO public.integration_entity_links (
           integration, entity_type, eds_entity_id, external_entity_id,
           status, last_synced_hash, external_updated_at, last_inbound_sync_at
@@ -428,25 +483,57 @@ BEGIN
           'active', v_payload_hash, v_event_ts, now()
         );
 
+        -- Stage history log
+        INSERT INTO public.lead_stage_history (
+          lead_id, from_stage_id, to_stage_id, change_reason
+        ) VALUES (
+          v_matched_lead_id, NULL, v_target_stage_id, 'initial_assignment'
+        );
+
         -- Activity: lead_created
         INSERT INTO public.lead_activities (
           lead_id, activity_type, actor_type, summary, metadata
         ) VALUES (
           v_matched_lead_id, 'lead_created', 'system',
-          'Lead imported via HubSpot sync (' || v_source_detail || ')', 
-          jsonb_build_object('external_id', v_contact_id, 'source', v_source, 'source_detail', v_source_detail, 'course', v_course_interest_val)
+          'Lead synchronized from HubSpot: ' || COALESCE(v_first_name || ' ' || COALESCE(v_last_name, ''), v_email, v_contact_id),
+          jsonb_build_object(
+            'source', v_source,
+            'source_detail', v_source_detail,
+            'hubspot_contact_id', v_contact_id,
+            'course', v_course_interest_val
+          )
         );
+
+        -- Accumulate created lead for real-time automation handoff
+        v_created_leads := v_created_leads || jsonb_build_array(jsonb_build_object(
+          'lead_id', v_matched_lead_id,
+          'email', v_email,
+          'email_confirmation', v_email_confirmation,
+          'phone', v_phone,
+          'first_name', v_first_name,
+          'last_name', v_last_name,
+          'contact_preference', v_contact_pref,
+          'course_interest', v_course_interest_val,
+          'source', v_source,
+          'source_detail', v_source_detail,
+          'created_at', v_source_created_at
+        ));
 
         v_created_count := v_created_count + 1;
       END IF;
 
-      -- Relational Course Linking in lead_course_interests
+      -- Relational Course Interest linking (safely wrapped)
       IF v_resolved_course_id IS NOT NULL THEN
-        INSERT INTO public.lead_course_interests (lead_id, course_id, source, status)
-        VALUES (v_matched_lead_id, v_resolved_course_id, 'hubspot_sync', 'active')
-        ON CONFLICT DO NOTHING;
+        BEGIN
+          INSERT INTO public.lead_course_interests (
+            lead_id, course_id, priority, source, status, created_at, updated_at
+          ) VALUES (
+            v_matched_lead_id, v_resolved_course_id, 1, 'hubspot_sync', 'active', now(), now()
+          ) ON CONFLICT (lead_id, course_id) DO NOTHING;
+        EXCEPTION WHEN OTHERS THEN
+          RAISE WARNING 'Course interest link warning: %', SQLERRM;
+        END;
       ELSIF v_course_interest_val IS NOT NULL THEN
-        -- Log unmapped course for follow-up without dropping lead
         INSERT INTO public.integration_conflicts (
           integration, entity_type, eds_entity_id, external_entity_id,
           conflict_type, conflict_summary, field_name, hubspot_data
@@ -467,6 +554,8 @@ BEGIN
           submitted_at,
           submitted_data,
           email,
+          email_confirmation,
+          email_mismatch,
           phone_e164,
           contact_preference,
           course_interest,
@@ -484,8 +573,13 @@ BEGIN
             ELSE 'Meta Lead Ads'
           END,
           COALESCE(v_event_ts, now()),
-          v_props,
+          v_props || jsonb_build_object(
+            'email_confirmation', COALESCE(v_email_confirmation, v_email),
+            'email_mismatch', v_email_mismatch
+          ),
           v_email,
+          v_email_confirmation,
+          v_email_mismatch,
           v_phone,
           v_contact_pref,
           v_course_interest_val,
@@ -525,7 +619,6 @@ BEGIN
         processed_at = now();
 
     EXCEPTION WHEN OTHERS THEN
-      -- Record failure to integration_sync_events for observability
       INSERT INTO public.integration_sync_events (
         integration, direction, entity_type, external_entity_id,
         event_type, external_event_id, external_event_timestamp, payload_hash,
@@ -550,32 +643,11 @@ BEGIN
     'created_count', v_created_count,
     'updated_count', v_updated_count,
     'ignored_count', v_ignored_count,
-    'conflict_count', v_conflict_count
+    'conflict_count', v_conflict_count,
+    'created_leads', v_created_leads
   );
 END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.process_hubspot_inbound_batch TO service_role;
 GRANT EXECUTE ON FUNCTION public.process_hubspot_inbound_batch TO authenticated;
-
--- Update trigger_hubspot_reconcile with dual headers and 30-day lookback
-CREATE OR REPLACE FUNCTION public.trigger_hubspot_reconcile()
-RETURNS bigint
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-  RETURN net.http_post(
-    url := 'https://xogcexclqiornuscsdmn.supabase.co/functions/v1/hubspot-reconcile',
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'x-admin-key', coalesce((select decrypted_secret from vault.decrypted_secrets where name = 'INTERNAL_ADMIN_SECRET' limit 1), ''),
-      'Authorization', 'Bearer ' || coalesce((select decrypted_secret from vault.decrypted_secrets where name = 'INTERNAL_ADMIN_SECRET' limit 1), '')
-    ),
-    body := jsonb_build_object(
-      'lookback_days', 30,
-      'batch_size', 100
-    )
-  );
-END;
-$$;

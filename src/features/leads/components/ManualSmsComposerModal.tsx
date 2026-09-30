@@ -246,6 +246,56 @@ export function ManualSmsComposerModal({
         console.warn('[ManualSms] Non-fatal task completion warning:', taskErr);
       }
 
+      // 2b. Advance stage: Novo Lead -> Respondido (only if currently in Novo Lead per Step 8 & 9)
+      try {
+        const { data: captureStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('code', 'capture')
+          .maybeSingle();
+
+        const { data: qualificationStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('code', 'qualification')
+          .maybeSingle();
+
+        if (captureStage && qualificationStage) {
+          const { data: currentLead } = await supabase
+            .from('leads')
+            .select('pipeline_stage_id')
+            .eq('id', lead.id)
+            .maybeSingle();
+
+          if (currentLead && currentLead.pipeline_stage_id === captureStage.id) {
+            await supabase
+              .from('leads')
+              .update({
+                pipeline_stage_id: qualificationStage.id,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', lead.id);
+
+            await supabase.from('lead_stage_history').insert({
+              lead_id: lead.id,
+              from_stage_id: captureStage.id,
+              to_stage_id: qualificationStage.id,
+              change_reason: 'manual_sms_sent',
+            });
+
+            await supabase.from('lead_activities').insert({
+              lead_id: lead.id,
+              activity_type: 'stage_changed',
+              actor_type: 'user',
+              summary: 'Lead avançado de Novo Lead para Respondido após envio manual de SMS confirmado',
+              metadata: { from: 'capture', to: 'qualification', reason: 'manual_sms_sent' },
+            });
+          }
+        }
+      } catch (stageErr) {
+        console.warn('[ManualSms] Stage advancement warning:', stageErr);
+      }
+
       // 3. Update conversation last message preview in conversations table
       try {
         const { data: conv } = await supabase

@@ -123,11 +123,73 @@ export function formatSessionMonthYear(dateStr?: string | null): string | null {
   return null;
 }
 
+export interface AttentionStateContext {
+  deliverabilityHealth?: LeadDeliverabilityInfo | null;
+  stageCode?: string;
+  hasPendingSmsTask?: boolean;
+  hasConfirmedSms?: boolean;
+}
+
 export function resolveAttentionState(
   lead: Lead,
   activitiesSummary?: string[],
+  contextOrDeliverability?: AttentionStateContext | LeadDeliverabilityInfo | null,
+  legacyStageCode?: string,
 ): OperationalAttentionState | null {
-  // 1. Website leads in capture (Novo Lead): Aguardando resposta manual
+  // Normalize context
+  let deliverabilityHealth: LeadDeliverabilityInfo | null = null;
+  let stageCode = legacyStageCode;
+  let hasPendingSmsTask = false;
+  let hasConfirmedSms = false;
+
+  if (contextOrDeliverability) {
+    if ('status' in contextOrDeliverability && ('label' in contextOrDeliverability || 'factualStatus' in contextOrDeliverability)) {
+      deliverabilityHealth = contextOrDeliverability as LeadDeliverabilityInfo;
+    } else {
+      const ctx = contextOrDeliverability as AttentionStateContext;
+      deliverabilityHealth = ctx.deliverabilityHealth || null;
+      stageCode = ctx.stageCode || stageCode;
+      hasPendingSmsTask = !!ctx.hasPendingSmsTask;
+      hasConfirmedSms = !!ctx.hasConfirmedSms;
+    }
+  }
+
+  // 1. If lead is in qualification (Respondido) or any subsequent pipeline stage,
+  // first-contact is completed! Never show "Falha no primeiro contato" on Respondido or later stages.
+  const isPostCapture = stageCode && stageCode !== 'capture';
+  if (isPostCapture) {
+    return null;
+  }
+
+  // 2. Factual email deliverability check
+  const isEmailDeliveredOrSent =
+    deliverabilityHealth?.factualStatus?.status === 'entregue' ||
+    deliverabilityHealth?.factualStatus?.status === 'enviado' ||
+    deliverabilityHealth?.factualStatus?.status === 'aceito' ||
+    deliverabilityHealth?.factualStatus?.status === 'abertura_detectada' ||
+    deliverabilityHealth?.factualStatus?.status === 'clique_detectado';
+
+  // 3. For SMS preference leads in capture (Novo Lead):
+  if (lead.contact_preference === 'sms') {
+    if (hasConfirmedSms) {
+      return null;
+    }
+    // Factual pending SMS state: do NOT mislabel as "Falha no primeiro contato"
+    if (hasPendingSmsTask || isEmailDeliveredOrSent || (lead.source === 'meta' && (lead.source_detail === 'lead_gen_ad' || lead.source_detail === 'meta_lead_ad'))) {
+      return {
+        label: 'Aguardando SMS manual',
+        variant: 'info',
+      };
+    }
+  }
+
+  // 4. If email is already delivered or sent, the first contact attempt succeeded!
+  // Any historical failure from earlier attempts is resolved.
+  if (isEmailDeliveredOrSent) {
+    return null;
+  }
+
+  // 5. Website leads in capture (Novo Lead): Aguardando resposta manual
   if (lead.source === 'form' || lead.source_detail === 'website') {
     return {
       label: 'Aguardando resposta manual',
@@ -135,8 +197,24 @@ export function resolveAttentionState(
     };
   }
 
-  // 2. Check for explicit activity indicators if provided
+  // 6. Check for explicit activity indicators if provided
   if (activitiesSummary && activitiesSummary.length > 0) {
+    // If activities contain an explicit subsequent success event, stale failure is cleared!
+    const hasSuccessActivity = activitiesSummary.some((s) => {
+      const lower = s.toLowerCase();
+      return (
+        lower.includes('email delivered') ||
+        lower.includes('e-mail entregue') ||
+        lower.includes('email enviado') ||
+        lower.includes('email sent') ||
+        lower.includes('respondido após envio')
+      );
+    });
+
+    if (hasSuccessActivity) {
+      return null;
+    }
+
     const hasPartialFailure = activitiesSummary.some(
       (s) =>
         s.toLowerCase().includes('partial failure') ||
@@ -164,8 +242,8 @@ export function resolveAttentionState(
     }
   }
 
-  // 3. Fallback check for Meta leads in capture without failure: Aguardando contato
-  if (lead.source === 'meta' && lead.source_detail === 'lead_gen_ad') {
+  // 7. Fallback check for Meta leads in capture without failure: Aguardando contato
+  if (lead.source === 'meta' && (lead.source_detail === 'lead_gen_ad' || lead.source_detail === 'meta_lead_ad')) {
     return {
       label: 'Aguardando contato',
       variant: 'info',

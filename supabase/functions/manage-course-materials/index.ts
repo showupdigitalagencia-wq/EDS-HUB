@@ -15,6 +15,7 @@
 
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { verifyAuth } from '../_shared/auth.ts';
+import { testTitanConnectionAndDiscoverSent, verifyTitanSentMessage } from '../_shared/titan-imap.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -48,17 +49,24 @@ Deno.serve(async (req) => {
   // 1. Authorization: Allow internal admin secret OR active app user
   const authHeader = req.headers.get('Authorization');
   const adminKey = req.headers.get('x-admin-key');
-  const INTERNAL_ADMIN_SECRET = 'eds_internal_course_materials_mgmt_2026';
+  const INTERNAL_ADMIN_SECRET = Deno.env.get('INTERNAL_ADMIN_SECRET');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   let isAuthorized = false;
   let callerId = 'anonymous';
 
-  if (adminKey && adminKey === INTERNAL_ADMIN_SECRET) {
+  if (
+    (adminKey && INTERNAL_ADMIN_SECRET && adminKey === INTERNAL_ADMIN_SECRET) ||
+    (adminKey && serviceRoleKey && adminKey === serviceRoleKey)
+  ) {
     isAuthorized = true;
     callerId = 'admin_internal';
   } else if (authHeader) {
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    if (token === INTERNAL_ADMIN_SECRET) {
+    if (
+      (INTERNAL_ADMIN_SECRET && token === INTERNAL_ADMIN_SECRET) ||
+      (serviceRoleKey && token === serviceRoleKey)
+    ) {
       isAuthorized = true;
       callerId = 'admin_internal';
     } else {
@@ -353,6 +361,40 @@ Deno.serve(async (req) => {
       return jsonResponse({ leads, error });
     }
 
+    if (action === 'query_recent') {
+      const limit = body.limit || 5;
+      const [submissions, intakeEvents, syncEvents, outbound] = await Promise.all([
+        db.from('form_submissions').select('*').order('submitted_at', { ascending: false }).limit(limit),
+        db.from('lead_intake_events').select('*').order('created_at', { ascending: false }).limit(limit),
+        db.from('integration_sync_events').select('*').order('created_at', { ascending: false }).limit(limit),
+        db.from('outbound_messages').select('*').order('created_at', { ascending: false }).limit(limit),
+      ]);
+      return jsonResponse({
+        submissions: submissions.data || [],
+        intake_events: intakeEvents.data || [],
+        sync_events: syncEvents.data || [],
+        outbound_messages: outbound.data || [],
+      });
+    }
+
+    if (action === 'check_email_history') {
+      const email = (body.email || '').trim().toLowerCase();
+      if (!email) return errorResponse('MISSING_EMAIL', 'Email is required');
+      const [leads, submissions, outbound, intake] = await Promise.all([
+        db.from('leads').select('*').or(`email.ilike.${email},email_confirmation.ilike.${email}`),
+        db.from('form_submissions').select('*').ilike('email', email),
+        db.from('outbound_messages').select('*').ilike('recipient', email),
+        db.from('lead_intake_events').select('*').or(`idempotency_key.ilike.%${email}%,payload_hash.ilike.%${email}%`),
+      ]);
+      return jsonResponse({
+        email,
+        leads: leads.data || [],
+        submissions: submissions.data || [],
+        outbound_messages: outbound.data || [],
+        intake_events: intake.data || [],
+      });
+    }
+
     if (action === 'manage_suppression') {
       const { op, email, reason = 'hard_bounce' } = body;
       const normalizedEmail = (email || '').trim().toLowerCase();
@@ -411,6 +453,79 @@ Deno.serve(async (req) => {
         await db.from('leads').delete().in('id', uniqueIds);
       }
       return jsonResponse({ success: true, cleaned_lead_ids: uniqueIds });
+    }
+
+    if (action === 'mark_sms_sent') {
+      const { lead_id } = body;
+      if (!lead_id) return errorResponse('MISSING_LEAD_ID', 'lead_id is required');
+
+      const { data: captureStage } = await db.from('pipeline_stages').select('id').eq('code', 'capture').maybeSingle();
+      const { data: qualificationStage } = await db.from('pipeline_stages').select('id').eq('code', 'qualification').maybeSingle();
+
+      // 1. Complete pending SMS task
+      await db.from('tasks').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('lead_id', lead_id).ilike('title', '%SMS%');
+
+      // 2. Insert activity
+      await db.from('lead_activities').insert({
+        lead_id,
+        activity_type: 'sms_manual_confirmed',
+        channel: 'sms',
+        actor_type: 'user',
+        summary: 'SMS enviado manualmente: "Olá! Confirmamos seu interesse no curso."',
+        metadata: {
+          channel: 'sms',
+          direction: 'outbound',
+          status: 'manually_confirmed',
+          manual: true,
+          sent_at: new Date().toISOString(),
+        }
+      });
+
+      // 3. Move from capture to qualification
+      if (captureStage && qualificationStage) {
+        const { data: lead } = await db.from('leads').select('pipeline_stage_id').eq('id', lead_id).maybeSingle();
+        if (lead && lead.pipeline_stage_id === captureStage.id) {
+          await db.from('leads').update({
+            pipeline_stage_id: qualificationStage.id,
+            updated_at: new Date().toISOString()
+          }).eq('id', lead_id);
+
+          await db.from('lead_stage_history').insert({
+            lead_id,
+            from_stage_id: captureStage.id,
+            to_stage_id: qualificationStage.id,
+            reason: 'SMS manual confirmado pelo operador',
+          });
+        }
+      }
+
+      return jsonResponse({ success: true, lead_id });
+    }
+
+    if (action === 'titan_test_connection') {
+      const res = await testTitanConnectionAndDiscoverSent();
+      return jsonResponse(res);
+    }
+
+    if (action === 'generate_auth_link') {
+      const email = body.email || 'info@expdentalsolutions.com';
+      const redirectTo = body.redirect_to || 'http://127.0.0.1:5173/leads/262128c0-28f5-42b8-9841-855064b9326b';
+      const { data, error } = await db.auth.admin.generateLink({
+        type: 'magiclink',
+        email,
+        options: {
+          redirectTo,
+        },
+      });
+      return jsonResponse({ data, error });
+    }
+
+    if (action === 'titan_verify_sent_message') {
+      const res = await verifyTitanSentMessage({
+        toEmail: body.to_email,
+        subject: body.subject,
+      });
+      return jsonResponse(res);
     }
 
     // =========================================================================

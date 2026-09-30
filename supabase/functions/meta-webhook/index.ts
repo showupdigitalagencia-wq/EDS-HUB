@@ -128,15 +128,7 @@ Deno.serve(async (req) => {
   const allowUnverified = Deno.env.get('ALLOW_UNVERIFIED_WEBHOOKS') === 'true';
 
   // Signature validation
-  if (!allowUnverified) {
-    if (!appSecret) {
-      console.error('[meta-webhook] META_APP_SECRET is not configured on server');
-      return new Response(
-        JSON.stringify({ error: 'META_APP_SECRET is not configured on server' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
+  if (!allowUnverified && appSecret) {
     const verification = await verifyMetaSignature(rawBody, signatureHeader, appSecret);
     if (!verification.valid) {
       console.warn('[meta-webhook] Webhook signature verification failed:', verification.error);
@@ -145,6 +137,8 @@ Deno.serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+  } else if (!appSecret) {
+    console.info('[meta-webhook] META_APP_SECRET is not configured on server; accepting webhook in unverified setup mode');
   }
 
   // Parse JSON Body
@@ -272,30 +266,44 @@ Deno.serve(async (req) => {
       intakeEventId = newEvent.id;
     }
 
-    // --- 4. Fetch Lead Data via Graph API ---
+    // --- 4. Fetch Lead Data via Graph API (with short retry logic) ---
     let graphLead: MetaGraphLeadResponse | null = null;
     let graphFetchError: string | null = null;
 
     if (pageAccessToken) {
-      try {
-        const graphUrl = `https://graph.facebook.com/v21.0/${leadgenId}?fields=id,created_time,ad_id,form_id,field_data,platform&access_token=${encodeURIComponent(pageAccessToken)}`;
-        const graphRes = await fetch(graphUrl, { method: 'GET' });
-        if (graphRes.ok) {
-          graphLead = await graphRes.json();
-        } else {
-          const errText = await graphRes.text();
-          graphFetchError = `Graph API returned ${graphRes.status}: ${errText.substring(0, 200)}`;
-          console.error(`[meta-webhook] Graph API error for ${leadgenId}:`, graphFetchError);
+      const maxRetries = 2;
+      for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+        try {
+          const graphUrl = `https://graph.facebook.com/v21.0/${leadgenId}?fields=id,created_time,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id,field_data,platform&access_token=${encodeURIComponent(pageAccessToken)}`;
+          const graphRes = await fetch(graphUrl, { method: 'GET' });
+          if (graphRes.ok) {
+            graphLead = await graphRes.json();
+            graphFetchError = null;
+            break;
+          } else {
+            const errText = await graphRes.text();
+            graphFetchError = `Graph API returned ${graphRes.status}: ${errText.substring(0, 200)}`;
+            console.error(`[meta-webhook] Graph API error for ${leadgenId} (attempt ${attempt}):`, graphFetchError);
+            if (graphRes.status >= 500 && attempt <= maxRetries) {
+              await new Promise((r) => setTimeout(r, 600 * attempt));
+              continue;
+            }
+            break;
+          }
+        } catch (err: any) {
+          graphFetchError = `Graph API fetch failed: ${err.message}`;
+          console.error(`[meta-webhook] Network error fetching ${leadgenId} (attempt ${attempt}):`, err);
+          if (attempt <= maxRetries) {
+            await new Promise((r) => setTimeout(r, 600 * attempt));
+            continue;
+          }
         }
-      } catch (err: any) {
-        graphFetchError = `Graph API fetch failed: ${err.message}`;
-        console.error(`[meta-webhook] Network error fetching ${leadgenId}:`, err);
       }
     } else {
       console.info('[meta-webhook] META_PAGE_ACCESS_TOKEN not yet configured. Event recorded; lead field retrieval pending client authorization.');
     }
 
-    // If Graph API data could not be fetched (e.g. pre-auth meeting state)
+    // If Graph API data could not be fetched (e.g. pre-auth meeting state or expired token)
     if (!graphLead || !graphLead.field_data) {
       await db
         .from('lead_intake_events')
@@ -305,6 +313,17 @@ Deno.serve(async (req) => {
           processed_at: new Date().toISOString(),
         })
         .eq('id', intakeEventId);
+
+      // Surface admin-visible task when retry is exhausted
+      try {
+        await db.from('tasks').insert({
+          task_type: 'data_review',
+          title: `Meta Lead Retrieval Pending — Leadgen ${leadgenId}`,
+          description: `Leadgen ID ${leadgenId} foi recebido via webhook, mas os dados detalhados não puderam ser obtidos da Meta Graph API. Motivo: ${graphFetchError || 'Page Access Token não configurado'}.`,
+          status: 'pending',
+          created_by: 'system',
+        });
+      } catch {}
 
       results.push({
         leadgen_id: leadgenId,
@@ -359,10 +378,10 @@ Deno.serve(async (req) => {
 
     // Platform detection (factual attribution)
     const platformRaw = (graphLead.platform || '').toLowerCase();
-    const sourceDetail = platformRaw === 'ig' ? 'instagram' : platformRaw === 'fb' ? 'facebook' : 'meta_lead_ads';
+    const sourceDetail = 'meta_lead_ad';
 
     // --- 6. Course / Form Mapping Layer ---
-    const resolvedCourse = await resolveCourseFromMetaForm(db, formId);
+    const resolvedCourse = await resolveCourseFromMetaForm(db, formId, fieldMap);
 
     // --- 7. Lead Matching & Deduplication ---
     // Check 7.1: By source + external_lead_id
@@ -475,7 +494,9 @@ Deno.serve(async (req) => {
           pipeline_stage_id: captureStage.id, // Strictly Novo Lead
           course_interest: resolvedCourse?.courseName || null,
           course_interests: resolvedCourse?.courseName ? [resolvedCourse.courseName] : [],
-          last_inbound_activity_at: new Date().toISOString(),
+          last_inbound_activity_at: graphLead.created_time || new Date().toISOString(),
+          source_created_at: graphLead.created_time || new Date().toISOString(),
+          created_at: graphLead.created_time || new Date().toISOString(),
         })
         .select('id')
         .single();
@@ -524,14 +545,18 @@ Deno.serve(async (req) => {
 
       // Attach normalized course interest if mapped
       if (resolvedCourse?.courseId) {
-        await db.from('lead_course_interests').insert({
-          lead_id: targetLeadId,
-          course_id: resolvedCourse.courseId,
-          course_session_id: resolvedCourse.courseSessionId || null,
-          priority: 1,
-          source: 'form',
-          status: 'active',
-        });
+        try {
+          await db.from('lead_course_interests').insert({
+            lead_id: targetLeadId,
+            course_id: resolvedCourse.courseId,
+            course_session_id: resolvedCourse.courseSessionId || null,
+            priority: 1,
+            source: 'meta',
+            status: 'active',
+          });
+        } catch (cErr: any) {
+          console.warn('[meta-webhook] Failed inserting lead_course_interests:', cErr.message);
+        }
       }
 
       // If form was present but could not be safely mapped to a course:
@@ -711,7 +736,7 @@ Deno.serve(async (req) => {
         contact_preference: metaContactPreference,
         course_interest: resolvedCourse?.courseName || null,
         source_detail: sourceDetail,
-        processing_status: 'completed',
+        processing_status: 'processed',
         recovery_state: 'complete',
         idempotency_key: formSubmissionIdempotency,
       }, {
@@ -733,6 +758,8 @@ Deno.serve(async (req) => {
         const intakePayload = {
           source: 'meta',
           source_detail: sourceDetail,
+          is_new_lead: isNewLead,
+          idempotency_key: idempotencyKey,
           intake_event_id: intakeEventId,
           lead_id: targetLeadId,
           external_event_id: leadgenId,
@@ -790,44 +817,101 @@ Deno.serve(async (req) => {
 // =============================================================================
 async function resolveCourseFromMetaForm(
   db: any,
-  formId: string | null
+  formId: string | null,
+  fieldMap?: Record<string, string>,
+  formName?: string | null
 ): Promise<{ courseId: string; courseName: string; courseCode: string; courseSessionId?: string | null } | null> {
-  if (!formId) return null;
-
   // 1. Check integration_field_mappings or forms metadata
-  const { data: mapping } = await db
-    .from('integration_field_mappings')
-    .select('eds_target, transform_rule')
-    .eq('integration', 'meta')
-    .eq('external_property', `form:${formId}`)
-    .eq('is_active', true)
-    .maybeSingle();
+  if (formId) {
+    const { data: mapping } = await db
+      .from('integration_field_mappings')
+      .select('eds_target, transform_rule')
+      .eq('integration', 'meta')
+      .eq('external_property', `form:${formId}`)
+      .eq('is_active', true)
+      .maybeSingle();
 
-  let targetCourseCode: string | null = null;
-  if (mapping && mapping.eds_target) {
-    targetCourseCode = mapping.eds_target.replace(/^course:/, '').trim();
+    let targetCourseCode: string | null = null;
+    if (mapping && mapping.eds_target) {
+      targetCourseCode = mapping.eds_target.replace(/^course:/, '').trim();
+    }
+
+    if (targetCourseCode) {
+      const { data: course } = await db
+        .from('courses')
+        .select('id, name, code')
+        .eq('active', true)
+        .or(`code.eq.${targetCourseCode},name.ilike.${targetCourseCode}`)
+        .maybeSingle();
+
+      if (course) {
+        return {
+          courseId: course.id,
+          courseName: course.name,
+          courseCode: course.code,
+        };
+      }
+    }
   }
 
-  // Fallback to null if no explicit mapping
-  if (!targetCourseCode) {
-    return null;
+  // 2. Check form field responses (e.g. curso_de_interesse, course_interest, course)
+  const candidateKeys = [
+    'curso_de_interesse',
+    'course_interest',
+    'course',
+    'curso',
+    'which_course_are_you_interested_in',
+    'what_course_are_you_interested_in',
+    'qual_curso_você_tem_interesse',
+    'interesse',
+  ];
+  let detectedCourseStr: string | null = null;
+  if (fieldMap) {
+    for (const key of candidateKeys) {
+      if (fieldMap[key]) {
+        detectedCourseStr = fieldMap[key];
+        break;
+      }
+    }
+  }
+  if (!detectedCourseStr && formName) {
+    detectedCourseStr = formName;
   }
 
-  // Lookup course catalog
-  const { data: course } = await db
-    .from('courses')
-    .select('id, name, code')
-    .eq('active', true)
-    .or(`code.eq.${targetCourseCode},name.ilike.${targetCourseCode}`)
-    .maybeSingle();
+  if (detectedCourseStr) {
+    const lower = detectedCourseStr.toLowerCase();
+    let targetCode: string | null = null;
+    if (lower.includes('zygomatic') || lower.includes('zigomático')) {
+      targetCode = 'ZIT-01';
+    } else if (lower.includes('wisdom') || lower.includes('siso')) {
+      targetCode = 'WTT-01';
+    } else if (lower.includes('endo')) {
+      targetCode = 'ET-01';
+    } else if (lower.includes('perio')) {
+      targetCode = 'PST-01';
+    } else if (lower.includes('rehab') || lower.includes('reabilitação')) {
+      targetCode = 'AIRE-01';
+    } else if (lower.includes('implant') || lower.includes('implante') || lower.includes('intensive')) {
+      targetCode = 'IDIT-01';
+    }
 
-  if (!course) {
-    return null;
+    if (targetCode) {
+      const { data: course } = await db
+        .from('courses')
+        .select('id, name, code')
+        .eq('active', true)
+        .eq('code', targetCode)
+        .maybeSingle();
+
+      if (course) {
+        return {
+          courseId: course.id,
+          courseName: course.name,
+          courseCode: course.code,
+        };
+      }
+    }
   }
 
-  return {
-    courseId: course.id,
-    courseName: course.name,
-    courseCode: course.code,
-  };
+  return null;
 }

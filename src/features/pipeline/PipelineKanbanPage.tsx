@@ -52,6 +52,7 @@ export function PipelineKanbanPage() {
   const [leadActivitiesMap, setLeadActivitiesMap] = useState<Record<string, string[]>>({});
   const [leadDeliverabilityMap, setLeadDeliverabilityMap] = useState<Record<string, LeadDeliverabilityInfo>>({});
   const [leadSmsSentMap, setLeadSmsSentMap] = useState<Record<string, { sentAt: string; formattedDate?: string }>>({});
+  const [leadPendingSmsMap, setLeadPendingSmsMap] = useState<Record<string, boolean>>({});
   const [totalLeads, setTotalLeads] = useState(0);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -215,7 +216,7 @@ export function PipelineKanbanPage() {
       if (allLoadedCards.length > 0) {
         const leadIds = allLoadedCards.map((l) => l.id);
         try {
-          const [interestsRes, activitiesRes, delivMap, smsActivitiesRes] = await Promise.all([
+          const [interestsRes, activitiesRes, delivMap, smsActivitiesRes, smsTasksRes] = await Promise.all([
             supabase
               .from('lead_course_interests')
               .select('lead_id, priority, course:courses(name), session:course_sessions(title, start_date)')
@@ -225,8 +226,8 @@ export function PipelineKanbanPage() {
               .from('lead_activities')
               .select('lead_id, summary')
               .in('lead_id', leadIds.slice(0, 100))
-              .in('activity_type', ['processing_failed', 'website_lead_suppressed', 'channel_skipped'])
-              .order('created_at', { ascending: false }),
+              .order('created_at', { ascending: false })
+              .limit(500),
             batchFetchPipelineDeliverabilityHealth(allLoadedCards.slice(0, 100)),
             supabase
               .from('lead_activities')
@@ -234,6 +235,13 @@ export function PipelineKanbanPage() {
               .in('lead_id', leadIds.slice(0, 100))
               .eq('activity_type', 'sms_manual_confirmed')
               .order('created_at', { ascending: false }),
+            supabase
+              .from('tasks')
+              .select('lead_id')
+              .in('lead_id', leadIds.slice(0, 100))
+              .eq('task_type', 'follow_up')
+              .ilike('title', '%SMS%')
+              .eq('status', 'pending'),
           ]);
 
           if (interestsRes?.data && Array.isArray(interestsRes.data)) {
@@ -275,6 +283,14 @@ export function PipelineKanbanPage() {
               }
             });
             setLeadSmsSentMap((prev) => ({ ...prev, ...smsMap }));
+          }
+
+          if (smsTasksRes?.data && Array.isArray(smsTasksRes.data)) {
+            const pendingMap: Record<string, boolean> = {};
+            smsTasksRes.data.forEach((row: any) => {
+              pendingMap[row.lead_id] = true;
+            });
+            setLeadPendingSmsMap((prev) => ({ ...prev, ...pendingMap }));
           }
         } catch {}
       }
@@ -855,8 +871,13 @@ export function PipelineKanbanPage() {
                             {stageLeads.map((lead) => {
                               const interests = leadInterestsMap[lead.id] || [];
                               const activities = leadActivitiesMap[lead.id] || [];
-                              const attentionState = resolveAttentionState(lead, activities);
                               const deliverabilityHealth = leadDeliverabilityMap[lead.id];
+                              const attentionState = resolveAttentionState(lead, activities, {
+                                deliverabilityHealth,
+                                stageCode: stage.code,
+                                hasPendingSmsTask: !!leadPendingSmsMap[lead.id],
+                                hasConfirmedSms: !!leadSmsSentMap[lead.id],
+                              });
                               const isDragging = draggedLeadId === lead.id;
 
                               return (

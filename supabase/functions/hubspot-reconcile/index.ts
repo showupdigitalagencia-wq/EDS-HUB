@@ -9,10 +9,14 @@ Deno.serve(async (req) => {
 
   const authHeader = req.headers.get('Authorization');
   const adminKey = req.headers.get('x-admin-key');
-  const INTERNAL_ADMIN_SECRET = 'eds_internal_course_materials_mgmt_2026';
+  const INTERNAL_ADMIN_SECRET = Deno.env.get('INTERNAL_ADMIN_SECRET');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   let isAuthorized = false;
-  if (adminKey === INTERNAL_ADMIN_SECRET || authHeader === `Bearer ${INTERNAL_ADMIN_SECRET}`) {
+  if (
+    (INTERNAL_ADMIN_SECRET && (adminKey === INTERNAL_ADMIN_SECRET || authHeader === `Bearer ${INTERNAL_ADMIN_SECRET}`)) ||
+    (serviceRoleKey && (adminKey === serviceRoleKey || authHeader === `Bearer ${serviceRoleKey}`))
+  ) {
     isAuthorized = true;
   } else {
     const authResult = await verifyAuth(authHeader);
@@ -49,7 +53,7 @@ Deno.serve(async (req) => {
     }
 
     // 1. Determine Lookback Window
-    // Default: Check last_sync_at from integration_connections or look back 72 hours (3 days)
+    // Default: Check last_sync_at from integration_connections with 2-hour safety overlap or 72 hours max
     const { data: conn } = await db
       .from('integration_connections')
       .select('last_sync_at, last_reconciliation_at')
@@ -62,10 +66,10 @@ Deno.serve(async (req) => {
     } else if (body.lookback_days) {
       lookbackTimestamp = Date.now() - Number(body.lookback_days) * 24 * 60 * 60 * 1000;
     } else if (conn?.last_sync_at) {
-      // Look back from last_sync_at minus 2-hour safety overlap
+      // Look back from last_sync_at minus 2-hour safety overlap, bounded to 72 hours
       const lastSyncMs = new Date(conn.last_sync_at).getTime();
       const twoHoursMs = 2 * 60 * 60 * 1000;
-      lookbackTimestamp = Math.min(lastSyncMs - twoHoursMs, Date.now() - 72 * 60 * 60 * 1000);
+      lookbackTimestamp = Math.max(lastSyncMs - twoHoursMs, Date.now() - 72 * 60 * 60 * 1000);
     } else {
       // Default to 7 days lookback
       lookbackTimestamp = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -77,7 +81,7 @@ Deno.serve(async (req) => {
       lookbackTimestamp = maxLookback;
     }
 
-    // 2. Fetch all recently created or modified contacts with pagination
+    // 2. Fetch all recently created or modified contacts with deterministic pagination
     const allContacts: any[] = [];
     let afterCursor: string | undefined = undefined;
 
@@ -88,6 +92,15 @@ Deno.serve(async (req) => {
             filters: [
               {
                 propertyName: 'lastmodifieddate',
+                operator: 'GTE',
+                value: String(lookbackTimestamp),
+              },
+            ],
+          },
+          {
+            filters: [
+              {
+                propertyName: 'createdate',
                 operator: 'GTE',
                 value: String(lookbackTimestamp),
               },
@@ -125,7 +138,7 @@ Deno.serve(async (req) => {
           'lastmodifieddate',
         ],
         limit: 100,
-        sorts: [{ propertyName: 'lastmodifieddate', direction: 'DESCENDING' }],
+        sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
       };
       if (afterCursor) searchBody.after = afterCursor;
 
@@ -153,12 +166,13 @@ Deno.serve(async (req) => {
     } while (afterCursor && allContacts.length < (body.max_contacts || 500));
 
     if (allContacts.length === 0) {
+      const nowIso = new Date().toISOString();
       await db
         .from('integration_connections')
         .update({
-          last_sync_at: new Date().toISOString(),
-          last_reconciliation_at: new Date().toISOString(),
-          last_successful_api_call_at: new Date().toISOString(),
+          last_sync_at: nowIso,
+          last_reconciliation_at: nowIso,
+          last_successful_api_call_at: nowIso,
         })
         .eq('provider', 'hubspot');
 
@@ -199,6 +213,54 @@ Deno.serve(async (req) => {
         last_successful_api_call_at: nowIso,
       })
       .eq('provider', 'hubspot');
+
+    // 5. Automatic First Contact Automation handoff for genuinely new Ad Leads
+    if (batchResult && Array.isArray(batchResult.created_leads)) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (supabaseUrl && supabaseServiceKey) {
+        for (const newLead of batchResult.created_leads) {
+          const isProvenAd =
+            newLead.source === 'meta' ||
+            newLead.source_detail === 'meta_lead_ad' ||
+            newLead.source_detail === 'facebook' ||
+            newLead.source_detail === 'instagram';
+
+          if (isProvenAd) {
+            try {
+              const intakePayload = {
+                source: newLead.source || 'meta',
+                source_detail: newLead.source_detail || 'meta_lead_ad',
+                lead_id: newLead.lead_id,
+                email: newLead.email,
+                email_confirmation: newLead.email_confirmation,
+                phone: newLead.phone,
+                first_name: newLead.first_name,
+                last_name: newLead.last_name,
+                contact_preference: newLead.contact_preference,
+                course_interest: newLead.course_interest,
+                course_title: newLead.course_interest,
+                is_new_lead: true,
+                idempotency_key: `hubspot_first_contact_${newLead.lead_id}`,
+              };
+              const intakeRes = await fetch(`${supabaseUrl}/functions/v1/process-lead-intake`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                },
+                body: JSON.stringify(intakePayload),
+              });
+              if (!intakeRes.ok) {
+                console.warn(`[hubspot-reconcile] process-lead-intake returned ${intakeRes.status}:`, await intakeRes.text());
+              }
+            } catch (intakeErr) {
+              console.error('[hubspot-reconcile] Failed calling process-lead-intake:', intakeErr);
+            }
+          }
+        }
+      }
+    }
 
     return new Response(
       JSON.stringify({

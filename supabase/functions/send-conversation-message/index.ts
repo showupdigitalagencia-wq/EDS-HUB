@@ -20,6 +20,7 @@ import {
   getApprovedZygomaticHtml,
   APPROVED_COURSE_TEMPLATES,
 } from '../_shared/salutation.ts';
+import { syncEmailToTitanSent } from '../_shared/titan-imap.ts';
 
 interface SendMessagePayload {
   lead_id: string;
@@ -279,6 +280,11 @@ Deno.serve(async (req) => {
       materialId: null as string | null,
     };
 
+    let emailSender = '';
+    let emailSubject = '';
+    let emailHtmlBody = '';
+    let emailAttachments: Array<{ filename: string; content: string; contentType?: string }> = [];
+
     if (channel === 'email') {
       recipient = lead.email ? lead.email.trim().toLowerCase() : '';
       if (!recipient) {
@@ -319,9 +325,17 @@ Deno.serve(async (req) => {
       const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
       const replyTo = 'info@expdentalsolutions.com';
       const finalSubject = effectiveSubject;
+      const requestedTemplateKey = template_key || null;
+      const shouldIncludeAttachment = include_attachment !== false;
+
       let htmlBody: string;
       if (requestedTemplateKey && APPROVED_COURSE_TEMPLATES[requestedTemplateKey]) {
-        htmlBody = APPROVED_COURSE_TEMPLATES[requestedTemplateKey].getHtml(lead);
+        const standardText = APPROVED_COURSE_TEMPLATES[requestedTemplateKey].getText(lead).trim();
+        if (effectiveBody === standardText || !effectiveBody) {
+          htmlBody = APPROVED_COURSE_TEMPLATES[requestedTemplateKey].getHtml(lead);
+        } else {
+          htmlBody = effectiveBody.includes('<p>') ? effectiveBody : `<p>${effectiveBody.replace(/\n/g, '<br/>')}</p>`;
+        }
       } else if (isZygomaticTpl) {
         htmlBody = getApprovedZygomaticHtml(lead);
       } else {
@@ -336,9 +350,6 @@ Deno.serve(async (req) => {
 
       // Attachment handling and verification
       const attachmentsToSend: Array<{ filename: string; content: string; contentType?: string }> = [];
-
-      const requestedTemplateKey = template_key || null;
-      const shouldIncludeAttachment = include_attachment !== false;
 
       if (requestedTemplateKey && shouldIncludeAttachment) {
         // Query template_attachments join course_materials
@@ -442,6 +453,11 @@ Deno.serve(async (req) => {
         }
       }
 
+      emailSender = sender;
+      emailSubject = finalSubject;
+      emailHtmlBody = htmlBody;
+      emailAttachments = attachmentsToSend;
+
       const sendRes = await sendEmail({
         from: sender,
         to: recipient,
@@ -501,7 +517,7 @@ Deno.serve(async (req) => {
         attempt_count: 1,
         sent_at: new Date().toISOString(),
         is_manual_reply: true,
-        actor_id: authResult.userId,
+        actor_id: typeof authResult.userId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authResult.userId) ? authResult.userId : null,
         in_reply_to_provider_message_id: in_reply_to_provider_message_id || null,
         attachment_included: attachmentMetadata.included,
         attachment_filename: attachmentMetadata.filename,
@@ -518,6 +534,59 @@ Deno.serve(async (req) => {
 
     if (outErr) {
       console.error('Failed to log outbound_messages:', outErr);
+    }
+
+    // 6b. Titan Sent Mailbox Archival Synchronization (Archival copy)
+    if (channel === 'email' && outboundMsg?.id) {
+      try {
+        const titanRes = await syncEmailToTitanSent({
+          from: emailSender,
+          to: recipient,
+          subject: emailSubject,
+          html: emailHtmlBody,
+          text: effectiveBody,
+          messageId: providerMessageId || undefined,
+          date: new Date(),
+          attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
+          idempotencyKey: effectiveIdempotencyKey,
+        });
+
+        if (titanRes.status === 'synced') {
+          await db
+            .from('outbound_messages')
+            .update({
+              titan_sync_status: 'synced',
+              titan_synced_at: new Date().toISOString(),
+              titan_sent_folder: titanRes.folder || 'Sent',
+            })
+            .eq('id', outboundMsg.id);
+        } else if (titanRes.status === 'CONFIG_REQUIRED') {
+          await db
+            .from('outbound_messages')
+            .update({
+              titan_sync_status: 'pending',
+              titan_sync_error: 'TITAN_IMAP_PASSWORD configuration required in Supabase secrets',
+            })
+            .eq('id', outboundMsg.id);
+        } else if (titanRes.status === 'failed') {
+          await db
+            .from('outbound_messages')
+            .update({
+              titan_sync_status: 'failed',
+              titan_sync_error: titanRes.error || 'Titan IMAP sync failed',
+            })
+            .eq('id', outboundMsg.id);
+        }
+      } catch (titanErr: any) {
+        console.warn('[send-conversation-message] Titan archival sync error (isolated from delivery):', titanErr.message);
+        await db
+          .from('outbound_messages')
+          .update({
+            titan_sync_status: 'failed',
+            titan_sync_error: titanErr.message,
+          })
+          .eq('id', outboundMsg.id);
+      }
     }
 
     // 7. Update Conversation
@@ -617,7 +686,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         error: 'INTERNAL_ERROR',
-        message: 'Não foi possível enviar a mensagem. Tente novamente em instantes.',
+        message: err.message || 'Não foi possível enviar a mensagem. Tente novamente em instantes.',
+        details: err.name ? `${err.name}: ${err.message}` : undefined,
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

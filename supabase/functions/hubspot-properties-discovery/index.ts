@@ -17,10 +17,13 @@ Deno.serve(async (req) => {
 
   const authHeader = req.headers.get('Authorization');
   const adminKey = req.headers.get('x-admin-key');
-  const INTERNAL_ADMIN_SECRET = 'eds_internal_course_materials_mgmt_2026';
+  const INTERNAL_ADMIN_SECRET = Deno.env.get('INTERNAL_ADMIN_SECRET');
 
   let isAuthorized = false;
-  if (adminKey === INTERNAL_ADMIN_SECRET || authHeader === `Bearer ${INTERNAL_ADMIN_SECRET}`) {
+  if (
+    INTERNAL_ADMIN_SECRET &&
+    (adminKey === INTERNAL_ADMIN_SECRET || authHeader === `Bearer ${INTERNAL_ADMIN_SECRET}`)
+  ) {
     isAuthorized = true;
   } else {
     const authResult = await verifyAuth(authHeader);

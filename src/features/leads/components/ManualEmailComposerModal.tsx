@@ -56,6 +56,12 @@ export function ManualEmailComposerModal({
   const [isSending, setIsSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDiagnostics, setErrorDiagnostics] = useState<{
+    statusCode?: number | string;
+    errorCode?: string;
+    providerError?: string;
+    requestId?: string;
+  } | null>(null);
 
   // Template state
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
@@ -132,6 +138,7 @@ export function ManualEmailComposerModal({
       setSubject(initialSubject || '');
       setBody(initialBody || '');
       setError(null);
+      setErrorDiagnostics(null);
       setSendSuccess(false);
       setIsSending(false);
       setSelectedTemplateId('');
@@ -302,6 +309,7 @@ export function ManualEmailComposerModal({
     if (isSending) return;
     setIsSending(true);
     setError(null);
+    setErrorDiagnostics(null);
 
     try {
       const { data, error: invokeErr } = await supabase.functions.invoke('send-conversation-message', {
@@ -320,12 +328,21 @@ export function ManualEmailComposerModal({
 
       if (invokeErr) {
         let friendlyMessage = 'Não foi possível enviar o e-mail. Tente novamente.';
+        let diag: { statusCode?: number | string; errorCode?: string; providerError?: string; requestId?: string } | null = null;
+
         if (typeof invokeErr === 'object' && invokeErr !== null) {
           const anyErr = invokeErr as any;
+          const status = anyErr.status || anyErr.statusCode;
           if (anyErr.context && typeof anyErr.context.json === 'function') {
             try {
               const errBody = await anyErr.context.json();
               if (errBody) {
+                diag = {
+                  statusCode: status || errBody.status_code || 500,
+                  errorCode: errBody.error,
+                  providerError: errBody.details || (errBody.message !== errBody.error ? errBody.message : undefined),
+                  requestId: errBody.request_id || errBody.message_id,
+                };
                 if (errBody.error === 'EMAIL_SUPPRESSED') {
                   setSuppressionWarning(errBody.message);
                   friendlyMessage = errBody.message;
@@ -356,7 +373,11 @@ export function ManualEmailComposerModal({
               // Could not parse body, keep friendly fallback
             }
           }
+          if (!diag && status) {
+            diag = { statusCode: status, errorCode: anyErr.name || 'INVOKE_ERROR' };
+          }
         }
+        setErrorDiagnostics(diag);
         throw new Error(friendlyMessage);
       }
 
@@ -502,9 +523,19 @@ export function ManualEmailComposerModal({
 
           {/* Generic Error Notice */}
           {error && !suppressionWarning && isValidEmail && (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-700 flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
-              <span>{error}</span>
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-700 space-y-1">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                <span className="font-medium">{error}</span>
+              </div>
+              {errorDiagnostics && (
+                <div className="text-[11px] text-rose-600/80 pl-6 flex flex-wrap gap-x-3 gap-y-0.5 font-mono">
+                  {errorDiagnostics.statusCode && <span>Status: {errorDiagnostics.statusCode}</span>}
+                  {errorDiagnostics.errorCode && <span>Código: {errorDiagnostics.errorCode}</span>}
+                  {errorDiagnostics.providerError && <span>Detalhe: {errorDiagnostics.providerError}</span>}
+                  {errorDiagnostics.requestId && <span>Req ID: {errorDiagnostics.requestId}</span>}
+                </div>
+              )}
             </div>
           )}
 

@@ -18,7 +18,7 @@ BEGIN
     url := 'https://xogcexclqiornuscsdmn.supabase.co/functions/v1/hubspot-reconcile',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'x-admin-key', 'eds_internal_course_materials_mgmt_2026'
+      'x-admin-key', coalesce((select decrypted_secret from vault.decrypted_secrets where name = 'INTERNAL_ADMIN_SECRET' limit 1), '')
     ),
     body := jsonb_build_object(
       'lookback_days', 3,
