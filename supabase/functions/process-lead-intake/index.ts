@@ -327,7 +327,60 @@ Deno.serve(async (req) => {
       actionSucceeded = true;
     } else {
       // GENUINELY NEW INBOUND AD LEAD (Meta / Facebook / Instagram Lead Ads, or HubSpot contact proven to be Ad Lead)
-      // Contact preference normalized
+      // AUTHORITATIVE SOURCE TIMESTAMP FRESHNESS GUARD:
+      // The decision to send automated first-contact outreach must be based on the ORIGINAL SOURCE TIMESTAMP
+      // (HubSpot contact createdate, Meta created_time, or payload source_created_at).
+      // The EDS local record creation timestamp (created_at / now()) must NEVER make an old lead appear fresh!
+      // If actual source lead age <= 4 hours -> eligible for existing first-contact automation.
+      // If actual source lead age > 4 hours -> historical recovery -> import/update lead -> NO automatic customer outreach.
+      // If source timestamp is missing/unreliable -> fail safe -> NO automatic customer outreach.
+      const rawSourceTimestamp = payload.source_created_at ||
+        (payload.raw_payload && typeof payload.raw_payload === 'object' && (
+          (payload.raw_payload as any).properties?.createdate ||
+          (payload.raw_payload as any).createdate ||
+          (payload.raw_payload as any).created_time
+        )) ||
+        null;
+
+      let isSourceLeadFresh = false;
+      let sourceLeadAgeHours: number | null = null;
+
+      if (rawSourceTimestamp) {
+        const parsedMs = !isNaN(Number(rawSourceTimestamp)) && Number(rawSourceTimestamp) > 100000000000
+          ? Number(rawSourceTimestamp)
+          : Date.parse(String(rawSourceTimestamp));
+
+        if (!isNaN(parsedMs) && parsedMs > 0) {
+          const diffMs = Date.now() - parsedMs;
+          sourceLeadAgeHours = diffMs / (1000 * 60 * 60);
+          // Eligible only if created at source within 4 hours (with 15 min clock skew tolerance)
+          if (sourceLeadAgeHours >= -0.25 && sourceLeadAgeHours <= 4.0) {
+            isSourceLeadFresh = true;
+          }
+        }
+      }
+
+      if (!isSourceLeadFresh) {
+        // HISTORICAL RECOVERY / MISSING SOURCE TIMESTAMP RULE:
+        // Automated initial outreach is strictly suppressed!
+        await db.from('lead_activities').insert({
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'intake_received',
+          actor_type: 'system',
+          summary: `Automated first-contact outreach is suppressed: source lead age is ${sourceLeadAgeHours !== null ? sourceLeadAgeHours.toFixed(1) + 'h' : 'unknown/missing'} (> 4h threshold or missing source timestamp). Historical lead imported safely.`,
+          metadata: {
+            source: payload.source,
+            source_detail: payload.source_detail,
+            source_created_at: rawSourceTimestamp,
+            source_lead_age_hours: sourceLeadAgeHours,
+            historical_recovery: true,
+          },
+        });
+        actionSucceeded = true;
+      } else {
+        // GENUINELY FRESH AD LEAD (<= 4 hours old): Proceed with first-contact automation
+        // Contact preference normalized
       const rawPref = payload.contact_preference ? String(payload.contact_preference).trim().toLowerCase() : '';
       pref = 'email';
       if (rawPref === 'sms' || rawPref === 'text' || rawPref.includes('sms')) {
@@ -388,19 +441,18 @@ Deno.serve(async (req) => {
         // PREFERENCE = 'email' OR 'sms'
         // Rule: Both send approved first-contact email!
         // SMS preference must NOT block the approved email from being sent.
-        const hasValidEmail = Boolean(
-          (payload.email && payload.email.trim().length > 3 && payload.email.includes('@')) ||
-          (payload.email_confirmation && payload.email_confirmation.trim().length > 3 && payload.email_confirmation.includes('@'))
-        );
+        const cleanEmail = (payload.email || payload.email_confirmation || '').trim().toLowerCase();
+        const hasValidEmail = Boolean(cleanEmail.length > 3 && cleanEmail.includes('@'));
 
         if (hasValidEmail) {
-          // Check lead-level exactly-once idempotency:
+          // Check lead-level AND recipient-level exactly-once idempotency:
           const { data: existingFirstContact } = await db
             .from('outbound_messages')
             .select('id, status, provider_message_id')
-            .eq('lead_id', leadId)
+            .or(`lead_id.eq.${leadId},recipient.ilike.${cleanEmail}`)
             .eq('channel', 'email')
             .in('status', ['sent', 'delivered', 'pending'])
+            .limit(1)
             .maybeSingle();
 
           if (existingFirstContact) {
@@ -409,7 +461,7 @@ Deno.serve(async (req) => {
               intake_event_id: intakeEventId,
               activity_type: 'intake_received',
               actor_type: 'system',
-              summary: 'First automatic email has already been accepted/sent for this lead. Duplicate send skipped.',
+              summary: 'First automatic email has already been accepted/sent for this lead/recipient. Duplicate send skipped.',
               metadata: { outbound_message_id: existingFirstContact.id, provider_message_id: existingFirstContact.provider_message_id },
             });
             actionSucceeded = true;
@@ -490,6 +542,7 @@ Deno.serve(async (req) => {
             console.warn('[process-lead-intake] SMS preference push notification warning:', pushErr);
           }
         }
+      }
       }
     }
 

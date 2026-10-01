@@ -34,13 +34,15 @@ Deno.serve(async (req) => {
   const INTERNAL_ADMIN_SECRET = Deno.env.get('INTERNAL_ADMIN_SECRET');
 
   const isAdminBypass = Boolean(INTERNAL_ADMIN_SECRET && adminKey === INTERNAL_ADMIN_SECRET);
-  const isTestBypass = !clientSecret && Deno.env.get('ALLOW_UNVERIFIED_WEBHOOKS') === 'true';
 
-  if (!isAdminBypass && !isTestBypass) {
+  if (!isAdminBypass) {
     if (!clientSecret) {
       return new Response(
-        JSON.stringify({ error: 'HUBSPOT_CLIENT_SECRET is not configured on server' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          error: 'Unauthorized',
+          message: 'HUBSPOT_CLIENT_SECRET is not configured on server. Webhook requests cannot be verified and are rejected for security. Contacts are safely recovered via 5-minute scheduled reconciliation.',
+        }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -183,11 +185,38 @@ Deno.serve(async (req) => {
             newLead.source_detail === 'facebook' ||
             newLead.source_detail === 'instagram';
 
-          if (isProvenAd) {
+          // AUTHORITATIVE SOURCE FRESHNESS CHECK:
+          // The freshness decision MUST be based on the ORIGINAL SOURCE TIMESTAMP (HubSpot contact createdate),
+          // NEVER on the local EDS created_at timestamp!
+          // If source timestamp is missing, unparseable, or > 4 hours old -> fail safe -> suppress automated outreach.
+          const objId = String(newLead.hubspot_contact_id || newLead.external_id || '');
+          const sourceCreatedRaw = contactPropsMap.get(objId)?.createdate || newLead.source_created_at || null;
+
+          let isFreshLead = false;
+          let sourceAgeHours: number | null = null;
+          let sourceCreatedIso: string | undefined = undefined;
+
+          if (sourceCreatedRaw) {
+            const parsedMs = !isNaN(Number(sourceCreatedRaw)) && Number(sourceCreatedRaw) > 100000000000
+              ? Number(sourceCreatedRaw)
+              : Date.parse(String(sourceCreatedRaw));
+
+            if (!isNaN(parsedMs) && parsedMs > 0) {
+              sourceCreatedIso = new Date(parsedMs).toISOString();
+              const diffMs = Date.now() - parsedMs;
+              sourceAgeHours = diffMs / (1000 * 60 * 60);
+              // Fresh lead: created at source within the last 4 hours (with 15 min clock skew tolerance)
+              if (sourceAgeHours >= -0.25 && sourceAgeHours <= 4.0) {
+                isFreshLead = true;
+              }
+            }
+          }
+
+          if (isProvenAd && isFreshLead) {
             try {
               const intakePayload = {
                 source: newLead.source || 'hubspot',
-                source_detail: newLead.source_detail || 'hubspot_inbound',
+                source_detail: newLead.source_detail || 'meta_lead_ad',
                 lead_id: newLead.lead_id,
                 email: newLead.email,
                 email_confirmation: newLead.email_confirmation,
@@ -198,6 +227,7 @@ Deno.serve(async (req) => {
                 course_interest: newLead.course_interest,
                 course_title: newLead.course_interest,
                 is_new_lead: true,
+                source_created_at: sourceCreatedIso,
                 idempotency_key: `hubspot_first_contact_${newLead.lead_id}`,
               };
               const intakeRes = await fetch(`${supabaseUrl}/functions/v1/process-lead-intake`, {

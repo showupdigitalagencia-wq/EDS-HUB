@@ -772,6 +772,7 @@ Deno.serve(async (req) => {
           contact_preference: metaContactPreference,
           course_interest: resolvedCourse?.courseName || undefined,
           course_title: resolvedCourse?.courseName || undefined,
+          source_created_at: graphLead.created_time || new Date().toISOString(),
           raw_payload: dynamicSubmittedData,
         };
 

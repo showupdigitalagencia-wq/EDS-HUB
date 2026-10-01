@@ -82,7 +82,14 @@ export type ActivityType =
   | 'email_complained'
   | 'email_failed'
   | 'email_suppressed'
-  | 'email_unsubscribed';
+  | 'email_unsubscribed'
+  | 'lead_field_updated'
+  | 'manual_activity_logged'
+  | 'manual_email_sent'
+  | 'manual_sms_sent'
+  | 'manual_call_logged'
+  | 'manual_whatsapp_sent'
+  | 'manual_contact_made';
 
 export type IncompleteEnrollmentProcessingStatus = 'processed' | 'conflict';
 export type IncompleteEnrollmentStatus = 'needs_followup' | 'form_completed' | 'recovered' | 'dismissed';
@@ -200,6 +207,7 @@ export interface Lead {
   course_interest: string | null;
   course_interests: string[];
   pipeline_stage_id: string;
+  pipeline_stage?: { id: string; name: string; code: string; sort_order?: number } | null;
   referred_by?: string | null;
   source_detail?: string | null;
   source_created_at: string | null;

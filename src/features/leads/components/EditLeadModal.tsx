@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/supabase';
 import type { Course, CourseSession, Lead, ContactPreference } from '../../../types';
 import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
 import { normalizePhoneDigits } from '../utils/qualificationMapping';
+import { normalizePhoneSafe } from '../../../utils/phone';
 import { resolveCanonicalPreference, toDbContactPreference } from '../../../utils/contact-preference';
 import {
   X,
@@ -223,13 +224,20 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
         }
       }
 
-      // 2. Identity Conflict Check: Phone
+      // 2. Normalize Phone & Identity Conflict Check
+      const phoneParsed = normalizePhoneSafe(cleanPhone);
+      const phoneE164 = phoneParsed.phone_e164;
+
       if (phoneDigits.length >= 8) {
+        let conflictOr = `phone_raw.eq.${cleanPhone}`;
+        if (phoneE164) {
+          conflictOr += `,phone_e164.eq.${phoneE164},phone_raw.eq.${phoneE164}`;
+        }
         const { data: phoneConflict } = await supabase
           .from('leads')
           .select('id, first_name, last_name, phone_raw, phone_e164')
           .neq('id', lead.id)
-          .or(`phone_raw.eq.${cleanPhone},phone_e164.eq.${cleanPhone}`)
+          .or(conflictOr)
           .limit(1);
 
         if (phoneConflict && phoneConflict.length > 0) {
@@ -242,12 +250,6 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
           setIsSubmitting(false);
           return;
         }
-      }
-
-      // 3. Format Phone E164 if valid
-      let phoneE164: string | null = null;
-      if (cleanPhone.startsWith('+') && /^\+[1-9][0-9]{7,14}$/.test(cleanPhone)) {
-        phoneE164 = cleanPhone;
       }
 
       // 4. Resolve Prioritized Course Interests

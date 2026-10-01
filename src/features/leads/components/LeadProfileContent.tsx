@@ -38,6 +38,7 @@ import { resolveLeadCanonicalCourseInterests } from '../../../utils/course-resol
 import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
 import { ManualEmailComposerModal } from './ManualEmailComposerModal';
 import { ManualSmsComposerModal } from './ManualSmsComposerModal';
+import { RegisterActivityModal } from './RegisterActivityModal';
 import { EditLeadModal } from './EditLeadModal';
 import { ChangeLeadStageModal } from './ChangeLeadStageModal';
 import { LeadFormSubmissionModal } from './LeadFormSubmissionModal';
@@ -123,6 +124,7 @@ export function LeadProfileContent({
   // Manual Email & SMS Composers & Lead Email Health
   const [isEmailComposerOpen, setIsEmailComposerOpen] = useState(false);
   const [isSmsComposerOpen, setIsSmsComposerOpen] = useState(false);
+  const [isRegisterActivityOpen, setIsRegisterActivityOpen] = useState(false);
   const [emailHealth, setEmailHealth] = useState<LeadEmailHealthResult | null>(null);
 
   const fetchLeadData = useCallback(async () => {
@@ -476,6 +478,7 @@ export function LeadProfileContent({
         }}
         onOpenEmailComposer={() => setIsEmailComposerOpen(true)}
         onOpenSmsComposer={() => setIsSmsComposerOpen(true)}
+        onOpenRegisterActivity={() => setIsRegisterActivityOpen(true)}
         onActivityLogged={handleLeadRefresh}
       />
 
@@ -1103,7 +1106,10 @@ export function LeadProfileContent({
       {/* TAB 3: ATIVIDADES / LINHA DO TEMPO */}
       {activeTab === 'atividades' && (
         <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs">
-          <LeadTimeline activities={activities} />
+          <LeadTimeline
+            activities={activities}
+            onOpenRegisterActivity={() => setIsRegisterActivityOpen(true)}
+          />
         </div>
       )}
 
@@ -1154,6 +1160,16 @@ export function LeadProfileContent({
           lead={lead}
           onClose={() => setIsSmsComposerOpen(false)}
           onSmsRecorded={handleLeadRefresh}
+        />
+      )}
+
+      {/* Register Activity Modal (Factual CRM History) */}
+      {lead && (
+        <RegisterActivityModal
+          isOpen={isRegisterActivityOpen}
+          lead={lead}
+          onClose={() => setIsRegisterActivityOpen(false)}
+          onActivityRegistered={handleLeadRefresh}
         />
       )}
 

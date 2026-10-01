@@ -189,6 +189,13 @@ Deno.serve(async (req) => {
     }
 
     // 3. Normalize contacts and process reconciliation batch in PostgreSQL
+    const hubspotSourceCreatedMap = new Map<string, string>();
+    for (const c of allContacts) {
+      if (c.properties?.createdate) {
+        hubspotSourceCreatedMap.set(String(c.id), String(c.properties.createdate));
+      }
+    }
+
     const normalizedEvents = allContacts.map((c: any) => ({
       id: String(c.id),
       contact_id: String(c.id),
@@ -226,11 +233,38 @@ Deno.serve(async (req) => {
             newLead.source_detail === 'facebook' ||
             newLead.source_detail === 'instagram';
 
+          // AUTHORITATIVE SOURCE FRESHNESS CHECK:
+          // The freshness decision MUST be based on the ORIGINAL SOURCE TIMESTAMP (HubSpot contact createdate),
+          // NEVER on the local EDS created_at timestamp!
+          // If source timestamp is missing, unparseable, or > 4 hours old -> fail safe -> suppress automated outreach.
+          const contactId = String(newLead.hubspot_contact_id || newLead.external_id || '');
+          const sourceCreatedRaw = hubspotSourceCreatedMap.get(contactId) || newLead.source_created_at || null;
+
+          let isFreshLead = false;
+          let sourceAgeHours: number | null = null;
+          let sourceCreatedIso: string | undefined = undefined;
+
+          if (sourceCreatedRaw) {
+            const parsedMs = !isNaN(Number(sourceCreatedRaw)) && Number(sourceCreatedRaw) > 100000000000
+              ? Number(sourceCreatedRaw)
+              : Date.parse(String(sourceCreatedRaw));
+
+            if (!isNaN(parsedMs) && parsedMs > 0) {
+              sourceCreatedIso = new Date(parsedMs).toISOString();
+              const diffMs = Date.now() - parsedMs;
+              sourceAgeHours = diffMs / (1000 * 60 * 60);
+              // Fresh lead: created at source within the last 4 hours (with 15 min clock skew tolerance)
+              if (sourceAgeHours >= -0.25 && sourceAgeHours <= 4.0) {
+                isFreshLead = true;
+              }
+            }
+          }
+
           if (isProvenAd) {
             try {
               const intakePayload = {
                 source: newLead.source || 'meta',
-                source_detail: newLead.source_detail || 'meta_lead_ad',
+                source_detail: isFreshLead ? (newLead.source_detail || 'meta_lead_ad') : 'hubspot_reconcile',
                 lead_id: newLead.lead_id,
                 email: newLead.email,
                 email_confirmation: newLead.email_confirmation,
@@ -240,7 +274,8 @@ Deno.serve(async (req) => {
                 contact_preference: newLead.contact_preference,
                 course_interest: newLead.course_interest,
                 course_title: newLead.course_interest,
-                is_new_lead: true,
+                is_new_lead: isFreshLead,
+                source_created_at: sourceCreatedIso,
                 idempotency_key: `hubspot_first_contact_${newLead.lead_id}`,
               };
               const intakeRes = await fetch(`${supabaseUrl}/functions/v1/process-lead-intake`, {

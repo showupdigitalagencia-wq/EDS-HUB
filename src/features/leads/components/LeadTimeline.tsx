@@ -1,18 +1,41 @@
-import { Activity, Phone, MessageSquare, Mail, CalendarCheck, CheckCircle2, CheckCheck, RefreshCw, Clock, AlertCircle, AlertTriangle, Eye, MousePointerClick } from 'lucide-react';
+import {
+  Activity,
+  Phone,
+  MessageSquare,
+  Mail,
+  CalendarCheck,
+  CheckCircle2,
+  CheckCheck,
+  RefreshCw,
+  Clock,
+  AlertCircle,
+  AlertTriangle,
+  Eye,
+  MousePointerClick,
+  FileText,
+  User,
+  PlusCircle,
+} from 'lucide-react';
 import type { LeadActivity } from '../../../types';
 import { WhatsAppIcon } from '../../../components/icons/WhatsAppIcon';
 
 interface LeadTimelineProps {
   activities: LeadActivity[];
+  onOpenRegisterActivity?: () => void;
 }
 
 /**
  * Canonical Contact Attempt Counter (Batch 4 Core Rule):
- * Counts ONLY confirmed outreach events:
+ * Counts confirmed outreach events:
  * - email_dispatched
  * - sms_dispatched
  * - call_manual_attempt
  * - whatsapp_contact_attempt
+ * - manual_email_sent
+ * - manual_sms_sent
+ * - manual_call_logged
+ * - manual_whatsapp_sent
+ * - manual_contact_made
  *
  * Excludes email_manual_attempt and sms_manual_attempt because mailto: / sms:
  * deep-links only confirm that the operator opened the client, not whether
@@ -26,6 +49,11 @@ export function countContactAttempts(activities: LeadActivity[]): number {
     'sms_dispatched',
     'call_manual_attempt',
     'whatsapp_contact_attempt',
+    'manual_email_sent',
+    'manual_sms_sent',
+    'manual_call_logged',
+    'manual_whatsapp_sent',
+    'manual_contact_made',
   ]);
 
   const seenKeys = new Set<string>();
@@ -55,6 +83,18 @@ export function countContactAttempts(activities: LeadActivity[]): number {
  */
 export function getActivityLabel(activityType: string): string {
   switch (activityType) {
+    case 'manual_email_sent':
+      return 'E-mail enviado';
+    case 'manual_sms_sent':
+      return 'SMS enviado';
+    case 'manual_call_logged':
+      return 'Ligação realizada';
+    case 'manual_whatsapp_sent':
+      return 'WhatsApp enviado';
+    case 'manual_contact_made':
+      return 'Contato realizado';
+    case 'manual_activity_logged':
+      return 'Observação / Outro';
     case 'email_dispatched':
       return 'Envio de email iniciado';
     case 'email_sent':
@@ -148,6 +188,18 @@ export function getActivityLabel(activityType: string): string {
 
 function getActivityIcon(type: string) {
   switch (type) {
+    case 'manual_email_sent':
+      return <Mail className="h-3 w-3 text-indigo-500" />;
+    case 'manual_sms_sent':
+      return <MessageSquare className="h-3 w-3 text-sky-500" />;
+    case 'manual_call_logged':
+      return <Phone className="h-3 w-3 text-[#449bd5]" />;
+    case 'manual_whatsapp_sent':
+      return <WhatsAppIcon className="h-3 w-3 text-emerald-600" />;
+    case 'manual_contact_made':
+      return <CheckCheck className="h-3 w-3 text-teal-600" />;
+    case 'manual_activity_logged':
+      return <FileText className="h-3 w-3 text-[#08254f]" />;
     case 'incomplete_enrollment_captured':
       return <AlertCircle className="h-3 w-3 text-amber-500" />;
     case 'incomplete_enrollment_recovered':
@@ -194,7 +246,7 @@ function getActivityIcon(type: string) {
   }
 }
 
-export function LeadTimeline({ activities }: LeadTimelineProps) {
+export function LeadTimeline({ activities, onOpenRegisterActivity }: LeadTimelineProps) {
   const attemptsCount = countContactAttempts(activities);
 
   const sortedActivities = [...activities].sort(
@@ -203,7 +255,7 @@ export function LeadTimeline({ activities }: LeadTimelineProps) {
 
   return (
     <div className="card-executive p-5 space-y-4">
-      {/* Header with Contact Attempts Counter */}
+      {/* Header with Contact Attempts Counter & Register Activity CTA */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-[#449bd5]" />
@@ -212,17 +264,33 @@ export function LeadTimeline({ activities }: LeadTimelineProps) {
           </h2>
         </div>
 
-        {/* Tentativas de contato summary badge */}
-        <span
-          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border select-none ${
-            attemptsCount > 0
-              ? 'bg-[#449bd5]/10 text-[#08254f] border-[#449bd5]/30'
-              : 'bg-slate-50 text-slate-500 border-slate-200'
-          }`}
-        >
-          <span>Tentativas de contato:</span>
-          <strong className="font-bold text-[#08254f]">{attemptsCount}</strong>
-        </span>
+        <div className="flex items-center gap-2">
+          {/* Action: Registrar Atividade */}
+          {onOpenRegisterActivity && (
+            <button
+              type="button"
+              onClick={onOpenRegisterActivity}
+              data-testid="timeline-register-activity-button"
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#08254f] bg-slate-100 hover:bg-slate-200 border border-slate-200/80 rounded-lg transition-colors cursor-pointer"
+              title="Registrar atividade de contato manual"
+            >
+              <PlusCircle className="h-3.5 w-3.5 text-[#449bd5]" />
+              <span>Registrar atividade</span>
+            </button>
+          )}
+
+          {/* Tentativas de contato summary badge */}
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border select-none ${
+              attemptsCount > 0
+                ? 'bg-[#449bd5]/10 text-[#08254f] border-[#449bd5]/30'
+                : 'bg-slate-50 text-slate-500 border-slate-200'
+            }`}
+          >
+            <span>Tentativas de contato:</span>
+            <strong className="font-bold text-[#08254f]">{attemptsCount}</strong>
+          </span>
+        </div>
       </div>
 
       {/* Activity List */}
@@ -240,7 +308,17 @@ export function LeadTimeline({ activities }: LeadTimelineProps) {
             const label = getActivityLabel(act.activity_type);
             const date = new Date(act.created_at);
             const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const dateStr = date.toLocaleDateString();
+            const dateStr = date.toLocaleDateString('pt-BR');
+
+            const meta = act.metadata as Record<string, any> | undefined;
+            const isManual =
+              meta?.manual === true ||
+              meta?.source === 'manual' ||
+              meta?.activity_source === 'manual' ||
+              act.activity_type.startsWith('manual_');
+
+            const createdByName = meta?.created_by_name || meta?.registered_by || null;
+            const noteContent = meta?.activity_note || meta?.note || act.summary;
 
             return (
               <div key={act.id} className="relative text-xs">
@@ -249,23 +327,49 @@ export function LeadTimeline({ activities }: LeadTimelineProps) {
                   {getActivityIcon(act.activity_type)}
                 </div>
 
-                <div className="space-y-0.5">
-                  <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span className="font-bold text-[#08254f]">
-                      {label}
+                <div className="space-y-1">
+                  {/* Top row: Label & Time */}
+                  <div className="flex items-center justify-between text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-[#08254f]">
+                        {label}
+                      </span>
+                      {isManual && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-[#08254f] border border-blue-200/60">
+                          Manual
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {dateStr} {timeStr}
                     </span>
-                    <span className="text-[10px] text-slate-400">{timeStr}</span>
                   </div>
 
-                  {act.summary && (
-                    <p className="text-slate-600 text-xs leading-relaxed">
-                      {act.summary}
-                    </p>
+                  {/* Manual Attribution Subheader: "Registrado manualmente por [User]" */}
+                  {isManual && (
+                    <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                      <User className="h-3 w-3 text-[#449bd5] shrink-0" />
+                      <span>
+                        Registrado manualmente por{' '}
+                        <strong className="text-slate-700 font-semibold">
+                          {createdByName || 'Operador'}
+                        </strong>
+                      </span>
+                    </div>
                   )}
 
-                  <span className="text-[10px] text-slate-400 block pt-0.5">
-                    {dateStr}
-                  </span>
+                  {/* Content / Note */}
+                  {isManual ? (
+                    <div className="mt-1 p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80 text-slate-700 text-xs leading-relaxed">
+                      <p className="whitespace-pre-wrap">{noteContent}</p>
+                    </div>
+                  ) : (
+                    act.summary && (
+                      <p className="text-slate-600 text-xs leading-relaxed">
+                        {act.summary}
+                      </p>
+                    )
+                  )}
                 </div>
               </div>
             );

@@ -528,6 +528,80 @@ Deno.serve(async (req) => {
       return jsonResponse(res);
     }
 
+    if (action === 'record_manual_activity') {
+      const { lead_id, activity_type, channel, summary, created_at, metadata, move_to_respondido } = body;
+      const { data: act, error: actErr } = await db.from('lead_activities').insert({
+        lead_id,
+        activity_type,
+        channel: channel || null,
+        actor_type: 'user',
+        summary,
+        created_at: created_at || new Date().toISOString(),
+        metadata: metadata || {},
+      }).select().single();
+
+      if (actErr) return errorResponse('ACT_ERR', actErr.message, 500);
+
+      if (move_to_respondido) {
+        const { data: qualStage } = await db.from('pipeline_stages').select('id, name, code').eq('code', 'qualification').maybeSingle();
+        const { data: captureStage } = await db.from('pipeline_stages').select('id, name, code').eq('code', 'capture').maybeSingle();
+        console.log('[record_manual_activity] qualStage:', qualStage, 'captureStage:', captureStage);
+        if (qualStage) {
+          const { error: upErr } = await db.from('leads').update({ pipeline_stage_id: qualStage.id, updated_at: new Date().toISOString() }).eq('id', lead_id);
+          if (upErr) console.error('[record_manual_activity] update lead error:', upErr);
+          if (captureStage) {
+            await db.from('lead_stage_history').insert({
+              lead_id,
+              from_stage_id: captureStage.id,
+              to_stage_id: qualStage.id,
+              change_reason: 'manual_activity_registered',
+            });
+          }
+          await db.from('lead_activities').insert({
+            lead_id,
+            activity_type: 'stage_changed',
+            actor_type: 'user',
+            summary: `Lead avançado de Novo Lead para Respondido após: ${metadata?.activity_type_label || activity_type}`,
+            metadata: {
+              from: 'capture',
+              to: 'qualification',
+              reason: 'manual_activity_registered',
+              registered_by: metadata?.created_by_name || 'Operador',
+            },
+          });
+        }
+      }
+
+      return jsonResponse({ success: true, activity: act });
+    }
+
+    if (action === 'inspect_stages') {
+      const { data: stages, error: stErr } = await db.from('pipeline_stages').select('*').order('sort_order', { ascending: true });
+      return jsonResponse({ stages, error: stErr });
+    }
+
+    if (action === 'set_lead_stage') {
+      const { lead_id, stage_id } = body;
+      const { error: updErr } = await db.from('leads').update({
+        pipeline_stage_id: stage_id,
+        updated_at: new Date().toISOString(),
+      }).eq('id', lead_id);
+      if (updErr) return errorResponse('STAGE_ERR', updErr.message, 500);
+      return jsonResponse({ success: true });
+    }
+
+    if (action === 'update_lead_phone') {
+      const { lead_id, phone_raw, phone_e164 } = body;
+      const { data: lead, error: leadErr } = await db.from('leads').update({
+        phone_raw,
+        phone_e164,
+        updated_at: new Date().toISOString(),
+      }).eq('id', lead_id).select().single();
+
+      if (leadErr) return errorResponse('LEAD_ERR', leadErr.message, 500);
+      return jsonResponse({ success: true, lead });
+    }
+
     // =========================================================================
     // ACTION: get_template_attachment
     // =========================================================================

@@ -4,10 +4,12 @@ import {
   Mail,
   PlusCircle,
   CalendarCheck,
+  ClipboardList,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import type { Lead } from '../../../types';
 import { WhatsAppIcon } from '../../../components/icons/WhatsAppIcon';
+import { resolveSmsDestinationPhone } from '../../../utils/phone';
 
 interface LeadQuickActionBarProps {
   lead: Lead;
@@ -16,6 +18,7 @@ interface LeadQuickActionBarProps {
   onActivityLogged?: () => void;
   onOpenEmailComposer?: () => void;
   onOpenSmsComposer?: () => void;
+  onOpenRegisterActivity?: () => void;
 }
 
 export function LeadQuickActionBar({
@@ -25,9 +28,11 @@ export function LeadQuickActionBar({
   onActivityLogged,
   onOpenEmailComposer,
   onOpenSmsComposer,
+  onOpenRegisterActivity,
 }: LeadQuickActionBarProps) {
-  const rawPhone = lead.phone_e164 || lead.phone_raw || '';
-  const digitsOnly = rawPhone.replace(/\D/g, '');
+  const destinationPhone = resolveSmsDestinationPhone(lead);
+  const rawPhone = destinationPhone || lead.phone_e164 || lead.phone_raw || '';
+  const digitsOnly = destinationPhone.replace(/\D/g, '') || rawPhone.replace(/\D/g, '');
   const hasPhone = Boolean(rawPhone.trim() && digitsOnly.length >= 8);
 
   const cleanEmail = lead.email ? lead.email.trim() : '';
@@ -209,7 +214,7 @@ export function LeadQuickActionBar({
               Operacional
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {/* 5. Adicionar Tarefa */}
             <button
               type="button"
@@ -233,6 +238,20 @@ export function LeadQuickActionBar({
               <CalendarCheck className="h-4 w-4 text-amber-600 shrink-0" />
               <span className="truncate">Pagamento</span>
             </button>
+
+            {/* 7. Registrar Atividade (Manual CRM History) */}
+            {onOpenRegisterActivity && (
+              <button
+                type="button"
+                data-testid="quick-action-register-activity"
+                onClick={onOpenRegisterActivity}
+                title="Registrar atividade de contato realizada fora do EDS HUB"
+                className={`${actionBaseClass} bg-blue-50/70 hover:bg-blue-100/80 text-[#08254f] border-blue-200/80 hover:border-blue-300 shadow-2xs cursor-pointer col-span-2 sm:col-span-1`}
+              >
+                <ClipboardList className="h-4 w-4 text-[#449bd5] shrink-0" />
+                <span className="truncate">Registrar Atividade</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

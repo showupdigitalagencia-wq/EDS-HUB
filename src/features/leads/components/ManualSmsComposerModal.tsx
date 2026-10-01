@@ -29,6 +29,7 @@ import {
   getApprovedPeriodontalSmsText,
 } from '../../../utils/salutation';
 import { formatContactPreferenceLabel, resolveCanonicalPreference } from '../../../utils/contact-preference';
+import { resolveSmsDestinationPhone } from '../../../utils/phone';
 import type { Lead } from '../../../types';
 
 export interface ManualSmsComposerModalProps {
@@ -132,8 +133,9 @@ export function ManualSmsComposerModal({
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
 
-  const rawPhone = lead.phone_e164 || lead.phone_raw || '';
-  const digitsOnly = rawPhone.replace(/\D/g, '');
+  const destinationPhone = resolveSmsDestinationPhone(lead);
+  const rawPhone = destinationPhone || lead.phone_e164 || lead.phone_raw || '';
+  const digitsOnly = destinationPhone.replace(/\D/g, '') || rawPhone.replace(/\D/g, '');
 
   // Initialize template text with safe variable replacement
   useEffect(() => {
@@ -160,15 +162,16 @@ export function ManualSmsComposerModal({
   };
 
   const handleOpenNativeSms = () => {
-    if (!digitsOnly) {
+    if (!destinationPhone && !digitsOnly) {
       setError('Telefone não disponível para envio de SMS.');
       return;
     }
 
-    // Build standard sms: URI
+    // Build standard sms: URI preserving international + prefix
     // iOS and Android support: sms:+1234567890?body=urlencoded_text
+    const targetPhone = destinationPhone || (rawPhone.startsWith('+') ? `+${digitsOnly}` : digitsOnly);
     const encodedBody = encodeURIComponent(messageText);
-    const smsUri = `sms:${digitsOnly}?body=${encodedBody}`;
+    const smsUri = `sms:${targetPhone}?body=${encodedBody}`;
 
     // RULE PART 10: Opening native SMS app MUST NOT record anything in lead_activities
     setHasOpenedApp(true);
@@ -380,7 +383,7 @@ export function ManualSmsComposerModal({
               <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Telefone</span>
               <span className="font-mono font-medium text-slate-700 flex items-center gap-1 justify-end">
                 <Phone className="w-3 h-3 text-slate-400" />
-                {rawPhone || 'Não informado'}
+                {destinationPhone || rawPhone || 'Não informado'}
               </span>
             </div>
           </div>
