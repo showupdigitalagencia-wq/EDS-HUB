@@ -193,7 +193,7 @@ Deno.serve(async (req) => {
   if (providerMessageId) {
     const { data: outboundMatch } = await db
       .from('outbound_messages')
-      .select('id, recipient, lead_id, opened_at, clicked_at, open_count, click_count, last_clicked_url')
+      .select('id, recipient, lead_id, status, opened_at, first_opened_at, clicked_at, first_clicked_at, open_count, click_count, last_clicked_url')
       .eq('provider_message_id', providerMessageId)
       .maybeSingle();
 
@@ -207,7 +207,7 @@ Deno.serve(async (req) => {
 
     const { data: campaignMatch } = await db
       .from('campaign_recipients')
-      .select('id, email, opened_at, clicked_at, open_count, click_count')
+      .select('id, email, status, opened_at, first_opened_at, clicked_at, first_clicked_at, open_count, click_count, last_clicked_url')
       .eq('provider_message_id', providerMessageId)
       .maybeSingle();
 
@@ -312,13 +312,19 @@ Deno.serve(async (req) => {
     }
   } else if (isOpened) {
     if (outboundMessageId) {
+      const prevOpenCount = Number(outboundMatch?.open_count || 0);
+      const newOpenCount = prevOpenCount + 1;
+      const firstOpenedAt = outboundMatch?.first_opened_at || outboundMatch?.opened_at || occurredAt;
+      const keepClickedStatus = outboundMatch?.status === 'clicked';
+
       await db
         .from('outbound_messages')
         .update({
-          status: 'opened',
+          status: keepClickedStatus ? 'clicked' : 'opened',
           opened_at: occurredAt,
+          first_opened_at: firstOpenedAt,
           last_opened_at: occurredAt,
-          open_count: 1,
+          open_count: newOpenCount || 1, // open_count: 1
           provider_status: 'opened',
           updated_at: new Date().toISOString(),
         })
@@ -326,13 +332,19 @@ Deno.serve(async (req) => {
     }
 
     if (campaignRecipientId) {
+      const prevCampOpenCount = Number(campaignMatch?.open_count || 0);
+      const newCampOpenCount = prevCampOpenCount + 1;
+      const campFirstOpenedAt = campaignMatch?.first_opened_at || campaignMatch?.opened_at || occurredAt;
+      const keepCampClicked = campaignMatch?.status === 'clicked';
+
       await db
         .from('campaign_recipients')
         .update({
-          status: 'opened',
+          status: keepCampClicked ? 'clicked' : 'opened',
           opened_at: occurredAt,
+          first_opened_at: campFirstOpenedAt,
           last_opened_at: occurredAt,
-          open_count: 1,
+          open_count: newCampOpenCount || 1, // open_count: 1
           updated_at: new Date().toISOString(),
         })
         .eq('id', campaignRecipientId);
@@ -344,20 +356,25 @@ Deno.serve(async (req) => {
         activity_type: 'email_opened',
         actor_type: 'system',
         summary: 'Abertura detectada',
-        metadata: { provider: 'resend', occurred_at: occurredAt, provider_message_id: providerMessageId },
+        metadata: { provider: 'resend', occurred_at: occurredAt, provider_message_id: providerMessageId, recipient: recipientEmail },
       });
     }
   } else if (isClicked) {
     const clickUrl = data.click?.link || '';
     if (outboundMessageId) {
+      const prevClickCount = Number(outboundMatch?.click_count || 0);
+      const newClickCount = prevClickCount + 1;
+      const firstClickedAt = outboundMatch?.first_clicked_at || outboundMatch?.clicked_at || occurredAt;
+
       await db
         .from('outbound_messages')
         .update({
           status: 'clicked',
           clicked_at: occurredAt,
+          first_clicked_at: firstClickedAt,
           last_clicked_at: occurredAt,
-          click_count: 1,
-          last_clicked_url: clickUrl || null,
+          click_count: newClickCount || 1, // click_count: 1
+          last_clicked_url: clickUrl || outboundMatch?.last_clicked_url || null,
           provider_status: 'clicked',
           updated_at: new Date().toISOString(),
         })
@@ -365,14 +382,19 @@ Deno.serve(async (req) => {
     }
 
     if (campaignRecipientId) {
+      const prevCampClickCount = Number(campaignMatch?.click_count || 0);
+      const newCampClickCount = prevCampClickCount + 1;
+      const campFirstClickedAt = campaignMatch?.first_clicked_at || campaignMatch?.clicked_at || occurredAt;
+
       await db
         .from('campaign_recipients')
         .update({
           status: 'clicked',
           clicked_at: occurredAt,
+          first_clicked_at: campFirstClickedAt,
           last_clicked_at: occurredAt,
-          click_count: 1,
-          last_clicked_url: clickUrl || null,
+          click_count: newCampClickCount || 1, // click_count: 1
+          last_clicked_url: clickUrl || campaignMatch?.last_clicked_url || null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', campaignRecipientId);

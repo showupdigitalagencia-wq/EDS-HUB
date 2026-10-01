@@ -12,7 +12,7 @@ import { createAdminClient } from '../_shared/supabase-client.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
 import { sendSms } from '../_shared/twilio-adapter.ts';
 import { resolveSalutation } from '../_shared/salutation.ts';
-import { escapeHtml } from '../_shared/email-utils.ts';
+import { escapeHtml, resolveEmailRecipients } from '../_shared/email-utils.ts';
 import {
   evaluateCondition,
   checkContactPreference,
@@ -525,30 +525,60 @@ Deno.serve(async (req) => {
         // 4. Action Idempotency, Provider Reconciliation & Execution
         try {
           if (action === 'send_email') {
-            const recipient = lead.email ? lead.email.trim().toLowerCase() : '';
-            if (!recipient) {
+            // Discover all valid email addresses for this lead (canonical lead_emails or fallback)
+            let recipients: string[] = [];
+            try {
+              const { data: leadEmailRows } = await db
+                .from('lead_emails')
+                .select('normalized_email')
+                .eq('lead_id', lead.id)
+                .eq('is_valid', true);
+
+              if (leadEmailRows && leadEmailRows.length > 0) {
+                recipients = leadEmailRows.map((r: any) => r.normalized_email);
+              }
+            } catch (_err) {
+              // fallback
+            }
+
+            if (recipients.length === 0) {
+              recipients = resolveEmailRecipients(lead.email, lead.email_confirmation);
+            }
+
+            if (recipients.length === 0) {
               throw new Error('Lead has no valid email address');
             }
 
-            // Check if already sent or accepted by provider (reconciliation)
-            const actionIdempotencyKey = `auto_msg:${runId}:${step.step_order}:email`;
-            const { data: existingMsg } = await db
-              .from('outbound_messages')
-              .select('id, status, provider_message_id')
-              .or(`automation_run_step_id.eq.${stepRunId},idempotency_key.eq.${actionIdempotencyKey}`)
-              .maybeSingle();
+            const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
+            const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
+            const replyTo = 'info@expdentalsolutions.com';
+            const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doc');
+            const rawSubject = step.config?.subject || 'Important update from Expert Dental Solutions';
+            const rawBody = step.config?.body || '<p>Hello {{salutation}}, thank you for connecting with us.</p>';
+            const subject = rawSubject.replace(/{{salutation}}/g, salutation).replace(/{{first_name}}/g, lead.first_name || '');
+            const html = rawBody.replace(/{{salutation}}/g, escapeHtml(salutation)).replace(/{{first_name}}/g, escapeHtml(lead.first_name || ''));
 
-            if (existingMsg && (existingMsg.status === 'sent' || existingMsg.provider_message_id)) {
-              // Reconciled with provider: do NOT resend
-              await db
-                .from('automation_run_steps')
-                .update({
-                  status: 'completed',
-                  output_data: { note: 'Already sent / reconciled with provider', message_id: existingMsg.id, provider_message_id: existingMsg.provider_message_id },
-                  completed_at: new Date().toISOString(),
-                })
-                .eq('id', stepRunId);
-            } else {
+            let anySent = false;
+            const sentMessageIds: string[] = [];
+            const recipientErrors: string[] = [];
+
+            for (const recipient of recipients) {
+              const actionIdempotencyKey = `auto_msg:${runId}:${step.step_order}:email:${recipient}`;
+
+              // Check if already sent or accepted by provider (reconciliation)
+              const { data: existingMsg } = await db
+                .from('outbound_messages')
+                .select('id, status, provider_message_id')
+                .eq('idempotency_key', actionIdempotencyKey)
+                .in('status', ['sent', 'delivered', 'opened', 'clicked', 'pending', 'queued'])
+                .maybeSingle();
+
+              if (existingMsg && (existingMsg.status === 'sent' || existingMsg.provider_message_id)) {
+                anySent = true;
+                sentMessageIds.push(existingMsg.id);
+                continue;
+              }
+
               // Check email_suppressions before calling provider
               const { data: suppression } = await db
                 .from('email_suppressions')
@@ -563,8 +593,8 @@ Deno.serve(async (req) => {
                   provider: 'resend',
                   recipient,
                   template_key: step.config?.template_id || 'automation_email',
-                  subject_snapshot: step.config?.subject || 'Update from Expert Dental Solutions',
-                  body_snapshot: step.config?.body || '',
+                  subject_snapshot: subject,
+                  body_snapshot: html,
                   status: 'failed',
                   error_code: 'EMAIL_SUPPRESSED',
                   error_message: `Recipient email is suppressed (${suppression.reason})`,
@@ -574,27 +604,9 @@ Deno.serve(async (req) => {
                   automation_run_id: runId,
                   automation_run_step_id: stepRunId,
                 });
-
-                await db
-                  .from('automation_run_steps')
-                  .update({
-                    status: 'failed',
-                    error_message: `Recipient email is suppressed (${suppression.reason})`,
-                    completed_at: new Date().toISOString(),
-                  })
-                  .eq('id', stepRunId);
-
-                throw new Error(`Email suppressed: ${suppression.reason}`);
+                recipientErrors.push(`Recipient ${recipient} is suppressed (${suppression.reason})`);
+                continue;
               }
-
-              const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
-              const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
-              const replyTo = 'info@expdentalsolutions.com';
-              const salutation = resolveSalutation(lead.last_name, lead.first_name, 'Doc');
-              const rawSubject = step.config?.subject || 'Important update from Expert Dental Solutions';
-              const rawBody = step.config?.body || '<p>Hello {{salutation}}, thank you for connecting with us.</p>';
-              const subject = rawSubject.replace(/{{salutation}}/g, salutation).replace(/{{first_name}}/g, lead.first_name || '');
-              const html = rawBody.replace(/{{salutation}}/g, escapeHtml(salutation)).replace(/{{first_name}}/g, escapeHtml(lead.first_name || ''));
 
               const sendRes = await sendEmail({
                 from: sender,
@@ -606,8 +618,12 @@ Deno.serve(async (req) => {
               });
 
               if (!sendRes.success) {
-                throw new Error(sendRes.errorMessage || 'Failed to send email via Resend');
+                recipientErrors.push(`Failed for ${recipient}: ${sendRes.errorMessage || 'Resend error'}`);
+                continue;
               }
+
+              anySent = true;
+              sentMessageIds.push(sendRes.messageId || recipient);
 
               // Record to outbound_messages
               await db.from('outbound_messages').insert({
@@ -626,17 +642,30 @@ Deno.serve(async (req) => {
                 automation_run_id: runId,
                 automation_run_step_id: stepRunId,
               });
+            }
 
+            if (!anySent && recipientErrors.length > 0) {
               await db
                 .from('automation_run_steps')
                 .update({
-                  status: 'completed',
-                  provider: 'resend',
-                  output_data: { provider_message_id: sendRes.messageId },
+                  status: 'failed',
+                  error_message: recipientErrors.join('; '),
                   completed_at: new Date().toISOString(),
                 })
                 .eq('id', stepRunId);
+
+              throw new Error(recipientErrors.join('; '));
             }
+
+            await db
+              .from('automation_run_steps')
+              .update({
+                status: 'completed',
+                provider: 'resend',
+                output_data: { sent_count: sentMessageIds.length, message_ids: sentMessageIds },
+                completed_at: new Date().toISOString(),
+              })
+              .eq('id', stepRunId);
           } else if (action === 'send_sms') {
             const recipientPhone = lead.phone_e164 || lead.phone_raw;
             if (!recipientPhone) {

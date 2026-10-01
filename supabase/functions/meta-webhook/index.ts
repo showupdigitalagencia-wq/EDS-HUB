@@ -32,6 +32,7 @@
 import { corsHeaders, corsResponse } from '../_shared/cors.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { verifyMetaSignature } from '../_shared/webhook-verifier.ts';
+import { resolveCanonicalEmails } from '../_shared/canonical-email-resolver.ts';
 
 interface MetaLeadgenValue {
   ad_id?: string;
@@ -341,17 +342,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    const rawEmail = fieldMap['email'] || null;
-    const cleanEmail = rawEmail && rawEmail.includes('@') ? rawEmail.toLowerCase().trim() : null;
-
-    const rawEmailConf =
-      fieldMap['email_confirmation'] ||
-      fieldMap['confirm_email'] ||
-      fieldMap['confirm_your_email'] ||
-      fieldMap['confirme_seu_email'] ||
-      null;
-    const cleanEmailConf = rawEmailConf && rawEmailConf.includes('@') ? rawEmailConf.toLowerCase().trim() : null;
-    const emailMismatch = Boolean(cleanEmail && cleanEmailConf && cleanEmail !== cleanEmailConf);
+    // Canonical Multi-Email Resolution from all Meta form fields
+    const emailResolution = resolveCanonicalEmails(fieldMap, 'meta');
+    const cleanEmail = emailResolution.primary_email;
+    const cleanEmailConf = emailResolution.emails.length > 1
+      ? emailResolution.emails[1].normalized_email
+      : cleanEmail;
+    const emailMismatch = emailResolution.divergence;
 
     const rawPhone = fieldMap['phone_number'] || fieldMap['phone'] || null;
     // Phone Normalization: preserve raw; normalize to E.164 only if country safely determinable (+)
@@ -768,6 +765,7 @@ Deno.serve(async (req) => {
           last_name: lastName || undefined,
           email: cleanEmail || undefined,
           email_confirmation: cleanEmailConf || undefined,
+          resolved_emails: emailResolution.emails,
           phone: phoneE164 || rawPhone || undefined,
           contact_preference: metaContactPreference,
           course_interest: resolvedCourse?.courseName || undefined,

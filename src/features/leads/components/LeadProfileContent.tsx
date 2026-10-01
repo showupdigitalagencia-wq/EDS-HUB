@@ -44,6 +44,7 @@ import { ChangeLeadStageModal } from './ChangeLeadStageModal';
 import { LeadFormSubmissionModal } from './LeadFormSubmissionModal';
 import { fetchLeadEmailHealth, type LeadEmailHealthResult } from '../../dashboard/services/deliverability-health-service';
 import { formatContactPreferenceLabel, getContactPreferenceBadgeClasses } from '../../../utils/contact-preference';
+import { resolveCanonicalEmails, type ResolvedEmailIdentity } from '../../../utils/canonical-email-resolver';
 import type { Lead, LeadActivity, Task, LeadNote, IncompleteEnrollment } from '../../../types';
 
 export interface LeadProfileContentProps {
@@ -82,6 +83,7 @@ export function LeadProfileContent({
   const [activeTab, setActiveTab] = useState<TabType>('resumo');
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [smsSentInfo, setSmsSentInfo] = useState<{ sentAt: string } | null>(null);
+  const [leadEmailIdentities, setLeadEmailIdentities] = useState<ResolvedEmailIdentity[]>([]);
 
   // Safe delete lead state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -156,6 +158,31 @@ export function LeadProfileContent({
         void fetchLeadEmailHealth(leadData.email).then(setEmailHealth);
       } else {
         setEmailHealth(null);
+      }
+
+      // Fetch canonical email identities
+      try {
+        const { data: leadEmailsData } = await supabase
+          .from('lead_emails')
+          .select('raw_email, normalized_email, source, source_field, is_primary, is_valid')
+          .eq('lead_id', leadId)
+          .order('is_primary', { ascending: false });
+
+        if (leadEmailsData && leadEmailsData.length > 0) {
+          setLeadEmailIdentities(leadEmailsData as any);
+        } else {
+          const res = resolveCanonicalEmails({
+            email: leadData?.email,
+            email_confirmation: leadData?.email_confirmation,
+          }, leadData?.source || 'lead');
+          setLeadEmailIdentities(res.emails);
+        }
+      } catch (_err) {
+        const res = resolveCanonicalEmails({
+          email: leadData?.email,
+          email_confirmation: leadData?.email_confirmation,
+        }, leadData?.source || 'lead');
+        setLeadEmailIdentities(res.emails);
       }
 
       // 2. Fetch Lead Course Interests
@@ -657,6 +684,23 @@ export function LeadProfileContent({
               <div>
                 <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
                   <span className="text-slate-400 block text-[11px]">E-mail</span>
+                  {/* Divergence badge based on canonical email resolution */}
+                  {leadEmailIdentities.length > 1 ? (
+                    <span
+                      data-testid="email-divergence-badge"
+                      className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded-md border bg-amber-50 text-amber-800 border-amber-300"
+                      title={leadEmailIdentities.map((e) => `${e.raw_email} (${e.source_field})`).join(' vs ')}
+                    >
+                      Divergência: Detectada ({leadEmailIdentities.length} e-mails)
+                    </span>
+                  ) : (
+                    <span
+                      data-testid="email-divergence-badge"
+                      className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded-md border bg-slate-50 text-slate-600 border-slate-200"
+                    >
+                      Divergência: Não detectada
+                    </span>
+                  )}
                   {emailHealth && emailHealth.status !== 'sem_historico' && (
                     <>
                       <span
@@ -678,7 +722,35 @@ export function LeadProfileContent({
                     </>
                   )}
                 </div>
-                {lead.email ? (
+                {leadEmailIdentities.length > 0 ? (
+                  <div className="space-y-1 mt-1">
+                    {leadEmailIdentities.map((identity, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between gap-1.5 py-0.5 px-1.5 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-colors"
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsEmailComposerOpen(true);
+                          }}
+                          className="inline-flex w-fit max-w-[80%] items-center gap-1.5 font-semibold text-slate-800 hover:text-[#08254f] cursor-pointer text-left truncate"
+                          title={`Enviar e-mail para ${identity.raw_email}`}
+                        >
+                          <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                          <span className="truncate">{identity.raw_email}</span>
+                        </button>
+                        <span
+                          className="text-[9px] font-mono text-slate-500 bg-slate-100 px-1 py-0.2 rounded border border-slate-200 shrink-0"
+                          title={`Origem: ${identity.source} (${identity.source_field})`}
+                        >
+                          {identity.is_primary ? 'Principal' : identity.source_field}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : lead.email ? (
                   <button
                     type="button"
                     onClick={(e) => {

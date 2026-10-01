@@ -64,6 +64,7 @@ export interface LeadTimelineMessage {
   openCount?: number;
   clickCount?: number;
   lastClickedUrl?: string | null;
+  recipient?: string | null;
   attachments?: Array<{ filename: string; mime_type?: string; size?: number }>;
   isManualReply?: boolean;
 }
@@ -293,6 +294,7 @@ export function LeadConversationsCard({
           clickedAt: out.clicked_at || null,
           deliveredAt: out.delivered_at || null,
           lastClickedUrl: out.last_clicked_url || null,
+          recipient: out.recipient || null,
           openCount: out.open_count || 0,
           clickCount: out.click_count || 0,
           isManualReply: Boolean(out.is_manual_reply),
@@ -790,6 +792,15 @@ export function LeadConversationsCard({
                               >
                                 {msg.senderLabel}
                               </span>
+                              {msg.direction === 'outbound' && msg.recipient && (
+                                <span
+                                  data-testid={`message-recipient-${msg.id}`}
+                                  className="text-[11px] font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 truncate max-w-[240px]"
+                                  title={`Destinatário: ${msg.recipient}`}
+                                >
+                                  Para: {msg.recipient}
+                                </span>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-2.5 shrink-0 ml-auto">
@@ -854,20 +865,26 @@ export function LeadConversationsCard({
                               )}
                               {msg.openedAt && (
                                 <span
+                                  data-testid={`message-opened-${msg.id}`}
                                   className="inline-flex items-center gap-1 text-sky-700 bg-sky-50 border border-sky-200/80 px-1.5 py-0.5 rounded text-[10px] font-medium"
-                                  title="Abertura detectada no e-mail (sujeito a proxies/scanners)"
+                                  title={msg.openCount && msg.openCount > 1 ? `Aberturas registradas: ${msg.openCount}` : 'Abertura detectada no e-mail (sujeito a proxies/scanners)'}
                                 >
                                   <Eye className="w-3 h-3 text-sky-600" />
-                                  Abertura detectada ({formatMessageDateTime(msg.openedAt).timeStr})
+                                  {msg.openCount && msg.openCount > 1
+                                    ? `Aberturas registradas (${msg.openCount}) · Última: ${formatMessageDateTime(msg.openedAt).timeStr}`
+                                    : `Abertura detectada (${formatMessageDateTime(msg.openedAt).timeStr})`}
                                 </span>
                               )}
                               {msg.clickedAt && (
                                 <span
+                                  data-testid={`message-clicked-${msg.id}`}
                                   className="inline-flex items-center gap-1 text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded text-[10px] font-medium"
-                                  title={msg.lastClickedUrl ? `Link clicado: ${msg.lastClickedUrl}` : 'Clique registrado'}
+                                  title={msg.lastClickedUrl ? `Link clicado: ${msg.lastClickedUrl}${msg.clickCount && msg.clickCount > 1 ? ` (${msg.clickCount} cliques)` : ''}` : 'Clique registrado'}
                                 >
                                   <MousePointerClick className="w-3 h-3 text-indigo-600" />
-                                  Clique detectado ({formatMessageDateTime(msg.clickedAt).timeStr})
+                                  {msg.clickCount && msg.clickCount > 1
+                                    ? `Cliques registrados (${msg.clickCount}) · Último: ${formatMessageDateTime(msg.clickedAt).timeStr}`
+                                    : `Clique detectado (${formatMessageDateTime(msg.clickedAt).timeStr})`}
                                 </span>
                               )}
                             </div>

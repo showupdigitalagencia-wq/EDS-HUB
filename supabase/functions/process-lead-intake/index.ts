@@ -17,7 +17,12 @@ import {
   getApprovedZygomaticHtml,
   APPROVED_COURSE_TEMPLATES,
 } from '../_shared/salutation.ts';
-import { resolveEmailRecipients, escapeHtml } from '../_shared/email-utils.ts';
+import {
+  resolveCanonicalEmails,
+  resolveEmailRecipients,
+  escapeHtml,
+  type ResolvedEmailIdentity,
+} from '../_shared/email-utils.ts';
 import { sendEmail } from '../_shared/resend-adapter.ts';
 import { sendSms } from '../_shared/twilio-adapter.ts';
 import { syncEmailToTitanSent } from '../_shared/titan-imap.ts';
@@ -441,40 +446,33 @@ Deno.serve(async (req) => {
         // PREFERENCE = 'email' OR 'sms'
         // Rule: Both send approved first-contact email!
         // SMS preference must NOT block the approved email from being sent.
-        const cleanEmail = (payload.email || payload.email_confirmation || '').trim().toLowerCase();
-        const hasValidEmail = Boolean(cleanEmail.length > 3 && cleanEmail.includes('@'));
+        const sourceDataForResolution: Record<string, unknown> = {
+          ...((payload.raw_payload && typeof payload.raw_payload === 'object') ? payload.raw_payload as Record<string, unknown> : {}),
+          ...((payload.raw_data && typeof payload.raw_data === 'object') ? payload.raw_data as Record<string, unknown> : {}),
+          email: payload.email,
+          email_confirmation: payload.email_confirmation,
+        };
 
-        if (hasValidEmail) {
-          // Check lead-level AND recipient-level exactly-once idempotency:
-          const { data: existingFirstContact } = await db
-            .from('outbound_messages')
-            .select('id, status, provider_message_id')
-            .or(`lead_id.eq.${leadId},recipient.ilike.${cleanEmail}`)
-            .eq('channel', 'email')
-            .in('status', ['sent', 'delivered', 'pending'])
-            .limit(1)
-            .maybeSingle();
+        if (Array.isArray(payload.resolved_emails)) {
+          payload.resolved_emails.forEach((re, idx) => {
+            if (re && (re.raw_email || re.normalized_email)) {
+              sourceDataForResolution[`resolved_email_${idx}`] = re.raw_email || re.normalized_email;
+            }
+          });
+        }
 
-          if (existingFirstContact) {
-            await db.from('lead_activities').insert({
-              lead_id: leadId,
-              intake_event_id: intakeEventId,
-              activity_type: 'intake_received',
-              actor_type: 'system',
-              summary: 'First automatic email has already been accepted/sent for this lead/recipient. Duplicate send skipped.',
-              metadata: { outbound_message_id: existingFirstContact.id, provider_message_id: existingFirstContact.provider_message_id },
-            });
-            actionSucceeded = true;
-          } else {
-            const emailRes = await handleEmailPreference(
-              db, payload, leadId, intakeEventId, salutation, idempotencyKey,
-            );
-            messagesSent += emailRes.sent;
-            messagesFailed += emailRes.failed;
-            tasksCreated += emailRes.tasksCreated;
-            errors.push(...emailRes.errors);
-            actionSucceeded = emailRes.allSucceeded;
-          }
+        const canonicalEmailRes = resolveCanonicalEmails(sourceDataForResolution, payload.source || 'intake');
+        const resolvedIdentities = canonicalEmailRes.emails;
+
+        if (resolvedIdentities.length > 0) {
+          const emailRes = await handleEmailPreference(
+            db, payload, leadId, intakeEventId, salutation, idempotencyKey, resolvedIdentities,
+          );
+          messagesSent += emailRes.sent;
+          messagesFailed += emailRes.failed;
+          tasksCreated += emailRes.tasksCreated;
+          errors.push(...emailRes.errors);
+          actionSucceeded = emailRes.allSucceeded;
         } else {
           // No valid email at all
           await db.from('lead_activities').insert({
@@ -968,8 +966,48 @@ async function handleEmailPreference(
   intakeEventId: string,
   salutation: string,
   _baseIdempotencyKey: string,
+  resolvedIdentities?: ResolvedEmailIdentity[],
 ) {
-  const recipients = resolveEmailRecipients(payload.email, payload.email_confirmation);
+  let identities = resolvedIdentities;
+  if (!identities || identities.length === 0) {
+    const sourceData: Record<string, unknown> = {
+      ...((payload.raw_payload && typeof payload.raw_payload === 'object') ? payload.raw_payload as Record<string, unknown> : {}),
+      ...((payload.raw_data && typeof payload.raw_data === 'object') ? payload.raw_data as Record<string, unknown> : {}),
+      email: payload.email,
+      email_confirmation: payload.email_confirmation,
+    };
+    if (Array.isArray(payload.resolved_emails)) {
+      payload.resolved_emails.forEach((re, idx) => {
+        if (re && (re.raw_email || re.normalized_email)) {
+          sourceData[`resolved_email_${idx}`] = re.raw_email || re.normalized_email;
+        }
+      });
+    }
+    identities = resolveCanonicalEmails(sourceData, payload.source || 'intake').emails;
+  }
+
+  // Non-blocking sync to public.lead_emails table
+  for (const identity of identities) {
+    try {
+      await db.from('lead_emails').upsert(
+        {
+          lead_id: leadId,
+          raw_email: identity.raw_email,
+          normalized_email: identity.normalized_email,
+          source: identity.source || payload.source || 'intake',
+          source_field: identity.source_field || 'email',
+          is_primary: identity.is_primary,
+          is_valid: true,
+          last_seen_at: new Date().toISOString(),
+        },
+        { onConflict: 'lead_id,normalized_email' }
+      );
+    } catch (_err) {
+      // non-blocking
+    }
+  }
+
+  const recipients = identities.map((id) => id.normalized_email);
 
   if (recipients.length === 0) {
     // No valid email — create data_review task (idempotent)
@@ -1204,7 +1242,7 @@ async function handleEmailPreference(
   const errors: string[] = [];
 
   for (const recipient of recipients) {
-    const msgIdempotencyKey = `${intakeEventId}:email:${recipient}`;
+    const msgIdempotencyKey = `${leadId}:${templateKey}:${recipient}`;
 
     // Check if recipient email is suppressed
     const { data: suppression } = await db
@@ -1236,15 +1274,30 @@ async function handleEmailPreference(
       continue;
     }
 
-    // Check if already sent (for retry scenarios)
+    // Check recipient-level exactly-once idempotency across retries, reconciliations, and historical sync:
+    // Any existing message for (lead_id + recipient + template_key) or idempotency_key in valid send/delivered/opened/clicked/in-flight states skips re-send.
     const { data: existingMsg } = await db
       .from('outbound_messages')
-      .select('id, status, attempt_count, conversation_id')
-      .eq('idempotency_key', msgIdempotencyKey)
-      .single();
+      .select('id, status, attempt_count, conversation_id, provider_message_id')
+      .or(`idempotency_key.eq.${msgIdempotencyKey},and(lead_id.eq.${leadId},recipient.ilike.${recipient},template_key.eq.${templateKey})`)
+      .in('status', ['sent', 'delivered', 'opened', 'clicked', 'pending', 'queued'])
+      .maybeSingle();
 
-    if (existingMsg?.status === 'sent') {
+    if (existingMsg) {
       sent++;
+      await db.from('lead_activities').insert({
+        lead_id: leadId,
+        intake_event_id: intakeEventId,
+        activity_type: 'intake_received',
+        actor_type: 'system',
+        summary: `E-mail de primeiro contato (${templateKey}) já enviado para ${recipient}. Reenvio duplicado ignorado.`,
+        metadata: {
+          outbound_message_id: existingMsg.id,
+          provider_message_id: existingMsg.provider_message_id,
+          recipient,
+          template_key: templateKey,
+        },
+      });
       continue; // Already sent — skip
     }
 

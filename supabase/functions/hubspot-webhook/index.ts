@@ -96,7 +96,11 @@ Deno.serve(async (req) => {
   if (token && objectIdsToFetch.size > 0) {
     try {
       const propList = [
-        'firstname', 'lastname', 'email', 'phone', 'mobilephone', 'hs_calculated_phone_number',
+        'firstname', 'lastname', 'email',
+        'confirm_your_email', 'confirm_email', 'confirmation_email', 'email_confirmation',
+        'please_confirm_your_email_address', 'confirme_seu_email', 'confirmacao_de_email',
+        'confirmacao_email', 'secondary_email', 'alternate_email', 'work_email', 'personal_email',
+        'phone', 'mobilephone', 'hs_calculated_phone_number',
         'hs_lead_status', 'status_de_qualificacao', 'course_interest', 'curso_de_interesse',
         'curso_de_interesse_2', 'curso_de_interesse_3', 'data_do_curso_de_interesse',
         'contact_preference', 'preferencia_de_contato', 'preferred_contact_method',
@@ -220,6 +224,7 @@ Deno.serve(async (req) => {
                 lead_id: newLead.lead_id,
                 email: newLead.email,
                 email_confirmation: newLead.email_confirmation,
+                resolved_emails: newLead.resolved_emails || [],
                 phone: newLead.phone,
                 first_name: newLead.first_name,
                 last_name: newLead.last_name,

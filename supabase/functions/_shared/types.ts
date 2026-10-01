@@ -13,6 +13,14 @@ export interface LeadIntakePayload {
   last_name?: string;
   email?: string;
   email_confirmation?: string;
+  resolved_emails?: Array<{
+    raw_email: string;
+    normalized_email: string;
+    source_field?: string;
+    source?: string;
+    is_primary?: boolean;
+    is_valid?: boolean;
+  }>;
   phone?: string;
   contact_preference?: 'email' | 'sms' | 'call' | 'whatsapp' | string;
   course_interest?: string;

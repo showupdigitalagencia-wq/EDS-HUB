@@ -11,6 +11,7 @@
 
 import { corsHeaders, corsResponse } from '../_shared/cors.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
+import { resolveCanonicalEmails } from '../_shared/canonical-email-resolver.ts';
 import type { LeadIntakePayload } from '../_shared/types.ts';
 
 const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB limit
@@ -293,33 +294,20 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Normalizations & extractions
-    const rawEmail = fields.email ? String(fields.email).trim().toLowerCase() : null;
-    if (rawEmail) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(rawEmail)) {
-        return new Response(
-          JSON.stringify({ error: 'Invalid email address format' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
+    // Canonical Multi-Email Resolution from all submitted fields
+    const emailResolution = resolveCanonicalEmails(fields, 'form');
+    const rawEmail = emailResolution.primary_email;
+    const rawEmailConfirmation = emailResolution.emails.length > 1
+      ? emailResolution.emails[1].normalized_email
+      : rawEmail;
+    const emailMismatch = emailResolution.divergence;
 
-    const rawEmailConfirmation = (fields.email_confirmation || fields.confirm_email || fields.confirm_your_email || fields.confirme_seu_email)
-      ? String(fields.email_confirmation || fields.confirm_email || fields.confirm_your_email || fields.confirme_seu_email).trim().toLowerCase()
-      : null;
+    if (rawEmail) {
+      fields.email = rawEmail;
+    }
     if (rawEmailConfirmation) {
       fields.email_confirmation = rawEmailConfirmation;
-      const confRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!confRegex.test(rawEmailConfirmation)) {
-        return new Response(
-          JSON.stringify({ error: 'Invalid confirmation email address format' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
     }
-
-    const emailMismatch = Boolean(rawEmail && rawEmailConfirmation && rawEmail !== rawEmailConfirmation);
     if (emailMismatch) {
       fields.email_mismatch = true;
     }
@@ -445,6 +433,7 @@ Deno.serve(async (req) => {
           last_name: fields.last_name ? String(fields.last_name).trim() : undefined,
           email: rawEmail || undefined,
           email_confirmation: rawEmailConfirmation || undefined,
+          resolved_emails: emailResolution.emails,
           phone: phoneE164 || undefined,
           contact_preference: (contactPref as 'email' | 'sms' | 'call' | 'whatsapp') || undefined,
           course_interest: courseInterest || undefined,
