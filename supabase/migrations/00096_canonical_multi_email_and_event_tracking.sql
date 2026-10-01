@@ -1227,3 +1227,22 @@ GRANT EXECUTE ON FUNCTION public.resolve_lead_emails(JSONB, TEXT) TO authenticat
 GRANT EXECUTE ON FUNCTION public.sync_lead_emails(UUID, JSONB) TO service_role;
 GRANT EXECUTE ON FUNCTION public.get_lead_form_submissions(UUID) TO authenticated, service_role, anon;
 GRANT EXECUTE ON FUNCTION public.backfill_lead_emails() TO service_role;
+
+-- 9. Realtime Publication
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'outbound_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.outbound_messages;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'lead_emails'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.lead_emails;
+  END IF;
+END $$;
+
