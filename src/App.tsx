@@ -56,6 +56,9 @@ import { PostCoursePage } from './features/courses/PostCoursePage';
 import { WorkDashboardPage } from './features/work/WorkDashboardPage';
 import { ReportsPage } from './features/reports/ReportsPage';
 
+import { TermsOfServicePage } from './features/public/TermsOfServicePage';
+import { DataDeletionPage } from './features/public/DataDeletionPage';
+
 export default function App() {
   useEffect(() => {
     const stopScheduler = startTaskReminderScheduler();
@@ -74,6 +77,8 @@ export default function App() {
               {/* Public routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/f/:slug" element={<PublicFormPage />} />
+              <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+              <Route path="/data-deletion" element={<DataDeletionPage />} />
 
               {/* Protected routes */}
               <Route
