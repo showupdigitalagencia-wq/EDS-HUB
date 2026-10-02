@@ -771,7 +771,9 @@ export function LeadProfileContent({
                 <div>
                   <span className="text-slate-400 block text-[11px] mb-0.5">Origem / Canal</span>
                   <span className="font-semibold text-slate-700 capitalize">
-                    {lead.source} {lead.source_detail ? `(${lead.source_detail})` : ''}
+                    {lead.source.toLowerCase() === 'website'
+                      ? 'Website'
+                      : `${lead.source} ${lead.source_detail ? `(${lead.source_detail})` : ''}`}
                   </span>
                 </div>
               )}

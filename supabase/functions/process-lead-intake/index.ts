@@ -259,8 +259,11 @@ Deno.serve(async (req) => {
 
     const isWebsiteLead =
       payload.source === 'form' ||
+      payload.source === 'website' ||
       payload.source_detail === 'website' ||
-      payload.source_detail === 'website-form';
+      payload.source_detail === 'website-form' ||
+      payload.source_detail === 'contact_form' ||
+      payload.source_detail === 'website_registration_form';
 
     const isMetaLead =
       payload.source === 'meta' ||
@@ -351,9 +354,13 @@ Deno.serve(async (req) => {
       let sourceLeadAgeHours: number | null = null;
 
       if (rawSourceTimestamp) {
-        const parsedMs = !isNaN(Number(rawSourceTimestamp)) && Number(rawSourceTimestamp) > 100000000000
-          ? Number(rawSourceTimestamp)
-          : Date.parse(String(rawSourceTimestamp));
+        let parsedMs = NaN;
+        if (!isNaN(Number(rawSourceTimestamp)) && String(rawSourceTimestamp).trim().length >= 8) {
+          const num = Number(rawSourceTimestamp);
+          parsedMs = num > 100000000000 ? num : num * 1000;
+        } else {
+          parsedMs = Date.parse(String(rawSourceTimestamp));
+        }
 
         if (!isNaN(parsedMs) && parsedMs > 0) {
           const diffMs = Date.now() - parsedMs;
@@ -688,8 +695,9 @@ function isProvenAdLead(payload: LeadIntakePayload): boolean {
 
   // Disqualify explicit non-ad sources
   if (source === 'manual' || sourceDetail === 'manual') return false;
+  if (source === 'website' || sourceDetail === 'contact_form') return false;
   if (source === 'form' && (sourceDetail === 'website' || sourceDetail === 'website-form' || !sourceDetail)) return false;
-  if (sourceDetail.includes('website') || sourceDetail.includes('register')) return false;
+  if (sourceDetail.includes('website') || sourceDetail.includes('register') || sourceDetail.includes('contact')) return false;
 
   // 1. Explicitly approved ad sources
   const adSources = ['meta', 'facebook', 'instagram', 'meta_ads', 'lead_ads'];

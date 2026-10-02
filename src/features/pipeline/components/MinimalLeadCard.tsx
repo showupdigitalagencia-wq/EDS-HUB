@@ -190,7 +190,13 @@ export function resolveAttentionState(
   }
 
   // 5. Website leads in capture (Novo Lead): Aguardando resposta manual
-  if (lead.source === 'form' || lead.source_detail === 'website') {
+  if (
+    lead.source === 'form' ||
+    lead.source === 'website' ||
+    lead.source_detail === 'website' ||
+    lead.source_detail === 'contact_form' ||
+    lead.source_detail === 'website-form'
+  ) {
     return {
       label: 'Aguardando resposta manual',
       variant: 'neutral',

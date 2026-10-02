@@ -290,7 +290,9 @@ export function evaluateFirstContactEligibility(
     lead.source_detail === 'website' ||
     lead.source_detail === 'website-register' ||
     lead.source_detail === 'incomplete_registration' ||
-    (lead.source_detail || '').toLowerCase().includes('website');
+    lead.source_detail === 'contact_form' ||
+    (lead.source_detail || '').toLowerCase().includes('website') ||
+    (lead.source_detail || '').toLowerCase().includes('contact');
 
   if (isWebsite) {
     return {

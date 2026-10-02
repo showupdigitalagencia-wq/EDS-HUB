@@ -133,30 +133,32 @@ Deno.serve(async (req) => {
       );
     }
 
-    const {
-      slug,
-      idempotency_key,
-      external_attempt_id,
-      fields = {},
-      _hp_company,
-    } = payload as {
-      slug?: string;
-      idempotency_key?: string;
-      external_attempt_id?: string;
-      fields?: Record<string, unknown>;
-      _hp_company?: string;
-    };
+    const rawSlug = (payload.slug as string) || (payload.form_slug as string) || url.searchParams.get('slug');
+    const slug = typeof rawSlug === 'string' ? rawSlug.trim() : '';
 
-    if (!slug || typeof slug !== 'string') {
-      return new Response(
-        JSON.stringify({ error: 'Missing or invalid form slug' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const rawIdempotency = (payload.idempotency_key as string) || (payload.external_attempt_id as string);
+    const idempotency_key = (typeof rawIdempotency === 'string' && rawIdempotency.trim())
+      ? rawIdempotency.trim()
+      : `sub_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    const external_attempt_id = (payload.external_attempt_id as string) || undefined;
+    const _hp_company = payload._hp_company as string | undefined;
+
+    let fields: Record<string, unknown> = {};
+    if (payload.fields && typeof payload.fields === 'object') {
+      fields = { ...(payload.fields as Record<string, unknown>) };
+    } else {
+      fields = { ...payload };
+      delete fields.slug;
+      delete fields.form_slug;
+      delete fields.idempotency_key;
+      delete fields.external_attempt_id;
+      delete fields._hp_company;
     }
 
-    if (!idempotency_key || typeof idempotency_key !== 'string') {
+    if (!slug) {
       return new Response(
-        JSON.stringify({ error: 'Missing or invalid idempotency_key' }),
+        JSON.stringify({ error: 'Missing or invalid form slug' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -423,8 +425,10 @@ Deno.serve(async (req) => {
         const supabaseUrl = Deno.env.get('SUPABASE_URL');
         const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
+        const isWebsiteContact = slug === 'website-contact' || form.source_detail === 'contact_form';
         const intakePayload: LeadIntakePayload = {
-          source: 'form',
+          source: isWebsiteContact ? 'website' : 'form',
+          source_detail: isWebsiteContact ? 'contact_form' : (form.source_detail || 'website'),
           intake_event_id: intakeEventId,
           lead_id: leadId,
           external_event_id: submissionId,

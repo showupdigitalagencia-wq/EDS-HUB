@@ -2,7 +2,7 @@
 // EDS HUB — Database Types (Phase 1 + Phase 2)
 // =============================================================================
 
-export type LeadSource = 'meta' | 'google' | 'manual' | 'test' | 'form';
+export type LeadSource = 'meta' | 'google' | 'manual' | 'test' | 'form' | 'hubspot' | 'website';
 export type ContactPreference = 'email' | 'sms' | 'call' | 'whatsapp' | 'email_sms' | 'email_whatsapp' | 'sms_whatsapp' | null;
 export type MessageChannel = 'email' | 'sms' | 'call' | 'whatsapp';
 export type MessageProvider = 'resend' | 'twilio';
