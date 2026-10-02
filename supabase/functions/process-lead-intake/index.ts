@@ -888,7 +888,16 @@ function sanitizeForStorage(p: LeadIntakePayload): Record<string, unknown> {
 
 // deno-lint-ignore no-explicit-any
 async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEventId: string) {
-  const acqTimestamp = payload.source_created_at || new Date().toISOString();
+  const rawObj = (payload.raw_payload || {}) as Record<string, unknown>;
+  const acqTimestamp =
+    (typeof rawObj.submitted_at === 'string' && rawObj.submitted_at) ||
+    (typeof rawObj.created_time === 'string' && rawObj.created_time) ||
+    (typeof rawObj.conversion_time === 'string' && rawObj.conversion_time) ||
+    (typeof rawObj.recent_conversion_date === 'string' && rawObj.recent_conversion_date) ||
+    payload.source_created_at ||
+    (typeof rawObj.event_timestamp === 'string' && rawObj.event_timestamp) ||
+    (typeof rawObj.timestamp === 'string' && rawObj.timestamp) ||
+    new Date().toISOString();
 
   // If explicitly flagged as new lead (e.g. from hubspot-webhook or hubspot-reconcile created_leads handoff)
   if (payload.is_new_lead === true && payload.lead_id) {

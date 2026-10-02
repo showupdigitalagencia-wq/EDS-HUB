@@ -188,6 +188,27 @@ Deno.serve(async (req) => {
     });
   }
 
+  // 6.1 Guard against contact / course info requests:
+  // Submissions or visits to /contact or #course-info-form are COURSE INFORMATION REQUESTS,
+  // NOT enrollment or registration attempts.
+  const srcPage = (sanitized.source_page || '').toLowerCase();
+  const attemptIdStr = (sanitized.external_attempt_id || '').toLowerCase();
+  if (
+    srcPage.includes('/contact') ||
+    srcPage.includes('/request-course-information') ||
+    srcPage.includes('course-info') ||
+    attemptIdStr.includes('course-info') ||
+    attemptIdStr.includes('contact')
+  ) {
+    return new Response(
+      JSON.stringify({
+        error: 'Course info requests and contact form submissions are not enrollment attempts',
+        ignored: true
+      }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
   const db = createAdminClient();
 
   // 7. Persistent IP Rate Limiting via SHA-256 Hash

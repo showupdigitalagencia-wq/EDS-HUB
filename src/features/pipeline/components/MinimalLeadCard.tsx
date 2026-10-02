@@ -82,6 +82,27 @@ export { formatContactPreferenceLabel, getContactPreferenceBadgeClasses };
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 /**
+ * Formats lead acquisition/entry timestamp for compact pipeline cards.
+ * Uses lead.last_acquisition_at with fallback to lead.created_at.
+ * Format: "Última entrada: DD/MM/YYYY HH:mm"
+ */
+export function formatLeadEntryDate(dateStr?: string | null): string | null {
+  if (!dateStr) return null;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `Última entrada: ${day}/${month}/${year} ${hours}:${minutes}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Formats original lead creation timestamp for compact pipeline cards.
  * Uses lead.created_at directly (never last activity or processing time).
  * Format: "Criado em: DD/MM/YYYY HH:mm"
@@ -287,6 +308,8 @@ export function MinimalLeadCard({
 
   const phoneValue = lead.phone_raw || lead.phone_e164 || null;
   const emailValue = lead.email ? lead.email.trim() : null;
+  const entryDate = lead.last_acquisition_at || lead.created_at;
+  const entryDateStr = formatLeadEntryDate(entryDate);
   const creationDateStr = formatLeadCreationDate(lead.created_at);
 
   const isDraggingInternal = React.useRef(false);
@@ -406,15 +429,15 @@ export function MinimalLeadCard({
         </div>
       )}
 
-      {/* 4. Original Creation Date/Time — Replaces Contact Preference on compact card */}
-      {creationDateStr && (
+      {/* 4. Latest Acquisition Date/Time — Shows "Última entrada: DD/MM/YYYY HH:mm" */}
+      {entryDateStr && (
         <div
-          data-testid="lead-card-created-at"
+          data-testid="lead-card-last-acquisition"
           className="text-[10px] text-slate-500 font-medium select-none pt-0.5 flex items-center gap-1"
-          title={`Criado originalmente em: ${creationDateStr}`}
+          title={creationDateStr ? `${entryDateStr} | ${creationDateStr}` : (entryDateStr || '')}
         >
           <Clock className="h-2.5 w-2.5 text-slate-400 shrink-0" />
-          <span>{creationDateStr}</span>
+          <span>{entryDateStr}</span>
         </div>
       )}
 

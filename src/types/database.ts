@@ -2111,6 +2111,7 @@ export interface DailyOperationsDashboardKpis {
   stale_after_days: number;
   due_today_count: number;
   overdue_count: number;
+  future_count?: number;
   completed_today_count: number;
   needs_reply_count: number;
   hot_leads_count: number;

@@ -56,6 +56,22 @@ export interface LeadProfileContentProps {
   isStandalonePage?: boolean;
 }
 
+export function formatLeadDateTime(dateStr?: string | null): string {
+  if (!dateStr) return 'Não informado';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 'Não informado';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+  } catch {
+    return 'Não informado';
+  }
+}
+
 type TabType = 'resumo' | 'conversas' | 'atividades' | 'tarefas';
 
 export function LeadProfileContent({
@@ -807,6 +823,24 @@ export function LeadProfileContent({
                     Nenhum SMS enviado
                   </span>
                 )}
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] mb-0.5">Criado em</span>
+                <span
+                  data-testid="profile-created-at"
+                  className="font-semibold text-slate-700 text-xs"
+                >
+                  {formatLeadDateTime(lead.created_at)}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] mb-0.5">Última entrada</span>
+                <span
+                  data-testid="profile-last-acquisition-at"
+                  className="font-semibold text-slate-700 text-xs"
+                >
+                  {formatLeadDateTime(lead.last_acquisition_at || lead.created_at)}
+                </span>
               </div>
               {lead.referred_by && (
                 <div className="flex items-center gap-1.5 text-slate-600 bg-slate-50 p-2 rounded-lg sm:col-span-2">

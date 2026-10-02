@@ -19,7 +19,45 @@ import type {
 // -----------------------------------------------------------------------------
 
 /**
- * Checks if a task due date is overdue relative to now
+ * Calculates start and end ISO bounds of today's calendar day in the given business timezone.
+ */
+export function getBusinessDateRange(
+  timezone = 'America/New_York',
+  referenceDate = new Date()
+): {
+  startOfTodayIso: string;
+  endOfTodayIso: string;
+  todayDateStr: string;
+} {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const todayDateStr = formatter.format(referenceDate);
+
+  const midnightUtcGuess = new Date(`${todayDateStr}T00:00:00Z`);
+  const partsFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    hour12: false,
+  });
+  const hourInTz = parseInt(partsFormatter.format(midnightUtcGuess), 10) % 24;
+  const offsetHours = (24 - hourInTz) % 24;
+
+  const startOfToday = new Date(midnightUtcGuess.getTime() + offsetHours * 3600 * 1000);
+  const endOfToday = new Date(startOfToday.getTime() + 24 * 3600 * 1000);
+
+  return {
+    startOfTodayIso: startOfToday.toISOString(),
+    endOfTodayIso: endOfToday.toISOString(),
+    todayDateStr,
+  };
+}
+
+/**
+ * Checks if a task due date is overdue relative to now (timestamp strictly in the past).
  */
 export function deriveIsOverdue(dueAt: string | null, nowIso?: string): boolean {
   if (!dueAt) return false;
@@ -29,7 +67,27 @@ export function deriveIsOverdue(dueAt: string | null, nowIso?: string): boolean 
 }
 
 /**
- * Checks if a task due date falls within organization "today"
+ * Checks if a task due date is strictly overdue relative to business today's calendar start.
+ * Calendar Overdue: due date < start of today's calendar day in business timezone (America/New_York).
+ */
+export function deriveIsCalendarOverdue(
+  dueAt: string | null,
+  timezone = 'America/New_York',
+  nowIso?: string
+): boolean {
+  if (!dueAt) return false;
+  try {
+    const { startOfTodayIso } = getBusinessDateRange(timezone, nowIso ? new Date(nowIso) : new Date());
+    return new Date(dueAt).getTime() < new Date(startOfTodayIso).getTime();
+  } catch {
+    const now = new Date(nowIso || new Date().toISOString()).getTime();
+    return new Date(dueAt).getTime() < now;
+  }
+}
+
+/**
+ * Checks if a task due date falls strictly within organization "today" calendar day in business timezone.
+ * TODAY: due date calendar day = today.
  */
 export function deriveIsToday(
   dueAt: string | null,
@@ -54,6 +112,24 @@ export function deriveIsToday(
     // Fallback to UTC if timezone is invalid
     const nowStr = (nowIso ? new Date(nowIso) : new Date()).toISOString().slice(0, 10);
     return dueAt.slice(0, 10) === nowStr;
+  }
+}
+
+/**
+ * Checks if a task due date falls strictly in the future (after today's calendar day in business timezone).
+ * FUTURE: due date >= end of today's calendar day in business timezone.
+ */
+export function deriveIsFuture(
+  dueAt: string | null,
+  timezone = 'America/New_York',
+  nowIso?: string
+): boolean {
+  if (!dueAt) return false;
+  try {
+    const { endOfTodayIso } = getBusinessDateRange(timezone, nowIso ? new Date(nowIso) : new Date());
+    return new Date(dueAt).getTime() >= new Date(endOfTodayIso).getTime();
+  } catch {
+    return false;
   }
 }
 
@@ -207,24 +283,31 @@ export function sortWorkItems(items: WorkItem[]): WorkItem[] {
  * without relying on missing public.lead_scores relation.
  */
 export async function fetchDailyOperationsDashboardDirect(): Promise<DailyOperationsDashboardKpis> {
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+  const { startOfTodayIso, endOfTodayIso } = getBusinessDateRange('America/New_York');
 
   try {
     const [
       { count: dueTodayCount },
       { count: overdueCount },
+      { count: futureCount },
       { count: completedTodayCount },
       { count: paymentsCount },
       { count: coursesCount },
       { count: needsReplyCount },
     ] = await Promise.all([
-      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').gte('due_at', startOfDay).lt('due_at', endOfDay),
-      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').lt('due_at', now.toISOString()),
-      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('completed_at', startOfDay).lt('completed_at', endOfDay),
+      // Para Hoje: count ONLY today's tasks
+      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').gte('due_at', startOfTodayIso).lt('due_at', endOfTodayIso),
+      // Atrasadas: count ONLY incomplete overdue tasks
+      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').lt('due_at', startOfTodayIso),
+      // Futuras: future pending tasks
+      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').gte('due_at', endOfTodayIso),
+      // Concluídas Hoje
+      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('completed_at', startOfTodayIso).lt('completed_at', endOfTodayIso),
+      // Pagamentos
       supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('task_type', 'payment'),
+      // Operações de Curso
       supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').not('course_session_id', 'is', null),
+      // Aguardando Resposta
       supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('status', 'open').eq('last_message_direction', 'inbound'),
     ]);
 
@@ -234,6 +317,7 @@ export async function fetchDailyOperationsDashboardDirect(): Promise<DailyOperat
       stale_after_days: 7,
       due_today_count: dueTodayCount ?? 0,
       overdue_count: overdueCount ?? 0,
+      future_count: futureCount ?? 0,
       completed_today_count: completedTodayCount ?? 0,
       needs_reply_count: needsReplyCount ?? 0,
       hot_leads_count: 0,
@@ -252,6 +336,7 @@ export async function fetchDailyOperationsDashboardDirect(): Promise<DailyOperat
       stale_after_days: 7,
       due_today_count: 0,
       overdue_count: 0,
+      future_count: 0,
       completed_today_count: 0,
       needs_reply_count: 0,
       hot_leads_count: 0,
@@ -324,21 +409,36 @@ export async function fetchDailyOperationsQueueDirect(
       )
     `, { count: 'exact' });
 
-  const nowIso = new Date().toISOString();
-  const nowDate = new Date();
-  const endOfDay = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() + 1).toISOString();
+  const { startOfTodayIso, endOfTodayIso } = getBusinessDateRange('America/New_York');
 
   // Tab-specific filters
   if (tab === 'today') {
-    query = query.eq('status', 'pending').or(`due_at.lte.${endOfDay},due_at.is.null`);
+    // TODAY: strictly calendar day = today in business timezone
+    query = query.eq('status', 'pending');
+    if (typeof (query as any).gte === 'function') {
+      query = (query as any).gte('due_at', startOfTodayIso);
+    }
+    if (typeof (query as any).lt === 'function') {
+      query = (query as any).lt('due_at', endOfTodayIso);
+    }
   } else if (tab === 'overdue') {
-    query = query.eq('status', 'pending').lt('due_at', nowIso);
+    // OVERDUE: strictly due_at < startOfTodayIso and incomplete
+    query = query.eq('status', 'pending');
+    if (typeof (query as any).lt === 'function') {
+      query = (query as any).lt('due_at', startOfTodayIso);
+    }
+  } else if (tab === 'future') {
+    // FUTURE: strictly due_at >= endOfTodayIso and incomplete
+    query = query.eq('status', 'pending');
+    if (typeof (query as any).gte === 'function') {
+      query = (query as any).gte('due_at', endOfTodayIso);
+    }
   } else if (tab === 'completed') {
     query = query.eq('status', 'completed');
   } else if (tab === 'payments') {
-    query = query.eq('task_type', 'payment');
+    query = query.eq('task_type', 'payment').eq('status', 'pending');
   } else if (tab === 'courses') {
-    query = query.or('course_session_id.not.is.null,task_type.eq.course_ops');
+    query = query.or('course_session_id.not.is.null,task_type.eq.course_ops').eq('status', 'pending');
   } else if (tab === 'leads') {
     query = query.eq('status', 'pending');
   } else if (tab === 'needs_reply') {
@@ -349,11 +449,18 @@ export async function fetchDailyOperationsQueueDirect(
     query = query.eq('priority', filters.priority);
   }
 
-  // Ordering
+  // Ordering (PART 9 — TASK SORTING)
   if (tab === 'completed') {
     query = query.order('completed_at', { ascending: false, nullsFirst: false });
   } else if (tab === 'overdue') {
-    query = query.order('due_at', { ascending: true, nullsFirst: false });
+    // OVERDUE: most recently overdue first (due_at DESC: yesterday, 2 days ago, 3 days ago, older)
+    query = query.order('due_at', { ascending: false, nullsFirst: false }).order('created_at', { ascending: true });
+  } else if (tab === 'today') {
+    // TODAY: earliest due time first (due_at ASC)
+    query = query.order('due_at', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
+  } else if (tab === 'future') {
+    // FUTURE: nearest due date first (due_at ASC)
+    query = query.order('due_at', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
   } else {
     query = query.order('due_at', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
   }
@@ -378,7 +485,7 @@ export async function fetchDailyOperationsQueueDirect(
     const leadName = lead
       ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || lead.email || 'Lead'
       : null;
-    const isOverdue = t.status !== 'completed' && t.due_at ? new Date(t.due_at).getTime() < Date.now() : false;
+    const isOverdue = t.status !== 'completed' && t.due_at ? deriveIsCalendarOverdue(t.due_at, 'America/New_York') : false;
 
     let itemType: any = 'TASK';
     if (t.task_type === 'payment') itemType = 'PAYMENT_ATTENTION';

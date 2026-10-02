@@ -232,7 +232,7 @@ export const WorkDashboardPage: React.FC = () => {
     >
       <div className="space-y-6">
         {/* Top KPI Cards Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             {/* Due Today */}
             <div
               onClick={() => {
@@ -272,6 +272,27 @@ export const WorkDashboardPage: React.FC = () => {
               </div>
               <p className="text-xl font-bold text-red-600 mt-1.5">
                 {loadingKpis ? '...' : kpis?.overdue_count ?? 0}
+              </p>
+            </div>
+
+            {/* Future */}
+            <div
+              onClick={() => {
+                setActiveTab('future');
+                setPage(1);
+              }}
+              className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                activeTab === 'future'
+                  ? 'bg-sky-50/70 border-sky-400 ring-2 ring-sky-400/20 shadow-sm'
+                  : 'bg-white border-slate-200/80 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+                <span>Futuras</span>
+                <Clock className="w-3.5 h-3.5 text-sky-500" />
+              </div>
+              <p className="text-xl font-bold text-sky-700 mt-1.5">
+                {loadingKpis ? '...' : kpis?.future_count ?? 0}
               </p>
             </div>
 
@@ -413,6 +434,21 @@ export const WorkDashboardPage: React.FC = () => {
                 }`}
               >
                 Atrasadas
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('future');
+                  setSubFilter(null);
+                  setPage(1);
+                }}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'future'
+                    ? 'bg-[#08254f] text-white shadow-sm'
+                    : 'text-slate-600 hover:text-[#08254f] hover:bg-slate-100'
+                }`}
+              >
+                Futuras
               </button>
 
               <button
