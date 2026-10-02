@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   CheckSquare,
   AlertTriangle,
@@ -35,6 +35,50 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
   onSelectLead,
   isCompleting = false,
 }) => {
+  const navigate = useNavigate();
+
+  // Resolve primary lead name and secondary email with fallback
+  const cleanLeadName = (item.lead_name || '').trim();
+  const cleanEmail = (item.lead_email || '').trim();
+
+  // A name is usable if it exists, is not empty, is not identical to the email, and is not a generic placeholder
+  const isEmailAsName = Boolean(cleanLeadName && cleanEmail && cleanLeadName.toLowerCase() === cleanEmail.toLowerCase());
+  const isGenericPlaceholder = !cleanLeadName || cleanLeadName.toLowerCase() === 'lead' || /^lead\s*#?[a-f0-9-]*$/i.test(cleanLeadName);
+  const hasUsableName = Boolean(cleanLeadName && !isEmailAsName && !isGenericPlaceholder);
+
+  // Primary label: Lead Name if usable, otherwise Email, otherwise title or 'Lead'
+  const displayPrimaryLabel = hasUsableName ? cleanLeadName : (cleanEmail || item.title || 'Lead');
+
+  // Secondary label: Email shown below name only if name was used as primary label
+  const displaySecondaryEmail = hasUsableName && cleanEmail ? cleanEmail : null;
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    // If the click is on an interactive element (button, link, input), let it handle its own event
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, select, textarea, [data-prevent-card-click="true"]')) {
+      return;
+    }
+
+    if (item.lead_id) {
+      if (onSelectLead) {
+        onSelectLead(item.lead_id);
+      } else {
+        navigate(`/leads/${item.lead_id}`);
+      }
+    }
+  };
+
+  const handleLeadClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (item.lead_id) {
+      if (onSelectLead) {
+        onSelectLead(item.lead_id);
+      } else {
+        navigate(`/leads/${item.lead_id}`);
+      }
+    }
+  };
+
   const getPriorityBadge = (priority: TaskPriority) => {
     switch (priority) {
       case 'critical':
@@ -102,7 +146,11 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
 
   return (
     <div
+      onClick={handleCardClick}
+      data-testid={`work-item-card-${(item.context_id || item.id).replace(/^task:/i, '').trim()}`}
       className={`p-4 rounded-xl border transition-all ${
+        item.lead_id ? 'cursor-pointer hover:shadow-md hover:border-[#1b7dbf]/40' : ''
+      } ${
         item.priority === 'critical'
           ? 'bg-red-50/30 border-red-200/80 hover:border-red-300'
           : item.is_overdue
@@ -111,7 +159,7 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
       }`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Left Side: Type, Priority, Title, Context */}
+        {/* Left Side: Type, Priority, Lead Primary Name, Secondary Email, Title, Context */}
         <div className="space-y-1.5 flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-semibold">
@@ -137,9 +185,36 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
             )}
           </div>
 
-          <h3 className="text-sm font-semibold text-slate-900 leading-snug break-words">
-            {item.title}
-          </h3>
+          {/* Primary Identity: Lead Name (with fallback to email), and secondary email below */}
+          <div className="pt-0.5">
+            <div className="flex items-center gap-1.5">
+              <User className="w-4 h-4 text-slate-400 shrink-0" />
+              <button
+                type="button"
+                onClick={handleLeadClick}
+                data-testid="task-card-lead-name"
+                className="text-base font-bold text-slate-900 hover:text-[#1b7dbf] transition-colors leading-snug cursor-pointer text-left focus:outline-none"
+              >
+                {displayPrimaryLabel}
+              </button>
+            </div>
+            {displaySecondaryEmail && (
+              <div
+                data-testid="task-card-lead-email"
+                className="text-xs text-slate-500 pl-5.5 font-medium select-text"
+              >
+                {displaySecondaryEmail}
+              </div>
+            )}
+          </div>
+
+          {/* Task Action / Title */}
+          {item.title && (
+            <div className="text-xs font-semibold text-slate-700 pt-0.5 flex items-center gap-1.5">
+              <CheckSquare className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span data-testid="task-card-title" className="break-words">{item.title}</span>
+            </div>
+          )}
 
           {item.description && (
             <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
@@ -147,27 +222,18 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
             </p>
           )}
 
-          {/* Lead Context Bar */}
+          {/* Metadata: Due Date, Score, Contact Preference */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 pt-0.5">
-            {item.lead_id && (
-              onSelectLead ? (
-                <button
-                  type="button"
-                  onClick={() => onSelectLead(item.lead_id!)}
-                  className="font-medium text-[#08254f] hover:text-[#449bd5] flex items-center gap-1 transition-colors cursor-pointer text-left"
-                >
-                  <User className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{item.lead_name}</span>
-                </button>
-              ) : (
-                <Link
-                  to={`/leads/${item.lead_id}`}
-                  className="font-medium text-[#08254f] hover:text-[#449bd5] flex items-center gap-1 transition-colors"
-                >
-                  <User className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{item.lead_name}</span>
-                </Link>
-              )
+            {item.due_at && (
+              <span
+                data-testid="task-card-due-at"
+                className={`text-[11px] flex items-center gap-1 ${
+                  item.is_overdue ? 'text-red-600 font-semibold' : 'text-slate-500'
+                }`}
+              >
+                <Clock className="w-3 h-3" />
+                <span>Prazo: {new Date(item.due_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+              </span>
             )}
 
             {item.lead_score != null && (
@@ -184,28 +250,25 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
                 <span>{item.contact_preference}</span>
               </span>
             )}
-
-            {item.due_at && (
-              <span
-                className={`text-[11px] flex items-center gap-1 ${
-                  item.is_overdue ? 'text-red-600 font-semibold' : 'text-slate-500'
-                }`}
-              >
-                <Clock className="w-3 h-3" />
-                <span>Prazo: {new Date(item.due_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
-              </span>
-            )}
           </div>
         </div>
 
         {/* Right Side: Quick Action Buttons */}
-        <div className="flex items-center gap-2 sm:shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+        <div
+          data-prevent-card-click="true"
+          onClick={(e) => e.stopPropagation()}
+          className="flex items-center gap-2 sm:shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100"
+        >
           {item.type === 'TASK' || item.type === 'PAYMENT_ATTENTION' || item.context_type === 'task' ? (
             <>
               {item.category !== 'completed' ? (
                 <>
                   <button
-                    onClick={() => onRescheduleTask(item)}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRescheduleTask(item);
+                    }}
                     title="Reagendar Data Limite"
                     className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg border border-slate-200 text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer"
                   >
@@ -214,7 +277,8 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       const taskId = (item.context_id || item.id).replace(/^task:/i, '').trim();
                       onCompleteTask(taskId);
                     }}
@@ -237,7 +301,11 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
             <>
               {item.primary_action.type === 'create_task' ? (
                 <button
-                  onClick={() => onCreateTaskForLead(item)}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCreateTaskForLead(item);
+                  }}
                   className="btn-crimson text-xs px-3.5 py-2 flex items-center gap-1.5"
                 >
                   <span>{item.primary_action.label}</span>
@@ -246,6 +314,7 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
               ) : item.primary_action.href ? (
                 <Link
                   to={item.primary_action.href}
+                  onClick={(e) => e.stopPropagation()}
                   className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-[#08254f] text-white hover:bg-[#0c3875] transition-colors flex items-center gap-1.5 shadow-sm"
                 >
                   <span>{item.primary_action.label}</span>

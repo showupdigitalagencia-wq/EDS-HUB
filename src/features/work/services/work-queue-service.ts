@@ -482,9 +482,15 @@ export async function fetchDailyOperationsQueueDirect(
   const rawTasks = data || [];
   let items: WorkItem[] = rawTasks.map((t: any) => {
     const lead = t.lead;
-    const leadName = lead
-      ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || lead.email || 'Lead'
-      : null;
+    const first = (lead?.first_name || '').trim();
+    const last = (lead?.last_name || '').trim();
+    let leadName = '';
+    if (first && last) {
+      leadName = first.toLowerCase().includes(last.toLowerCase()) ? first : `${first} ${last}`;
+    } else {
+      leadName = first || last || '';
+    }
+    const resolvedLeadName = leadName || lead?.email || 'Lead';
     const isOverdue = t.status !== 'completed' && t.due_at ? deriveIsCalendarOverdue(t.due_at, 'America/New_York') : false;
 
     let itemType: any = 'TASK';
@@ -502,7 +508,7 @@ export async function fetchDailyOperationsQueueDirect(
       is_overdue: isOverdue,
       detected_at: t.created_at,
       lead_id: t.lead_id,
-      lead_name: leadName,
+      lead_name: resolvedLeadName,
       lead_email: lead?.email || null,
       lead_phone: lead?.phone_e164 || lead?.phone_raw || null,
       contact_preference: lead?.contact_preference || null,
