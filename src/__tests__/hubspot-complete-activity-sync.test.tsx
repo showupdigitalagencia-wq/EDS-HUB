@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { LeadTimeline, getActivityLabel, getActivitySource, countContactAttempts } from '../features/leads/components/LeadTimeline';
+import { LeadTimeline, countContactAttempts } from '../features/leads/components/LeadTimeline';
 import type { LeadActivity } from '../types';
 
 describe('HubSpot Complete Activity & History Synchronization (Scenarios M-V)', () => {
