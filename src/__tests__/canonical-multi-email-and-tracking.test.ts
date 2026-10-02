@@ -171,12 +171,12 @@ describe('CRITICAL STRUCTURAL ENHANCEMENT — Canonical Multi-Email Resolution &
       expect(intakeCode).toContain('AUTHORITATIVE SOURCE TIMESTAMP FRESHNESS GUARD');
       expect(intakeCode).toContain('sourceLeadAgeHours <= 4.0');
       expect(intakeCode).toContain('!isSourceLeadFresh');
-      expect(intakeCode).toContain('Intake event received for existing lead. First-contact automatic outreach is suppressed');
+      expect(intakeCode).toContain('Automated first-contact outreach is suppressed: source lead age is');
     });
 
     // CENÁRIO H: Webhook retry => ZERO duplicate sends
-    it('CENÁRIO H: Webhook retry enforces recipient-level idempotency key (lead_id + template_key + recipient)', () => {
-      expect(intakeCode).toContain('const msgIdempotencyKey = `${leadId}:${templateKey}:${recipient}`');
+    it('CENÁRIO H: Webhook retry enforces recipient-level idempotency key (lead_id + acquisitionId + template_key + recipient)', () => {
+      expect(intakeCode).toContain('const msgIdempotencyKey = `${leadId}:${acquisitionId}:${templateKey}:${recipient}`');
       expect(intakeCode).toContain("in('status', ['sent', 'delivered', 'opened', 'clicked', 'pending', 'queued'])");
       expect(intakeCode).toContain('Reenvio duplicado ignorado');
     });

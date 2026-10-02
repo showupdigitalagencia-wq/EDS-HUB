@@ -168,8 +168,9 @@ export function PipelineKanbanPage() {
               q = q.is('deleted_at', null);
             }
             if (typeof q?.order === 'function') {
-              const o0 = q.order('created_at', { ascending: false });
-              q = (o0 && typeof o0.order === 'function') ? o0.order('id', { ascending: false }) : o0;
+              const o0 = q.order('last_acquisition_at', { ascending: false, nullsFirst: false });
+              const o1 = (o0 && typeof o0.order === 'function') ? o0.order('created_at', { ascending: false }) : o0;
+              q = (o1 && typeof o1.order === 'function') ? o1.order('id', { ascending: false }) : o1;
             }
             if (q && typeof q?.range === 'function') {
               q = q.range(0, STAGE_PAGE_SIZE - 1);

@@ -18,6 +18,7 @@
 
 export interface HasCreationTimestamps {
   id?: string;
+  last_acquisition_at?: string | null;
   last_inbound_activity_at?: string | null;
   source_created_at?: string | null;
   created_at?: string | null;
@@ -42,13 +43,29 @@ export function getLeadCanonicalTimestamp(lead: HasCreationTimestamps): number {
 }
 
 /**
+ * Resolves the effective acquisition recency timestamp in milliseconds.
+ * Prioritizes latest genuine acquisition (last_acquisition_at) so returning leads
+ * rise to the top of their current pipeline stage without altering their immutable
+ * original created_at timestamp.
+ */
+export function getLeadEffectiveRecencyTimestamp(lead: HasCreationTimestamps): number {
+  if (lead.last_acquisition_at) {
+    const acqTime = new Date(lead.last_acquisition_at).getTime();
+    if (!isNaN(acqTime) && acqTime > 0) {
+      return acqTime;
+    }
+  }
+  return getLeadCanonicalTimestamp(lead);
+}
+
+/**
  * Comparator for sorting leads chronologically newest-first.
- * Guaranteed descending order: newest lead first.
+ * Guaranteed descending order: highest effective acquisition recency first.
  * Deterministic fallback on lead id.
  */
 export function compareLeadsNewestFirst<T extends HasCreationTimestamps>(a: T, b: T): number {
-  const timeB = getLeadCanonicalTimestamp(b);
-  const timeA = getLeadCanonicalTimestamp(a);
+  const timeB = getLeadEffectiveRecencyTimestamp(b);
+  const timeA = getLeadEffectiveRecencyTimestamp(a);
   if (timeB !== timeA) {
     return timeB - timeA;
   }

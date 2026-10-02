@@ -205,8 +205,19 @@ export function getActivityLabel(activityType: string, act?: LeadActivity): stri
       return 'Atividade HubSpot';
     case 'email_dispatched':
       return 'Envio de email iniciado';
-    case 'email_sent':
+    case 'email_sent': {
+      const templateKey = typeof meta?.template_key === 'string' ? meta.template_key : '';
+      const summaryStr = typeof act?.summary === 'string' ? act.summary.toLowerCase() : '';
+      if (
+        templateKey.includes('course_details') ||
+        templateKey === 'lead_intake_email' ||
+        summaryStr.includes('primeiro contato') ||
+        summaryStr.includes('email sent to')
+      ) {
+        return 'E-mail enviado — Automação / Primeiro Contato';
+      }
       return 'E-mail enviado';
+    }
     case 'email_delivered':
       return 'E-mail entregue';
     case 'email_opened':
@@ -549,6 +560,20 @@ export function LeadTimeline({ activities, onOpenRegisterActivity }: LeadTimelin
                       {meta?.due_at && (
                         <span>
                           Vencimento: <strong>{new Date(meta.due_at).toLocaleDateString('pt-BR')}</strong>
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Email Automation & Recipient Context */}
+                  {(act.activity_type.startsWith('email_') || meta?.recipient) && meta?.recipient && !cleanNote.includes(meta.recipient) && (
+                    <div className="text-[11px] text-slate-600 flex items-center gap-2 flex-wrap">
+                      <span>
+                        Destinatário: <strong className="font-mono text-slate-700">{meta.recipient}</strong>
+                      </span>
+                      {meta?.provider_message_id && (
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          ID: {String(meta.provider_message_id).slice(0, 16)}...
                         </span>
                       )}
                     </div>

@@ -217,6 +217,7 @@ export interface Lead {
   source_created_at: string | null;
   last_response_at?: string | null;
   last_inbound_activity_at?: string | null;
+  last_acquisition_at?: string | null;
   has_new_submission?: boolean;
   new_submission_at?: string | null;
   lead_score?: number;
