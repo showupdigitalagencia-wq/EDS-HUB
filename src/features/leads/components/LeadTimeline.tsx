@@ -15,6 +15,7 @@ import {
   FileText,
   User,
   PlusCircle,
+  Calendar,
 } from 'lucide-react';
 import type { LeadActivity } from '../../../types';
 import { WhatsAppIcon } from '../../../components/icons/WhatsAppIcon';
@@ -36,12 +37,13 @@ interface LeadTimelineProps {
  * - manual_call_logged
  * - manual_whatsapp_sent
  * - manual_contact_made
+ * - call_logged (outbound)
  *
  * Excludes email_manual_attempt and sms_manual_attempt because mailto: / sms:
  * deep-links only confirm that the operator opened the client, not whether
  * the message was actually sent.
  *
- * Deduplicates outbound provider dispatches using outbound_message_id or message_id.
+ * Deduplicates outbound provider dispatches using outbound_message_id, message_id, or external_activity_id.
  */
 export function countContactAttempts(activities: LeadActivity[]): number {
   const COUNTABLE_TYPES = new Set([
@@ -54,6 +56,7 @@ export function countContactAttempts(activities: LeadActivity[]): number {
     'manual_call_logged',
     'manual_whatsapp_sent',
     'manual_contact_made',
+    'call_logged',
   ]);
 
   const seenKeys = new Set<string>();
@@ -66,6 +69,8 @@ export function countContactAttempts(activities: LeadActivity[]): number {
     const dedupeKey =
       meta?.outbound_message_id ||
       meta?.message_id ||
+      meta?.external_activity_id ||
+      act.external_activity_id ||
       `act-${act.id}`;
 
     if (!seenKeys.has(dedupeKey)) {
@@ -78,11 +83,108 @@ export function countContactAttempts(activities: LeadActivity[]): number {
 }
 
 /**
- * Translates activity_type into honest, client-facing Portuguese labels.
- * Avoids claiming delivery/opened/read when provider data only proves dispatch.
+ * Identifies the factual source of the activity for clear timeline provenance.
+ * Examples:
+ * - Source: HubSpot
+ * - Source: EDS / Resend
+ * - Source: EDS / Titan
+ * - Source: EDS HUB
  */
-export function getActivityLabel(activityType: string): string {
+export function getActivitySource(act: LeadActivity): { label: string; badgeClass: string; isHubSpot: boolean } {
+  const meta = act.metadata as Record<string, any> | undefined;
+  const isHubSpot =
+    meta?.source === 'hubspot' ||
+    meta?.provider === 'hubspot' ||
+    act.activity_type.startsWith('hubspot_') ||
+    meta?.external_activity_id?.startsWith('hs_') ||
+    (typeof act.external_activity_id === 'string' && act.external_activity_id.startsWith('hs_'));
+
+  if (isHubSpot) {
+    return {
+      label: 'Source: HubSpot',
+      badgeClass: 'bg-orange-50 text-orange-800 border-orange-200/80',
+      isHubSpot: true,
+    };
+  }
+
+  const isResend =
+    meta?.provider === 'resend' ||
+    meta?.service === 'resend' ||
+    (act.activity_type.startsWith('email_') && !meta?.manual) ||
+    meta?.outbound_channel === 'email';
+
+  if (isResend) {
+    return {
+      label: 'Source: EDS / Resend',
+      badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200/70',
+      isHubSpot: false,
+    };
+  }
+
+  const isTitan = meta?.provider === 'titan';
+  if (isTitan) {
+    return {
+      label: 'Source: EDS / Titan',
+      badgeClass: 'bg-blue-50 text-blue-700 border-blue-200/70',
+      isHubSpot: false,
+    };
+  }
+
+  return {
+    label: 'Source: EDS HUB',
+    badgeClass: 'bg-slate-100 text-slate-700 border-slate-200/80',
+    isHubSpot: false,
+  };
+}
+
+/**
+ * Translates activity_type into honest, client-facing Portuguese labels.
+ * If the activity is sourced from HubSpot, returns specific contextual labels:
+ * - Ligação registrada
+ * - Nota registrada
+ * - Formulário enviado
+ * - Task concluída
+ * - Tarefa
+ */
+export function getActivityLabel(activityType: string, act?: LeadActivity): string {
+  const meta = act?.metadata as Record<string, any> | undefined;
+  const isHubSpot =
+    meta?.source === 'hubspot' ||
+    meta?.provider === 'hubspot' ||
+    meta?.external_activity_id?.startsWith('hs_') ||
+    (typeof act?.external_activity_id === 'string' && act.external_activity_id.startsWith('hs_'));
+
+  if (isHubSpot) {
+    switch (activityType) {
+      case 'call_logged':
+      case 'manual_call_logged':
+        return 'Ligação registrada';
+      case 'note_created':
+        return 'Nota registrada';
+      case 'task_completed':
+        return 'Task concluída';
+      case 'task_created':
+        return 'Tarefa';
+      case 'meeting_logged':
+        return 'Reunião';
+      case 'sms_logged':
+      case 'sms_dispatched':
+        return 'SMS registrado';
+      case 'whatsapp_contact_attempt':
+        return 'WhatsApp registrado';
+      case 'form_submitted':
+        return 'Formulário enviado';
+      case 'email_sent':
+      case 'email_dispatched':
+        return 'Email enviado';
+      default:
+        break;
+    }
+  }
+
   switch (activityType) {
+    case 'manual_activity_logged':
+      return 'Atividade manual';
     case 'manual_email_sent':
       return 'E-mail enviado';
     case 'manual_sms_sent':
@@ -93,8 +195,14 @@ export function getActivityLabel(activityType: string): string {
       return 'WhatsApp enviado';
     case 'manual_contact_made':
       return 'Contato realizado';
-    case 'manual_activity_logged':
-      return 'Observação / Outro';
+    case 'call_logged':
+      return 'Ligação registrada';
+    case 'meeting_logged':
+      return 'Reunião';
+    case 'sms_logged':
+      return 'SMS registrado';
+    case 'hubspot_activity_synced':
+      return 'Atividade HubSpot';
     case 'email_dispatched':
       return 'Envio de email iniciado';
     case 'email_sent':
@@ -186,13 +294,37 @@ export function getActivityLabel(activityType: string): string {
   }
 }
 
-function getActivityIcon(type: string) {
+function getActivityIcon(type: string, isHubSpot: boolean = false) {
+  if (isHubSpot) {
+    switch (type) {
+      case 'call_logged':
+      case 'manual_call_logged':
+        return <Phone className="h-3 w-3 text-orange-600" />;
+      case 'note_created':
+        return <FileText className="h-3 w-3 text-orange-600" />;
+      case 'meeting_logged':
+        return <Calendar className="h-3 w-3 text-orange-600" />;
+      case 'task_completed':
+        return <CheckCircle2 className="h-3 w-3 text-emerald-600" />;
+      case 'task_created':
+        return <CalendarCheck className="h-3 w-3 text-orange-600" />;
+      case 'sms_logged':
+      case 'sms_dispatched':
+        return <MessageSquare className="h-3 w-3 text-orange-600" />;
+      case 'whatsapp_contact_attempt':
+        return <WhatsAppIcon className="h-3 w-3 text-emerald-600" />;
+      default:
+        return <RefreshCw className="h-3 w-3 text-orange-500" />;
+    }
+  }
+
   switch (type) {
     case 'manual_email_sent':
       return <Mail className="h-3 w-3 text-indigo-500" />;
     case 'manual_sms_sent':
       return <MessageSquare className="h-3 w-3 text-sky-500" />;
     case 'manual_call_logged':
+    case 'call_logged':
       return <Phone className="h-3 w-3 text-[#449bd5]" />;
     case 'manual_whatsapp_sent':
       return <WhatsAppIcon className="h-3 w-3 text-emerald-600" />;
@@ -200,6 +332,8 @@ function getActivityIcon(type: string) {
       return <CheckCheck className="h-3 w-3 text-teal-600" />;
     case 'manual_activity_logged':
       return <FileText className="h-3 w-3 text-[#08254f]" />;
+    case 'meeting_logged':
+      return <Calendar className="h-3 w-3 text-purple-600" />;
     case 'incomplete_enrollment_captured':
       return <AlertCircle className="h-3 w-3 text-amber-500" />;
     case 'incomplete_enrollment_recovered':
@@ -232,6 +366,7 @@ function getActivityIcon(type: string) {
     case 'sms_dispatched':
     case 'sms_manual_attempt':
     case 'sms_reply_received':
+    case 'sms_logged':
       return <MessageSquare className="h-3 w-3 text-sky-500" />;
     case 'task_completed':
       return <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
@@ -305,7 +440,8 @@ export function LeadTimeline({ activities, onOpenRegisterActivity }: LeadTimelin
       ) : (
         <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
           {sortedActivities.map((act) => {
-            const label = getActivityLabel(act.activity_type);
+            const label = getActivityLabel(act.activity_type, act);
+            const sourceInfo = getActivitySource(act);
             const date = new Date(act.created_at);
             const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const dateStr = date.toLocaleDateString('pt-BR');
@@ -317,23 +453,36 @@ export function LeadTimeline({ activities, onOpenRegisterActivity }: LeadTimelin
               meta?.activity_source === 'manual' ||
               act.activity_type.startsWith('manual_');
 
+            const isHubSpot = sourceInfo.isHubSpot;
             const createdByName = meta?.created_by_name || meta?.registered_by || null;
-            const noteContent = meta?.activity_note || meta?.note || act.summary;
+            const noteContent = meta?.activity_note || meta?.note || meta?.body || act.summary;
+            const cleanNote = typeof noteContent === 'string' ? noteContent.replace(/<[^>]*>/g, '').trim() : '';
 
             return (
               <div key={act.id} className="relative text-xs">
                 {/* Timeline Node Dot */}
-                <div className="absolute -left-6 top-0.5 w-5 h-5 rounded-full bg-white border border-slate-200 shadow-xs flex items-center justify-center">
-                  {getActivityIcon(act.activity_type)}
+                <div
+                  className={`absolute -left-6 top-0.5 w-5 h-5 rounded-full bg-white border shadow-xs flex items-center justify-center ${
+                    isHubSpot ? 'border-orange-300' : 'border-slate-200'
+                  }`}
+                >
+                  {getActivityIcon(act.activity_type, isHubSpot)}
                 </div>
 
                 <div className="space-y-1">
-                  {/* Top row: Label & Time */}
-                  <div className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[#08254f]">
-                        {label}
+                  {/* Top row: Label, Source Badge & Time */}
+                  <div className="flex items-center justify-between text-[11px] gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-[#08254f]">{label}</span>
+
+                      {/* Source Provenance Badge */}
+                      <span
+                        data-testid="activity-source-badge"
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sourceInfo.badgeClass}`}
+                      >
+                        {sourceInfo.label}
                       </span>
+
                       {isManual && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-[#08254f] border border-blue-200/60">
                           Manual
@@ -358,16 +507,65 @@ export function LeadTimeline({ activities, onOpenRegisterActivity }: LeadTimelin
                     </div>
                   )}
 
-                  {/* Content / Note */}
+                  {/* HubSpot Call Context */}
+                  {isHubSpot && (act.activity_type === 'call_logged' || act.activity_type === 'manual_call_logged') && (
+                    <div className="text-[11px] text-slate-600 flex items-center gap-2 flex-wrap">
+                      {meta?.direction && (
+                        <span className="capitalize text-slate-500">
+                          Direção: <strong>{meta.direction === 'inbound' ? 'Entrada' : 'Saída'}</strong>
+                        </span>
+                      )}
+                      {(meta?.activity_subtype || meta?.status) && (
+                        <span className="text-slate-500">
+                          Resultado: <strong>{meta.activity_subtype || meta.status}</strong>
+                        </span>
+                      )}
+                      {meta?.duration ? (
+                        <span className="text-slate-400 font-mono">
+                          Duração: {Math.round(Number(meta.duration) / 1000) > 0 ? `${Math.round(Number(meta.duration) / 1000)}s` : `${meta.duration}s`}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* HubSpot Meeting Context */}
+                  {isHubSpot && act.activity_type === 'meeting_logged' && meta?.activity_subtype && (
+                    <div className="text-[11px] text-slate-500">
+                      Status da reunião: <strong>{meta.activity_subtype}</strong>
+                    </div>
+                  )}
+
+                  {/* HubSpot Task Context */}
+                  {isHubSpot && (act.activity_type === 'task_created' || act.activity_type === 'task_completed') && (
+                    <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
+                      <span>
+                        Status: <strong>{meta?.status === 'completed' ? 'Concluída' : 'Pendente'}</strong>
+                      </span>
+                      {meta?.priority && (
+                        <span>
+                          Prioridade: <strong>{meta.priority}</strong>
+                        </span>
+                      )}
+                      {meta?.due_at && (
+                        <span>
+                          Vencimento: <strong>{new Date(meta.due_at).toLocaleDateString('pt-BR')}</strong>
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Note / Content Body */}
                   {isManual ? (
                     <div className="mt-1 p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80 text-slate-700 text-xs leading-relaxed">
                       <p className="whitespace-pre-wrap">{noteContent}</p>
                     </div>
+                  ) : isHubSpot && act.activity_type === 'note_created' && cleanNote ? (
+                    <div className="mt-1 p-2.5 rounded-xl bg-orange-50/40 border border-orange-200/60 text-slate-700 text-xs leading-relaxed">
+                      <p className="whitespace-pre-wrap">{cleanNote}</p>
+                    </div>
                   ) : (
                     act.summary && (
-                      <p className="text-slate-600 text-xs leading-relaxed">
-                        {act.summary}
-                      </p>
+                      <p className="text-slate-600 text-xs leading-relaxed">{act.summary}</p>
                     )
                   )}
                 </div>

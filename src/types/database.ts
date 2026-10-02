@@ -10,7 +10,7 @@ export type MessageStatus = 'queued' | 'pending' | 'sent' | 'delivered' | 'faile
 export type IntakeStatus = 'received' | 'processing' | 'processed' | 'failed' | 'duplicate';
 export type TaskType = 'call' | 'data_review' | 'general' | 'follow_up' | 'payment';
 export type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
-export type TaskSource = 'manual' | 'automation' | 'system' | 'course_operations' | 'post_course' | 'campaign';
+export type TaskSource = 'manual' | 'automation' | 'system' | 'course_operations' | 'post_course' | 'campaign' | 'incomplete_enrollment' | 'hubspot';
 export type TaskStatus = 'pending' | 'completed' | 'cancelled';
 export type TaskCreatedBy = 'system' | 'user';
 export type ActivityType =
@@ -89,7 +89,11 @@ export type ActivityType =
   | 'manual_sms_sent'
   | 'manual_call_logged'
   | 'manual_whatsapp_sent'
-  | 'manual_contact_made';
+  | 'manual_contact_made'
+  | 'call_logged'
+  | 'meeting_logged'
+  | 'sms_logged'
+  | 'hubspot_activity_synced';
 
 export type IncompleteEnrollmentProcessingStatus = 'processed' | 'conflict';
 export type IncompleteEnrollmentStatus = 'needs_followup' | 'form_completed' | 'recovered' | 'dismissed';
@@ -309,6 +313,7 @@ export interface Task {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  external_task_id?: string | null;
 }
 
 export interface LeadActivity {
@@ -321,6 +326,7 @@ export interface LeadActivity {
   summary: string;
   metadata: Record<string, unknown>;
   created_at: string;
+  external_activity_id?: string | null;
 }
 
 export interface LeadStageHistory {
