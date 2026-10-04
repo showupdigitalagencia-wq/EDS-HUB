@@ -58,6 +58,7 @@ import { ReportsPage } from './features/reports/ReportsPage';
 
 import { TermsOfServicePage } from './features/public/TermsOfServicePage';
 import { DataDeletionPage } from './features/public/DataDeletionPage';
+import { PrivacyPolicyPage } from './features/public/PrivacyPolicyPage';
 
 export default function App() {
   useEffect(() => {
@@ -79,6 +80,7 @@ export default function App() {
               <Route path="/f/:slug" element={<PublicFormPage />} />
               <Route path="/terms-of-service" element={<TermsOfServicePage />} />
               <Route path="/data-deletion" element={<DataDeletionPage />} />
+              <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
 
               {/* Protected routes */}
               <Route

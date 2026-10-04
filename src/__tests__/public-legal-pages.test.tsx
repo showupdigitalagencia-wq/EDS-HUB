@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { TermsOfServicePage } from '../features/public/TermsOfServicePage';
 import { DataDeletionPage } from '../features/public/DataDeletionPage';
+import { PrivacyPolicyPage } from '../features/public/PrivacyPolicyPage';
 
 describe('Public Legal Pages for Meta Compliance', () => {
   it('renders Terms of Service page without authentication and includes required content', () => {
@@ -32,4 +33,23 @@ describe('Public Legal Pages for Meta Compliance', () => {
     expect(screen.getByText(/phone number used when submitting the form\./i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /https:\/\/expdentalsolutions\.com/i })).toBeInTheDocument();
   });
+
+  it('renders Privacy Policy page without authentication and includes required Meta compliance sections', () => {
+    render(
+      <MemoryRouter>
+        <PrivacyPolicyPage />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('heading', { level: 1, name: /privacy policy/i })).toBeInTheDocument();
+    expect(screen.getByText(/EXPERT DENTAL SOLUTIONS LLC/i)).toBeInTheDocument();
+    expect(screen.getByText(/Meta Lead Ads/i)).toBeInTheDocument();
+    expect(screen.getByText(/We do not sell personal data to advertisers/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /https:\/\/expdentalsolutions\.com/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /data deletion instructions \(\/data-deletion\)/i })).toHaveAttribute('href', '/data-deletion');
+    const termsLinks = screen.getAllByRole('link', { name: /terms of service/i });
+    expect(termsLinks.length).toBeGreaterThanOrEqual(1);
+    expect(termsLinks[0]).toHaveAttribute('href', '/terms-of-service');
+  });
 });
+
