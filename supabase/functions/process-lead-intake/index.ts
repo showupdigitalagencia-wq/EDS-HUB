@@ -12,10 +12,13 @@ import { createAdminClient } from '../_shared/supabase-client.ts';
 import {
   resolveSalutation,
   resolveSafeFirstName,
+  resolveDoctorSalutation,
+  resolveDoctorGreeting,
   resolveZygomaticSalutation,
   getApprovedZygomaticText,
   getApprovedZygomaticHtml,
   APPROVED_COURSE_TEMPLATES,
+  resolveApprovedCourseTemplateKey,
 } from '../_shared/salutation.ts';
 import {
   resolveCanonicalEmails,
@@ -380,6 +383,43 @@ Deno.serve(async (req) => {
       } else {
         // GENUINELY FRESH AD SUBMISSION (New lead OR genuine new submission from existing lead)
         if (!isNewLead) {
+          // HUBSPOT LATE COURSE AUTO-SEND GUARD:
+          // If HubSpot or a sync/enrichment supplies the course later to an existing lead that was already processed,
+          // strictly suppress retroactive automated email.
+          const isLateEnrichment = !payload.is_new_submission || payload.source === 'hubspot' || Boolean((payload as any).is_course_update);
+          if (isLateEnrichment) {
+            await db.from('lead_activities').insert({
+              lead_id: leadId,
+              intake_event_id: intakeEventId,
+              activity_type: 'outreach_suppressed',
+              actor_type: 'system',
+              summary: `Atualização de lead existente (${payload.source || 'hubspot'}). Envio retroativo de primeiro e-mail automático estritamente desabilitado.`,
+              metadata: {
+                source: payload.source,
+                source_detail: payload.source_detail,
+                course_interest: payload.course_interest,
+                late_course_enrichment: true,
+              },
+            });
+            actionSucceeded = true;
+            return new Response(
+              JSON.stringify({
+                status: 'success',
+                message: 'Lead updated; retroactive automated outreach suppressed per safety rule.',
+                lead_id: leadId,
+                intake_event_id: intakeEventId,
+                action_taken: 'lead_updated_outreach_suppressed',
+                messages_sent: 0,
+                messages_failed: 0,
+                tasks_created: 0,
+              }),
+              {
+                status: 200,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              }
+            );
+          }
+
           await db.from('lead_activities').insert({
             lead_id: leadId,
             intake_event_id: intakeEventId,
@@ -431,7 +471,49 @@ Deno.serve(async (req) => {
         const canonicalEmailRes = resolveCanonicalEmails(sourceDataForResolution, payload.source || 'intake');
         const resolvedIdentities = canonicalEmailRes.emails;
 
-        if (resolvedIdentities.length > 0) {
+        // STRICT COURSE IDENTIFICATION GUARD:
+        // Automatic first email may be sent ONLY when EDS can FACTUALLY identify the lead's course of interest with high confidence.
+        // IF course is identified: send the approved template specifically mapped to that course.
+        // IF course is NOT identified:
+        // DO NOT SEND ANY AUTOMATIC EMAIL. Send to ZERO recipients.
+        // Leave lead in system (pipeline stage remains 'Novo Lead' / capture).
+        // Preserve all data.
+        // Allow manual follow-up.
+        // Flag internally that course identification is pending via data_review task.
+        // NEVER fall back to a generic "we received your information" email.
+        const approvedTemplateKey = resolveApprovedCourseTemplateKey(payload.course_interest || payload.course_title);
+
+        if (!approvedTemplateKey) {
+          await db.from('tasks').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            task_type: 'data_review',
+            title: 'Triagem de Curso Não Identificado — Meta Lead',
+            description: `Interesse de curso não identificado com alta confiança (valor informado: "${payload.course_interest || payload.course_title || 'nenhum'}"). Envio de e-mail automático suprimido (0 envios). Realizar triagem manual para definir a turma apropriada.`,
+            status: 'pending',
+            created_by: 'system',
+          });
+          tasksCreated += 1;
+
+          await db.from('lead_activities').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'outreach_suppressed',
+            actor_type: 'system',
+            summary: 'Envio automático de primeiro e-mail suspenso: curso de interesse não identificado com alta confiança. Lead mantido em Novo Lead para acompanhamento manual.',
+            metadata: {
+              source: payload.source,
+              source_detail: payload.source_detail,
+              course_interest: payload.course_interest || null,
+              course_title: payload.course_title || null,
+              reason: 'unidentified_course',
+              recipients_eligible: resolvedIdentities.length,
+              recipients_sent: 0,
+            },
+          });
+
+          actionSucceeded = true;
+        } else if (resolvedIdentities.length > 0) {
           const emailRes = await handleEmailPreference(
             db, payload, leadId, intakeEventId, salutation, idempotencyKey, resolvedIdentities,
           );
@@ -1190,50 +1272,32 @@ async function handleEmailPreference(
     return { sent: 0, failed: 0, tasksCreated: 1, allSucceeded: false, errors: ['No valid email address'] };
   }
 
-  // Resolve course template key if specified
-  let templateKey = 'lead_intake_email';
-  let isCourseUnidentified = false;
-  if (payload.course_interest) {
-    const normalizedCourse = payload.course_interest.trim().toLowerCase();
-    if (normalizedCourse === 'zygomatic' || normalizedCourse === 'zit-01' || normalizedCourse.includes('zygomatic')) {
-      templateKey = 'zygomatic_course_details';
-    } else if (normalizedCourse === 'periodontal' || normalizedCourse === 'periodontal plastic' || normalizedCourse.includes('perio')) {
-      templateKey = 'periodontal_course_details';
-    } else if (normalizedCourse === 'endodontic' || normalizedCourse === 'endodontics' || normalizedCourse === 'et-01' || normalizedCourse.includes('endo')) {
-      templateKey = 'endodontic_course_details';
-    } else if (normalizedCourse === 'intensive' || normalizedCourse === 'advanced' || normalizedCourse === 'idit-01' || normalizedCourse.includes('intensive') || normalizedCourse.includes('implant')) {
-      templateKey = 'implant_course_details';
-    } else if (normalizedCourse === 'wisdom' || normalizedCourse === 'wtt-01' || normalizedCourse.includes('wisdom') || normalizedCourse.includes('molar')) {
-      templateKey = 'wisdom_course_details';
-    } else if (normalizedCourse === 'rehabilitation' || normalizedCourse.includes('rehab')) {
-      templateKey = 'rehabilitation_course_details';
-    } else {
-      isCourseUnidentified = true;
-    }
+  // STRICT COURSE-SPECIFIC TEMPLATE RESOLUTION:
+  // Automatic first email may be sent ONLY when EDS can FACTUALLY identify the lead's course of interest.
+  // Canonical mapping rule:
+  // normalizedCourse.includes('intensive') || normalizedCourse.includes('implant') -> implant_course_details
+  // NEVER fall back to a generic email template under any circumstances.
+  const templateKey = resolveApprovedCourseTemplateKey(payload.course_interest || payload.course_title);
+
+  if (!templateKey) {
+    return {
+      sent: 0,
+      failed: 0,
+      tasksCreated: 0,
+      allSucceeded: false,
+      errors: ['No approved course template mapped — automated email suppressed.'],
+    };
   }
 
-  if (isCourseUnidentified) {
-    await db.from('tasks').insert({
-      lead_id: leadId,
-      intake_event_id: intakeEventId,
-      task_type: 'data_review',
-      title: 'Triagem de Curso Não Identificado — Meta Lead',
-      description: `Interesse de curso não identificado: "${payload.course_interest}". Realizar triagem manual para definir a turma apropriada.`,
-      status: 'pending',
-      created_by: 'system',
-    });
-  }
-
-  // Get email template
-  const { data: template } = await db
-    .from('transactional_templates')
-    .select('subject_template, body_template')
-    .eq('key', templateKey)
-    .eq('is_active', true)
-    .maybeSingle();
-
-  if (!template) {
-    return { sent: 0, failed: 0, tasksCreated: 0, allSucceeded: false, errors: [`Email template not found: ${templateKey}`] };
+  const approvedTpl = APPROVED_COURSE_TEMPLATES[templateKey];
+  if (!approvedTpl) {
+    return {
+      sent: 0,
+      failed: 0,
+      tasksCreated: 0,
+      allSucceeded: false,
+      errors: [`Approved template package not found for key: ${templateKey}`],
+    };
   }
 
   // Get settings for from email
@@ -1242,40 +1306,9 @@ async function handleEmailPreference(
   const replyTo = 'info@expdentalsolutions.com';
 
   const isZygomatic = templateKey === 'zygomatic_course_details';
-  const approvedTpl = APPROVED_COURSE_TEMPLATES[templateKey];
-  const zygomaticSalutation = resolveZygomaticSalutation(payload);
-
-  const templateVars = {
-    salutation,
-    salutation_line: zygomaticSalutation,
-    first_name: resolveSafeFirstName(payload.first_name),
-    last_name: payload.last_name || '',
-    course_name: payload.course_interest || (isZygomatic ? 'Zygomatic Implant Training' : 'Intensive Dental Implant Training'),
-    course_date_range: 'November 7–10, 2026',
-    course_tuition: '$17,500',
-  };
-
-  let subject: string;
-  let body: string;
-  let escapedHtmlBody: string;
-
-  if (approvedTpl) {
-    subject = approvedTpl.subject;
-    body = approvedTpl.getText(payload);
-    escapedHtmlBody = approvedTpl.getHtml(payload);
-  } else if (isZygomatic) {
-    subject = template.subject_template || 'Zygomatic Course Details – Hands-On Training in Rio';
-    body = getApprovedZygomaticText(payload);
-    escapedHtmlBody = getApprovedZygomaticHtml(payload);
-  } else {
-    subject = renderTemplate(template.subject_template || '', templateVars);
-    body = renderTemplate(template.body_template, templateVars);
-    escapedHtmlBody = renderTemplate(template.body_template, {
-      ...templateVars,
-      salutation: escapeHtml(templateVars.salutation),
-      first_name: escapeHtml(templateVars.first_name),
-    }).replace(/\n/g, '<br>');
-  }
+  const subject = approvedTpl.subject;
+  const body = approvedTpl.getText(payload);
+  const escapedHtmlBody = approvedTpl.getHtml(payload);
 
   // Attachment handling: Query template_attachments for this template
   const attachmentsToSend: Array<{ filename: string; content: string; contentType?: string }> = [];
@@ -1290,7 +1323,24 @@ async function handleEmailPreference(
     .select('is_required, display_name, material_id')
     .eq('template_key', templateKey);
 
-  // Fallback for zygomatic_course_details if material_id was not linked in template_attachments
+  // Fallback if material_id was not linked in template_attachments
+  if ((!tmplAtts || tmplAtts.length === 0) && approvedTpl.attachmentNames?.length) {
+    const { data: materials } = await db
+      .from('course_materials')
+      .select('id, title, file_name, storage_bucket, storage_path, content_type, is_active')
+      .in('file_name', approvedTpl.attachmentNames)
+      .eq('is_active', true);
+
+    if (materials && materials.length > 0) {
+      tmplAtts = materials.map((m: any) => ({
+        is_required: true,
+        display_name: m.file_name,
+        material_id: m.id,
+      }));
+    }
+  }
+
+  // Secondary fallback for zygomatic_course_details if material_id was not linked
   if ((!tmplAtts || tmplAtts.length === 0) && isZygomatic) {
     const { data: zygMat } = await db
       .from('course_materials')

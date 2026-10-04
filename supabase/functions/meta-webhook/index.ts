@@ -815,7 +815,7 @@ Deno.serve(async (req) => {
 
     // --- 6. Course / Form Mapping Layer ---
     const formTitleFromGraph = (graphLead as any).form_name || (graphLead as any).campaign_name || null;
-    const resolvedCourse = await resolveCourseFromMetaForm(db, formId, fieldMap, formTitleFromGraph);
+    const resolvedCourse = await resolveCourseFromMetaForm(db, formId, fieldMap, formTitleFromGraph, pageAccessToken);
 
     // --- 7. Lead Matching & Deduplication ---
     // Check 7.1: By source + external_lead_id
@@ -927,8 +927,8 @@ Deno.serve(async (req) => {
           phone_e164: phoneE164,
           contact_preference: metaContactPreference,
           pipeline_stage_id: captureStage.id, // Strictly Novo Lead
-          course_interest: resolvedCourse?.courseName || null,
-          course_interests: resolvedCourse?.courseName ? [resolvedCourse.courseName] : [],
+          course_interest: resolvedCourse && !resolvedCourse.hasConflict ? resolvedCourse.courseName : null,
+          course_interests: resolvedCourse?.courseName && !resolvedCourse.hasConflict ? [resolvedCourse.courseName] : [],
           last_inbound_activity_at: sourceCreatedIso,
           source_created_at: sourceCreatedIso,
           created_at: sourceCreatedIso,
@@ -1249,47 +1249,97 @@ Deno.serve(async (req) => {
       console.log(`[meta-webhook] Form submission persisted immediately for lead ${targetLeadId}`);
     }
 
-    // --- Automatic First-Contact Automation (New Leads OR Genuine New Ad Submissions) ---
-    try {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL');
-      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-      const intakePayload = {
-        source: 'meta',
-        source_detail: sourceDetail,
-        is_new_lead: isNewLead,
-        is_new_submission: !isNewLead,
-        idempotency_key: `meta_first_contact_${targetLeadId}_${leadgenId}`,
+    // --- Automatic First-Contact Automation (Strict Course Identification Guard) ---
+    // Sequence is strictly:
+    // Meta webhook -> Graph lead fetch -> normalize -> resolve canonical lead -> resolve course -> validate template mapping -> validate recipient -> THEN send first email
+    if (resolvedCourse?.hasConflict) {
+      console.warn(`[meta-webhook] Conflicting course signals for lead ${targetLeadId}: ${resolvedCourse.conflictReason}. Automated first email suppressed.`);
+      await db.from('tasks').insert({
         lead_id: targetLeadId,
-        external_event_id: leadgenId,
-        external_lead_id: leadgenId,
-        first_name: firstName || undefined,
-        last_name: lastName || undefined,
-        email: cleanEmail || undefined,
-        email_confirmation: cleanEmailConf || undefined,
-        resolved_emails: emailResolution.emails,
-        phone: phoneE164 || rawPhone || undefined,
-        contact_preference: metaContactPreference,
-        course_interest: resolvedCourse?.courseName || undefined,
-        course_title: resolvedCourse?.courseName || undefined,
-        source_created_at: sourceCreatedIso,
-        raw_payload: dynamicSubmittedData,
-      };
-
-      const intakeRes = await fetch(`${supabaseUrl}/functions/v1/process-lead-intake`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${serviceRoleKey}`,
-        },
-        body: JSON.stringify(intakePayload),
+        intake_event_id: intakeEventId,
+        task_type: 'data_review',
+        title: 'Conflito de Curso — Meta Lead',
+        description: `Lead recebido com sinais conflitantes de curso: ${resolvedCourse.conflictReason}. Envio de primeiro e-mail automático cancelado para revisão manual.`,
+        status: 'pending',
+        created_by: 'system',
       });
+      await db.from('lead_activities').insert({
+        lead_id: targetLeadId,
+        intake_event_id: intakeEventId,
+        activity_type: 'outreach_suppressed',
+        actor_type: 'system',
+        summary: 'Envio automático de primeiro e-mail cancelado: sinais conflitantes de curso detectados. Revisão manual criada.',
+        metadata: {
+          reason: 'conflicting_course_signals',
+          conflict_reason: resolvedCourse.conflictReason,
+          form_id: formId,
+        },
+      });
+    } else if (!resolvedCourse?.courseName) {
+      console.info(`[meta-webhook] Course of interest unidentified for lead ${targetLeadId}. Automated first email suppressed.`);
+      await db.from('tasks').insert({
+        lead_id: targetLeadId,
+        intake_event_id: intakeEventId,
+        task_type: 'data_review',
+        title: 'Triagem de Curso Não Identificado — Meta Lead',
+        description: `Lead recebido do Meta Lead Ads sem curso de interesse identificado (form ID: ${formId || 'nenhum'}). Lead mantido em Novo Lead para triagem manual.`,
+        status: 'pending',
+        created_by: 'system',
+      });
+      await db.from('lead_activities').insert({
+        lead_id: targetLeadId,
+        intake_event_id: intakeEventId,
+        activity_type: 'outreach_suppressed',
+        actor_type: 'system',
+        summary: 'Envio automático de primeiro e-mail suspenso: curso de interesse não identificado com alta confiança. Lead mantido em Novo Lead para acompanhamento manual.',
+        metadata: {
+          reason: 'unidentified_course',
+          form_id: formId,
+        },
+      });
+    } else {
+      // Course is FACTUALLY identified with high confidence!
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-      if (!intakeRes.ok) {
-        console.warn(`[meta-webhook] process-lead-intake returned ${intakeRes.status}:`, await intakeRes.text());
+        const intakePayload = {
+          source: 'meta',
+          source_detail: sourceDetail,
+          is_new_lead: isNewLead,
+          is_new_submission: !isNewLead,
+          idempotency_key: `meta_first_contact_${targetLeadId}_${leadgenId}`,
+          lead_id: targetLeadId,
+          external_event_id: leadgenId,
+          external_lead_id: leadgenId,
+          first_name: firstName || undefined,
+          last_name: lastName || undefined,
+          email: cleanEmail || undefined,
+          email_confirmation: cleanEmailConf || undefined,
+          resolved_emails: emailResolution.emails,
+          phone: phoneE164 || rawPhone || undefined,
+          contact_preference: metaContactPreference,
+          course_interest: resolvedCourse.courseName,
+          course_title: resolvedCourse.courseName,
+          source_created_at: sourceCreatedIso,
+          raw_payload: dynamicSubmittedData,
+        };
+
+        const intakeRes = await fetch(`${supabaseUrl}/functions/v1/process-lead-intake`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
+          body: JSON.stringify(intakePayload),
+        });
+
+        if (!intakeRes.ok) {
+          console.warn(`[meta-webhook] process-lead-intake returned ${intakeRes.status}:`, await intakeRes.text());
+        }
+      } catch (intakeErr) {
+        console.error('[meta-webhook] Failed calling process-lead-intake:', intakeErr);
       }
-    } catch (intakeErr) {
-      console.error('[meta-webhook] Failed calling process-lead-intake:', intakeErr);
     }
 
     // Operational log: strictly no secrets, no raw passwords/tokens
@@ -1337,17 +1387,64 @@ Deno.serve(async (req) => {
 });
 
 // =============================================================================
+interface ResolvedMetaCourse {
+  courseId: string | null;
+  courseName: string | null;
+  courseCode: string | null;
+  courseSessionId?: string | null;
+  hasConflict?: boolean;
+  conflictReason?: string | null;
+}
+
 // Helper: Resolve Course from Meta Form Mapping Layer
 // =============================================================================
 // Does NOT guess. If unmapped, returns null safely.
+// If multiple conflicting course values exist: returns hasConflict: true.
 // =============================================================================
 async function resolveCourseFromMetaForm(
   db: any,
   formId: string | null,
   fieldMap?: Record<string, string>,
-  formName?: string | null
-): Promise<{ courseId: string; courseName: string; courseCode: string; courseSessionId?: string | null } | null> {
-  // 1. Check integration_field_mappings or forms metadata
+  formName?: string | null,
+  pageAccessToken?: string | null
+): Promise<ResolvedMetaCourse | null> {
+  let formCourse: { courseId: string; courseName: string; courseCode: string } | null = null;
+  let answerCourse: { courseId: string; courseName: string; courseCode: string } | null = null;
+
+  // Helper to find active course by string representation
+  const findCourseByString = async (str: string) => {
+    const lower = str.toLowerCase();
+    let targetCode: string | null = null;
+    if (lower.includes('zygomatic') || lower.includes('zigomático')) {
+      targetCode = 'ZIT-01';
+    } else if (lower.includes('wisdom') || lower.includes('siso') || lower.includes('third molar') || lower.includes('molar')) {
+      targetCode = 'WTT-01';
+    } else if (lower.includes('endo')) {
+      targetCode = 'ET-01';
+    } else if (lower.includes('perio')) {
+      targetCode = 'PST-01';
+    } else if (lower.includes('rehab') || lower.includes('reabilitação')) {
+      targetCode = 'AIRE-01';
+    } else if (lower.includes('implant') || lower.includes('implante') || lower.includes('intensive') || lower.includes('advanced implant')) {
+      targetCode = 'IDIT-01';
+    }
+
+    if (targetCode) {
+      const { data: c } = await db
+        .from('courses')
+        .select('id, name, code')
+        .eq('active', true)
+        .eq('code', targetCode)
+        .maybeSingle();
+
+      if (c) {
+        return { courseId: c.id, courseName: c.name, courseCode: c.code };
+      }
+    }
+    return null;
+  };
+
+  // 1. Check integration_field_mappings or form ID
   if (formId) {
     const { data: mapping } = await db
       .from('integration_field_mappings')
@@ -1371,12 +1468,43 @@ async function resolveCourseFromMetaForm(
         .maybeSingle();
 
       if (course) {
-        return {
+        formCourse = {
           courseId: course.id,
           courseName: course.name,
           courseCode: course.code,
         };
       }
+    }
+
+    // Dynamic Graph API lookup for unmapped form name if token available
+    if (!formCourse && pageAccessToken) {
+      try {
+        const formApiRes = await fetch(
+          `https://graph.facebook.com/v21.0/${formId}?fields=id,name&access_token=${encodeURIComponent(pageAccessToken)}`
+        );
+        if (formApiRes.ok) {
+          const formJson = await formApiRes.json();
+          if (formJson?.name) {
+            const detected = await findCourseByString(formJson.name);
+            if (detected) {
+              formCourse = detected;
+              try {
+                await db.from('integration_field_mappings').insert({
+                  integration: 'meta',
+                  entity_type: 'lead',
+                  external_property: `form:${formId}`,
+                  eds_target: `course:${detected.courseCode}`,
+                  target_type: 'lead_course_interest',
+                  direction: 'hubspot_to_eds',
+                  source_of_truth: 'eds',
+                  transform_rule: 'course_interest_lookup',
+                  is_active: true,
+                });
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (_) {}
     }
   }
 
@@ -1391,52 +1519,46 @@ async function resolveCourseFromMetaForm(
     'qual_curso_você_tem_interesse',
     'interesse',
   ];
-  let detectedCourseStr: string | null = null;
+  let detectedFieldAnswer: string | null = null;
   if (fieldMap) {
     for (const key of candidateKeys) {
       if (fieldMap[key]) {
-        detectedCourseStr = fieldMap[key];
+        detectedFieldAnswer = fieldMap[key];
         break;
       }
     }
   }
-  if (!detectedCourseStr && formName) {
-    detectedCourseStr = formName;
+
+  if (detectedFieldAnswer) {
+    answerCourse = await findCourseByString(detectedFieldAnswer);
   }
 
-  if (detectedCourseStr) {
-    const lower = detectedCourseStr.toLowerCase();
-    let targetCode: string | null = null;
-    if (lower.includes('zygomatic') || lower.includes('zigomático')) {
-      targetCode = 'ZIT-01';
-    } else if (lower.includes('wisdom') || lower.includes('siso')) {
-      targetCode = 'WTT-01';
-    } else if (lower.includes('endo')) {
-      targetCode = 'ET-01';
-    } else if (lower.includes('perio')) {
-      targetCode = 'PST-01';
-    } else if (lower.includes('rehab') || lower.includes('reabilitação')) {
-      targetCode = 'AIRE-01';
-    } else if (lower.includes('implant') || lower.includes('implante') || lower.includes('intensive')) {
-      targetCode = 'IDIT-01';
-    }
+  // 3. Fallback to passed formName/campaign if neither found yet
+  let nameCourse: { courseId: string; courseName: string; courseCode: string } | null = null;
+  if (!formCourse && !answerCourse && formName) {
+    nameCourse = await findCourseByString(formName);
+  }
 
-    if (targetCode) {
-      const { data: course } = await db
-        .from('courses')
-        .select('id, name, code')
-        .eq('active', true)
-        .eq('code', targetCode)
-        .maybeSingle();
+  // CONFLICT RESOLUTION:
+  // If multiple conflicting course values exist: DO NOT SEND. Log conflict for manual review.
+  if (formCourse && answerCourse && formCourse.courseCode !== answerCourse.courseCode) {
+    return {
+      courseId: null,
+      courseName: null,
+      courseCode: null,
+      hasConflict: true,
+      conflictReason: `Conflito entre mapeamento do formulário ("${formCourse.courseName}" [${formCourse.courseCode}]) e resposta do lead ("${answerCourse.courseName}" [${answerCourse.courseCode}]).`,
+    };
+  }
 
-      if (course) {
-        return {
-          courseId: course.id,
-          courseName: course.name,
-          courseCode: course.code,
-        };
-      }
-    }
+  const winning = formCourse || answerCourse || nameCourse;
+  if (winning) {
+    return {
+      courseId: winning.courseId,
+      courseName: winning.courseName,
+      courseCode: winning.courseCode,
+      hasConflict: false,
+    };
   }
 
   return null;

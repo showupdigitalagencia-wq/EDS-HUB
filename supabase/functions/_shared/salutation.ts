@@ -183,6 +183,15 @@ const SURNAME_BLACKLIST = new Set([
   'xxx',
   '-',
   '--',
+  'dds',
+  'dmd',
+  'bds',
+  'phd',
+  'ms',
+  'msc',
+  'md',
+  'dentist',
+  'dentista',
 ]);
 
 function isValidSurnameCandidate(candidate: string): boolean {
@@ -205,36 +214,146 @@ function formatSurname(candidate: string): string {
 }
 
 /**
+ * Single first-name indicator set to prevent treating single first names as doctor surnames.
+ */
+const KNOWN_FIRST_NAMES = new Set([
+  'jamal',
+  'john',
+  'maria',
+  'ana',
+  'carlos',
+  'pedro',
+  'lucas',
+  'marcos',
+  'gabriel',
+  'felipe',
+  'andre',
+  'diego',
+  'alex',
+  'david',
+  'michael',
+  'robert',
+  'william',
+  'james',
+  'scott',
+  'elena',
+  'natalia',
+  'sheham',
+]);
+
+/**
+ * Extracts clean, usable name tokens across all name fields of a lead.
+ * Filters out titles, placeholders, email prefix collisions, and invalid tokens.
+ */
+export function extractUsableNameTokens(
+  leadOrLastName?: any,
+  firstNameOrFullName?: string | null | undefined
+): { tokens: string[]; candidateSurname: string | null; isSingleName: boolean } {
+  let firstName: string | null | undefined = null;
+  let lastName: string | null | undefined = null;
+  let fullName: string | null | undefined = null;
+  let email: string | null | undefined = null;
+
+  if (leadOrLastName && typeof leadOrLastName === 'object') {
+    firstName = leadOrLastName.first_name ?? leadOrLastName.firstName;
+    lastName = leadOrLastName.last_name ?? leadOrLastName.lastName;
+    fullName = leadOrLastName.full_name ?? leadOrLastName.fullName ?? leadOrLastName.name;
+    email = leadOrLastName.email;
+  } else if (typeof leadOrLastName === 'string') {
+    const trimmed = leadOrLastName.trim();
+    if (firstNameOrFullName && typeof firstNameOrFullName === 'string') {
+      lastName = trimmed;
+      fullName = firstNameOrFullName.trim();
+    } else {
+      if (trimmed.includes(' ')) {
+        fullName = trimmed;
+      } else {
+        lastName = trimmed;
+      }
+    }
+  }
+
+  const rawTokens: string[] = [];
+  if (fullName) {
+    rawTokens.push(...fullName.split(/\s+/).filter(Boolean));
+  }
+  if (firstName && (!fullName || !fullName.includes(firstName.trim()))) {
+    rawTokens.push(...firstName.split(/\s+/).filter(Boolean));
+  }
+  if (lastName && (!fullName || !fullName.includes(lastName.trim()))) {
+    rawTokens.push(...lastName.split(/\s+/).filter(Boolean));
+  }
+
+  const emailPrefix = (email && typeof email === 'string' && email.includes('@'))
+    ? email.split('@')[0].toLowerCase().trim()
+    : null;
+
+  const validTokens: string[] = [];
+  const seen = new Set<string>();
+
+  for (const t of rawTokens) {
+    const clean = t.replace(/^[^a-zA-ZáàâãéèêíïóôõöúüÁÀÂÃÉÈÊÍÏÓÔÕÖÚÜ]+|[^a-zA-ZáàâãéèêíïóôõöúüÁÀÂÃÉÈÊÍÏÓÔÕÖÚÜ]+$/g, '').trim();
+    if (clean.length < 2) continue;
+    if (/[0-9_@#$%^&*()+=<>{}[\]|\\/~`!?]/.test(clean)) continue;
+    const lower = clean.toLowerCase();
+    if (SURNAME_BLACKLIST.has(lower)) continue;
+    if (!/[aeiouyáàâãéèêíïóôõöúü]/i.test(clean)) continue;
+    if (!seen.has(lower)) {
+      seen.add(lower);
+      validTokens.push(clean);
+    }
+  }
+
+  // If email prefix matches a single token exactly and there are no other tokens, treat as email prefix
+  if (validTokens.length === 1 && emailPrefix && validTokens[0].toLowerCase() === emailPrefix) {
+    return { tokens: [], candidateSurname: null, isSingleName: true };
+  }
+
+  if (validTokens.length <= 1) {
+    return {
+      tokens: validTokens,
+      candidateSurname: null,
+      isSingleName: true,
+    };
+  }
+
+  const lastCandidate = validTokens[validTokens.length - 1];
+  const candidateSurname = isValidSurnameCandidate(lastCandidate) ? formatSurname(lastCandidate) : null;
+
+  return {
+    tokens: validTokens,
+    candidateSurname,
+    isSingleName: false,
+  };
+}
+
+/**
  * Resolves and validates a lead's factual surname (last name).
- * If a valid surname exists, returns the properly capitalized surname.
+ * If a valid surname exists with high confidence, returns the properly capitalized surname.
  * If invalid, placeholder, single first name, empty, or missing, returns null.
  */
 export function resolveSafeLastName(
   lastName: string | null | undefined,
   fullNameOrFirst?: string | null | undefined
 ): string | null {
-  // 1. Try explicit last_name field first
   if (lastName && typeof lastName === 'string') {
-    const trimmed = lastName.trim();
-    if (trimmed.length >= 2 && !/[0-9_@#$%^&*()+=<>{}[\]|\\/~`!?]/.test(trimmed)) {
-      const parts = trimmed.split(/\s+/).filter(Boolean);
-      const candidate = parts[parts.length - 1];
-      if (isValidSurnameCandidate(candidate)) {
-        return formatSurname(candidate);
-      }
+    const lowerLast = lastName.trim().toLowerCase();
+    if (KNOWN_FIRST_NAMES.has(lowerLast) && (!fullNameOrFirst || fullNameOrFirst.trim().toLowerCase() === lowerLast)) {
+      return null;
     }
   }
 
-  // 2. If no valid last_name, try extracting from full name if present
-  if (fullNameOrFirst && typeof fullNameOrFirst === 'string') {
-    const trimmed = fullNameOrFirst.trim();
-    if (trimmed.length >= 2 && !/[0-9_@#$%^&*()+=<>{}[\]|\\/~`!?]/.test(trimmed)) {
-      const parts = trimmed.split(/\s+/).filter(Boolean);
-      if (parts.length >= 2) {
-        const candidate = parts[parts.length - 1];
-        if (isValidSurnameCandidate(candidate)) {
-          return formatSurname(candidate);
-        }
+  const tokenAnalysis = extractUsableNameTokens(lastName, fullNameOrFirst);
+  if (tokenAnalysis.candidateSurname) {
+    return tokenAnalysis.candidateSurname;
+  }
+
+  if (lastName && typeof lastName === 'string' && !fullNameOrFirst) {
+    const trimmed = lastName.trim();
+    if (trimmed.length >= 2 && !trimmed.includes(' ') && !/[0-9_@#$%^&*()+=<>{}[\]|\\/~`!?]/.test(trimmed)) {
+      const lower = trimmed.toLowerCase();
+      if (!SURNAME_BLACKLIST.has(lower) && !KNOWN_FIRST_NAMES.has(lower) && /[aeiouyáàâãéèêíïóôõöúü]/i.test(trimmed)) {
+        return formatSurname(trimmed);
       }
     }
   }
@@ -254,26 +373,43 @@ export function resolveDoctorSalutation(
   leadOrLastName?: any,
   firstNameOrFullName?: string | null | undefined
 ): string {
-  let lastName: string | null | undefined = null;
-  let fullName: string | null | undefined = null;
-
   if (leadOrLastName && typeof leadOrLastName === 'object') {
-    lastName = leadOrLastName.last_name ?? leadOrLastName.lastName;
-    fullName = leadOrLastName.full_name ?? leadOrLastName.fullName ?? leadOrLastName.name;
-    if (!fullName && leadOrLastName.first_name) {
-      fullName = `${leadOrLastName.first_name} ${lastName || ''}`.trim();
+    const analysis = extractUsableNameTokens(leadOrLastName);
+    if (analysis.isSingleName || !analysis.candidateSurname) {
+      return `${prefix} Doctor`;
     }
-  } else if (typeof leadOrLastName === 'string') {
-    lastName = leadOrLastName;
-    fullName = firstNameOrFullName;
+    return `${prefix} Dr. ${analysis.candidateSurname}`;
   }
 
-  const safeSurname = resolveSafeLastName(lastName, fullName);
+  if (typeof leadOrLastName === 'string') {
+    const trimmed = leadOrLastName.trim();
+    const lower = trimmed.toLowerCase();
+    if (KNOWN_FIRST_NAMES.has(lower) && (!firstNameOrFullName || firstNameOrFullName.trim().toLowerCase() === lower)) {
+      return `${prefix} Doctor`;
+    }
+  }
+
+  const safeSurname = resolveSafeLastName(leadOrLastName, firstNameOrFullName);
   if (safeSurname) {
     return `${prefix} Dr. ${safeSurname}`;
   }
 
   return `${prefix} Doctor`;
+}
+
+/**
+ * Resolves the canonical doctor greeting with punctuation.
+ * Expected greeting:
+ * Single name (e.g. Jamal) -> "Hello Doctor,"
+ * Reliable full name (e.g. Jamal Smith) -> "Hello Dr. Smith,"
+ * Missing / placeholder / malformed -> "Hello Doctor,"
+ */
+export function resolveDoctorGreeting(
+  leadOrLastName?: any,
+  prefix: 'Hi' | 'Hello' = 'Hello'
+): string {
+  const sal = resolveDoctorSalutation(prefix, leadOrLastName);
+  return `${sal},`;
 }
 
 /**
@@ -1199,5 +1335,87 @@ export const APPROVED_COURSE_TEMPLATES: Record<string, ApprovedTemplatePackage> 
     attachmentNames: ['Oral Rehabilitation Course.pdf'],
   },
 };
+
+/**
+ * Strict canonical mapping from identified course to approved first contact template key.
+ * Only approved course-specific templates may be used.
+ * Strictly returns null if course is not identified with confidence.
+ * NEVER returns a generic fallback.
+ */
+export function resolveApprovedCourseTemplateKey(
+  courseInput: string | null | undefined
+): string | null {
+  if (!courseInput || typeof courseInput !== 'string') return null;
+  const normalized = courseInput.trim().toLowerCase();
+  if (!normalized) return null;
+
+  // 1. Zygomatic Implant Training (ZIT-01)
+  if (
+    normalized === 'zit-01' ||
+    normalized.includes('zygomatic') ||
+    normalized.includes('zigomatic') ||
+    normalized.includes('zigomático')
+  ) {
+    return 'zygomatic_course_details';
+  }
+
+  // 2. Periodontal Plastic Surgery (PST-01)
+  if (
+    normalized === 'pst-01' ||
+    normalized.includes('periodontal') ||
+    normalized.includes('perio')
+  ) {
+    return 'periodontal_course_details';
+  }
+
+  // 3. Endodontic Clinical Training (ET-01)
+  if (
+    normalized === 'et-01' ||
+    normalized.includes('endodontic') ||
+    normalized.includes('endodontics') ||
+    normalized.includes('endo')
+  ) {
+    return 'endodontic_course_details';
+  }
+
+  // 4. Advanced Implant Rehabilitation Experience (AIRE-01)
+  if (
+    normalized === 'aire-01' ||
+    normalized.includes('rehabilitation') ||
+    normalized.includes('reab') ||
+    normalized.includes('reabilitação')
+  ) {
+    return 'rehabilitation_course_details';
+  }
+
+  // 5. Intensive / Advanced Dental Implant Training (IDIT-01 / ADIE-01)
+  if (
+    normalized === 'idit-01' ||
+    normalized === 'adie-01' ||
+    normalized.includes('intensive') ||
+    normalized.includes('advanced implant') ||
+    normalized.includes('dental implant') ||
+    normalized.includes('implant training') ||
+    normalized.includes('implante') ||
+    (normalized.includes('implant') && !normalized.includes('zygomatic') && !normalized.includes('rehab'))
+  ) {
+    return 'implant_course_details';
+  }
+
+  // 6. Wisdom Teeth Extraction Course (WTT-01)
+  if (
+    normalized === 'wtt-01' ||
+    normalized.includes('wisdom') ||
+    normalized.includes('siso') ||
+    normalized.includes('third molar') ||
+    normalized.includes('molar')
+  ) {
+    return 'wisdom_course_details';
+  }
+
+  // Strictly null for unknown/unmapped courses
+  return null;
+}
+
 
 
