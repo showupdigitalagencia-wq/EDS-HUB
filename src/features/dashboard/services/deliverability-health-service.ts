@@ -676,6 +676,25 @@ export type LeadDeliverabilityStatus =
   | 'suprimido'
   | 'sem_dados';
 
+export type LastEmailStatusType =
+  | 'clicked'
+  | 'opened'
+  | 'delivered'
+  | 'sent'
+  | 'failed'
+  | 'hard_bounce';
+
+export interface LeadLastEmailStatus {
+  status: LastEmailStatusType;
+  label: string;
+  dateStr?: string;
+  fullTimestamp?: string;
+  tooltip?: string;
+  badgeClass: string;
+  dotColor: string;
+  sentAt?: string | null;
+}
+
 export interface LeadDeliverabilityInfo {
   status: LeadDeliverabilityStatus;
   label: 'Saudável' | 'Atenção' | 'Risco' | 'Suprimido' | 'Sem dados' | string;
@@ -692,6 +711,7 @@ export interface LeadDeliverabilityInfo {
   lastOpenDetected?: string | null;
   lastClickDetected?: string | null;
   softBounceCount?: number;
+  recentEmailStatus?: LeadLastEmailStatus | null;
 }
 
 export interface ResolvedLeadDeliverabilityInfo extends LeadDeliverabilityInfo {
@@ -700,6 +720,189 @@ export interface ResolvedLeadDeliverabilityInfo extends LeadDeliverabilityInfo {
   spamRisk: SpamRiskInfo;
   suppression: SuppressionInfo;
   automationAllowed: boolean;
+  recentEmailStatus?: LeadLastEmailStatus | null;
+}
+
+function formatEmailDayMonth(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    return `${day}/${month}`;
+  } catch {
+    return '';
+  }
+}
+
+function formatEmailDateTime(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${day}/${month} ${hours}:${minutes}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Derives a concise, deterministic pipeline email status badge for the MOST RECENT
+ * outbound email attempt/message.
+ * Precedence: clicked -> opened -> delivered -> sent -> failed / hard_bounce
+ * Multi-recipient rule: evaluates the latest dispatch attempt across all recipients.
+ * If ANY recipient had positive progress (click, open, delivery, sent), that positive
+ * status is shown and the entire lead is NOT labeled as failed.
+ */
+export function resolveLeadLastEmailStatus(messages?: any[] | null): LeadLastEmailStatus | null {
+  if (!messages || messages.length === 0) return null;
+
+  // Filter to outbound email messages only
+  const emailMsgs = messages.filter((m) => !m.channel || m.channel === 'email');
+  if (emailMsgs.length === 0) return null;
+
+  // Sort by created_at or sent_at DESC (newest first)
+  const sorted = [...emailMsgs].sort((a, b) => {
+    const timeA = new Date(a.created_at || a.sent_at || 0).getTime();
+    const timeB = new Date(b.created_at || b.sent_at || 0).getTime();
+    return timeB - timeA;
+  });
+
+  const newest = sorted[0];
+  const newestTime = new Date(newest.created_at || newest.sent_at || 0).getTime();
+
+  // Multi-recipient group: messages dispatched in the latest attempt (within 60s)
+  const recentGroup = sorted.filter((m) => {
+    const t = new Date(m.created_at || m.sent_at || 0).getTime();
+    return Math.abs(newestTime - t) <= 60000;
+  });
+
+  // 1. CLICK DETECTED: "Clicou no e-mail (04/10)"
+  const clickedMsg = recentGroup.find((m) => m.clicked_at || m.status === 'clicked');
+  if (clickedMsg) {
+    const ts = clickedMsg.clicked_at || clickedMsg.created_at || clickedMsg.sent_at;
+    const dateFmt = formatEmailDayMonth(ts);
+    const fullFmt = formatEmailDateTime(ts);
+    return {
+      status: 'clicked',
+      label: dateFmt ? `Clicou no e-mail (${dateFmt})` : 'Clicou no e-mail',
+      dateStr: dateFmt,
+      fullTimestamp: fullFmt,
+      tooltip: fullFmt ? `Clicou no e-mail em ${fullFmt}` : 'Clicou no e-mail',
+      badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+      dotColor: 'bg-indigo-500',
+      sentAt: ts,
+    };
+  }
+
+  // 2. OPEN DETECTED: "E-mail aberto (04/10)"
+  const openedMsg = recentGroup.find((m) => m.opened_at || m.status === 'opened');
+  if (openedMsg) {
+    const ts = openedMsg.opened_at || openedMsg.created_at || openedMsg.sent_at;
+    const dateFmt = formatEmailDayMonth(ts);
+    const fullFmt = formatEmailDateTime(ts);
+    return {
+      status: 'opened',
+      label: dateFmt ? `E-mail aberto (${dateFmt})` : 'E-mail aberto',
+      dateStr: dateFmt,
+      fullTimestamp: fullFmt,
+      tooltip: fullFmt ? `E-mail aberto em ${fullFmt}` : 'E-mail aberto',
+      badgeClass: 'bg-sky-50 text-sky-700 border-sky-200',
+      dotColor: 'bg-sky-500',
+      sentAt: ts,
+    };
+  }
+
+  // 3. DELIVERED: "E-mail entregue (04/10)"
+  const deliveredMsg = recentGroup.find((m) => m.delivered_at || m.status === 'delivered');
+  if (deliveredMsg) {
+    const ts = deliveredMsg.delivered_at || deliveredMsg.created_at || deliveredMsg.sent_at;
+    const dateFmt = formatEmailDayMonth(ts);
+    const fullFmt = formatEmailDateTime(ts);
+    return {
+      status: 'delivered',
+      label: dateFmt ? `E-mail entregue (${dateFmt})` : 'E-mail entregue',
+      dateStr: dateFmt,
+      fullTimestamp: fullFmt,
+      tooltip: fullFmt ? `E-mail entregue em ${fullFmt}` : 'E-mail entregue',
+      badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      dotColor: 'bg-emerald-500',
+      sentAt: ts,
+    };
+  }
+
+  // 4. SENT: "E-mail enviado (04/10)"
+  const sentMsg = recentGroup.find(
+    (m) => m.sent_at || m.status === 'sent' || m.status === 'delivered'
+  );
+  if (sentMsg) {
+    const ts = sentMsg.sent_at || sentMsg.created_at;
+    const dateFmt = formatEmailDayMonth(ts);
+    const fullFmt = formatEmailDateTime(ts);
+    return {
+      status: 'sent',
+      label: dateFmt ? `E-mail enviado (${dateFmt})` : 'E-mail enviado',
+      dateStr: dateFmt,
+      fullTimestamp: fullFmt,
+      tooltip: fullFmt ? `E-mail enviado em ${fullFmt}` : 'E-mail enviado',
+      badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
+      dotColor: 'bg-blue-500',
+      sentAt: ts,
+    };
+  }
+
+  // 5. HARD BOUNCE: "Hard Bounce"
+  const hardBounceMsg = recentGroup.find(
+    (m) =>
+      (m.bounced_at || m.status === 'bounced') &&
+      m.bounce_type !== 'soft_bounce'
+  );
+  if (hardBounceMsg) {
+    return {
+      status: 'hard_bounce',
+      label: 'Hard Bounce',
+      tooltip: 'Falha permanente de entrega: servidor rejeitou o endereço',
+      badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+      dotColor: 'bg-rose-500',
+      sentAt: hardBounceMsg.bounced_at || hardBounceMsg.created_at,
+    };
+  }
+
+  // 6. FAILED: "Falha de entrega"
+  const failedMsg = recentGroup.find(
+    (m) =>
+      m.failed_at ||
+      m.status === 'failed' ||
+      m.bounce_type === 'soft_bounce' ||
+      m.status === 'bounced'
+  );
+  if (failedMsg) {
+    return {
+      status: 'failed',
+      label: 'Falha de entrega',
+      tooltip: failedMsg.error_message || 'Falha de entrega no provedor',
+      badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+      dotColor: 'bg-amber-500',
+      sentAt: failedMsg.failed_at || failedMsg.created_at,
+    };
+  }
+
+  // Fallback for pending / queued messages
+  const defaultTs = newest.created_at || newest.sent_at;
+  const dateFmt = formatEmailDayMonth(defaultTs);
+  return {
+    status: 'sent',
+    label: dateFmt ? `E-mail enviado (${dateFmt})` : 'E-mail enviado',
+    dateStr: dateFmt,
+    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
+    dotColor: 'bg-blue-500',
+    sentAt: defaultTs,
+  };
 }
 
 export interface ResolveDeliverabilityParams {
@@ -719,6 +922,7 @@ export interface ResolveDeliverabilityParams {
     error_message?: string | null;
     provider_status?: string | null;
     created_at?: string | null;
+    sent_at?: string | null;
   }> | null;
 }
 
@@ -1474,7 +1678,7 @@ export async function batchFetchPipelineDeliverabilityHealth(
       const { data: messages } = await client
         .from('outbound_messages')
         .select(
-          'lead_id, status, delivered_at, bounced_at, complained_at, failed_at, opened_at, clicked_at, created_at, delivery_delayed_at, bounce_type, error_code, error_message, provider_status'
+          'lead_id, status, sent_at, delivered_at, bounced_at, complained_at, failed_at, opened_at, clicked_at, created_at, delivery_delayed_at, bounce_type, error_code, error_message, provider_status'
         )
         .eq('channel', 'email')
         .in('lead_id', leadIds)
@@ -1494,11 +1698,18 @@ export async function batchFetchPipelineDeliverabilityHealth(
       const suppressionReason = email ? suppressionsMap[email] : null;
       const recentMessages = messagesByLeadId[l.id] || [];
 
-      result[l.id] = resolveLeadDeliverabilityHealth({
+      const resolved = resolveLeadDeliverabilityHealth({
         leadEmail: email,
         suppressionReason,
         recentOutboundMessages: recentMessages,
       });
+
+      const recentEmailStatus = resolveLeadLastEmailStatus(recentMessages);
+
+      result[l.id] = {
+        ...resolved,
+        recentEmailStatus,
+      };
     }
   } catch (err) {
     console.error('Failed to batch fetch pipeline deliverability health:', err);

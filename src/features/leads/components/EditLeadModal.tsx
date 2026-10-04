@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import type { Course, CourseSession, Lead, ContactPreference } from '../../../types';
-import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
+import { formatCohortDateRange } from '../../../utils/format';
 import { normalizePhoneDigits } from '../utils/qualificationMapping';
 import { normalizePhoneSafe } from '../../../utils/phone';
 import { resolveCanonicalPreference, toDbContactPreference } from '../../../utils/contact-preference';
@@ -536,9 +536,11 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
 
             <div className="space-y-3">
               {interests.map((interest, idx) => {
-                const availableSessions = sessions.filter(
-                  (s) => s.course_id === interest.courseId
-                );
+                const availableSessions = interest.courseId
+                  ? sessions.filter(
+                      (s) => s.course_id === interest.courseId && (s.status === 'open' || s.id === interest.sessionId)
+                    )
+                  : [];
 
                 return (
                   <div
@@ -585,18 +587,19 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
                           onChange={(e) => handleSessionChange(idx, e.target.value)}
                           disabled={isSubmitting || !interest.courseId || availableSessions.length === 0}
                           className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] transition-all cursor-pointer disabled:bg-slate-100 disabled:text-slate-400"
+                          data-testid={`edit-lead-session-select-${idx}`}
                         >
                           <option value="">
                             {!interest.courseId
                               ? 'Selecione o curso primeiro'
                               : availableSessions.length === 0
                               ? 'Nenhuma turma disponível'
-                              : 'Selecione a turma / data...'}
+                              : 'Sem turma definida'}
                           </option>
                           {availableSessions.map((session) => {
-                            const formatted = formatSessionMonthYear(session.start_date);
-                            const label = formatted
-                              ? `${session.title || 'Turma'} (${formatted})`
+                            const dateFmt = formatCohortDateRange(session.start_date, session.end_date);
+                            const label = dateFmt
+                              ? `${session.title || 'Turma'} (${dateFmt})`
                               : session.title || 'Turma';
                             return (
                               <option key={session.id} value={session.id}>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import type { Course, CourseSession } from '../../../types';
-import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
+import { formatCohortDateRange } from '../../../utils/format';
 import { toDbContactPreference } from '../../../utils/contact-preference';
 import { X, UserPlus, AlertCircle, Loader2, Plus, Trash2 } from 'lucide-react';
 import { notifyNewLead } from '../../notifications/services/push-notification-service';
@@ -58,7 +58,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
         supabase
           .from('course_sessions')
           .select('*')
-          .in('status', ['open', 'confirmed', 'draft'])
+          .eq('status', 'open')
           .order('start_date', { ascending: true }),
       ]);
 
@@ -289,7 +289,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
 
             {interests.map((interest, idx) => {
               const availableSessions = interest.courseId
-                ? sessions.filter((s) => s.course_id === interest.courseId)
+                ? sessions.filter((s) => s.course_id === interest.courseId && s.status === 'open')
                 : [];
 
               return (
@@ -305,7 +305,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
                       <button
                         type="button"
                         onClick={() => handleRemoveInterest(idx)}
-                        className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                        className="text-slate-400 hover:text-rose-600 transition-colors p-1 cursor-pointer"
                         title="Remover este curso"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -322,7 +322,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
                       <select
                         value={interest.courseId}
                         onChange={(e) => handleCourseChange(idx, e.target.value)}
-                        className="input-standard text-xs"
+                        className="input-standard text-xs cursor-pointer"
                       >
                         <option value="">Selecione um curso...</option>
                         {courses.map((c) => (
@@ -341,15 +341,22 @@ export function NewLeadModal({ isOpen, onClose, onLeadCreated }: NewLeadModalPro
                       <select
                         value={interest.sessionId}
                         onChange={(e) => handleSessionChange(idx, e.target.value)}
-                        disabled={!interest.courseId}
-                        className="input-standard text-xs disabled:bg-gray-100 disabled:text-gray-400"
+                        disabled={!interest.courseId || availableSessions.length === 0}
+                        className="input-standard text-xs disabled:bg-gray-100 disabled:text-gray-400 cursor-pointer"
+                        data-testid={`lead-session-select-${idx}`}
                       >
-                        <option value="">Sem turma definida</option>
+                        <option value="">
+                          {!interest.courseId
+                            ? 'Selecione o curso primeiro'
+                            : availableSessions.length === 0
+                            ? 'Nenhuma turma disponível'
+                            : 'Sem turma definida'}
+                        </option>
                         {availableSessions.map((s) => {
-                          const dateFmt = formatSessionMonthYear(s.start_date);
+                          const dateFmt = formatCohortDateRange(s.start_date, s.end_date);
                           return (
                             <option key={s.id} value={s.id}>
-                              {dateFmt ? `${dateFmt} (${s.title})` : s.title}
+                              {dateFmt ? `${s.title} (${dateFmt})` : s.title}
                             </option>
                           );
                         })}

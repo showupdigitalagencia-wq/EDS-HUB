@@ -575,6 +575,30 @@ export function PipelineKanbanPage() {
           void loadPipelineData();
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'outbound_messages' },
+        (payload: any) => {
+          // When outbound email status changes (sent, delivered, opened, clicked, bounced), update deliverability map
+          const updatedLeadId = payload.new?.lead_id || payload.old?.lead_id;
+          if (updatedLeadId) {
+            void supabase
+              .from('leads')
+              .select('*')
+              .eq('id', updatedLeadId)
+              .single()
+              .then(({ data: lead }) => {
+                if (lead) {
+                  void batchFetchPipelineDeliverabilityHealth([lead as Lead]).then((newMap) => {
+                    setLeadDeliverabilityMap((prev) => ({ ...prev, ...newMap }));
+                  });
+                }
+              });
+          } else {
+            void loadPipelineData();
+          }
+        }
+      )
       .subscribe();
 
     return () => {
@@ -993,6 +1017,7 @@ export function PipelineKanbanPage() {
                                   interests={interests}
                                   attentionState={attentionState}
                                   deliverabilityHealth={deliverabilityHealth}
+                                  emailStatusInfo={deliverabilityHealth?.recentEmailStatus || null}
                                   smsSentInfo={leadSmsSentMap[lead.id] || null}
                                   whatsappSentInfo={leadWhatsappSentMap[lead.id] || null}
                                   stageCode={stage.code}

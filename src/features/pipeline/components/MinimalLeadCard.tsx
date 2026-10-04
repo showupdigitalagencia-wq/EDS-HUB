@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Lead } from '../../../types';
-import type { LeadDeliverabilityInfo } from '../../dashboard/services/deliverability-health-service';
+import type { LeadDeliverabilityInfo, LeadLastEmailStatus } from '../../dashboard/services/deliverability-health-service';
 import { resolveLeadCanonicalCourseInterests } from '../../../utils/course-resolver';
 import {
   GripVertical,
@@ -29,6 +29,7 @@ export interface MinimalLeadCardProps {
   interests?: FormattedCourseInterest[];
   attentionState?: OperationalAttentionState | null;
   deliverabilityHealth?: LeadDeliverabilityInfo | null;
+  emailStatusInfo?: LeadLastEmailStatus | null;
   smsSentInfo?: { sentAt: string; formattedDate?: string } | null;
   whatsappSentInfo?: { sentAt: string; formattedDate?: string } | null;
   stageCode?: string | null;
@@ -286,6 +287,7 @@ export function MinimalLeadCard({
   interests = [],
   attentionState,
   deliverabilityHealth,
+  emailStatusInfo,
   smsSentInfo = null,
   whatsappSentInfo = null,
   stageCode,
@@ -443,38 +445,59 @@ export function MinimalLeadCard({
         </div>
       )}
 
-      {/* Separate Factual Outbound Channel Badges (SMS & WhatsApp coexist independently) */}
-      {(smsSentInfo || whatsappSentInfo) && (
-        <div className="pt-1 flex items-center gap-1.5 flex-wrap">
-          {smsSentInfo && (
-            <span
-              data-testid="lead-card-sms-sent-badge"
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 select-none shrink-0"
-              title={smsSentInfo.sentAt ? `SMS enviado em ${new Date(smsSentInfo.sentAt).toLocaleString('pt-BR')}` : 'SMS enviado'}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              <span>SMS enviado</span>
-              {smsSentInfo.formattedDate && (
-                <span className="text-[9px] text-emerald-600 font-normal">({smsSentInfo.formattedDate})</span>
-              )}
-            </span>
-          )}
+      {/* Separate Factual Outbound Channel Badges (SMS, WhatsApp, and Email coexist independently) */}
+      {(() => {
+        const resolvedEmailStatus =
+          emailStatusInfo !== undefined
+            ? emailStatusInfo
+            : deliverabilityHealth?.recentEmailStatus || null;
 
-          {whatsappSentInfo && (
-            <span
-              data-testid="lead-card-whatsapp-sent-badge"
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 select-none shrink-0"
-              title={whatsappSentInfo.sentAt ? `WhatsApp enviado em ${new Date(whatsappSentInfo.sentAt).toLocaleString('pt-BR')}` : 'WhatsApp enviado'}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-[#25d366] shrink-0" />
-              <span>WhatsApp enviado</span>
-              {whatsappSentInfo.formattedDate && (
-                <span className="text-[9px] text-emerald-600 font-normal">({whatsappSentInfo.formattedDate})</span>
-              )}
-            </span>
-          )}
-        </div>
-      )}
+        if (!smsSentInfo && !whatsappSentInfo && !resolvedEmailStatus) return null;
+
+        return (
+          <div className="pt-1 flex items-center gap-1.5 flex-wrap">
+            {smsSentInfo && (
+              <span
+                data-testid="lead-card-sms-sent-badge"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 select-none shrink-0"
+                title={smsSentInfo.sentAt ? `SMS enviado em ${new Date(smsSentInfo.sentAt).toLocaleString('pt-BR')}` : 'SMS enviado'}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                <span>SMS enviado</span>
+                {smsSentInfo.formattedDate && (
+                  <span className="text-[9px] text-emerald-600 font-normal">({smsSentInfo.formattedDate})</span>
+                )}
+              </span>
+            )}
+
+            {whatsappSentInfo && (
+              <span
+                data-testid="lead-card-whatsapp-sent-badge"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 select-none shrink-0"
+                title={whatsappSentInfo.sentAt ? `WhatsApp enviado em ${new Date(whatsappSentInfo.sentAt).toLocaleString('pt-BR')}` : 'WhatsApp enviado'}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#25d366] shrink-0" />
+                <span>WhatsApp enviado</span>
+                {whatsappSentInfo.formattedDate && (
+                  <span className="text-[9px] text-emerald-600 font-normal">({whatsappSentInfo.formattedDate})</span>
+                )}
+              </span>
+            )}
+
+            {resolvedEmailStatus && (
+              <span
+                data-testid="lead-card-email-status-badge"
+                data-status={resolvedEmailStatus.status}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md border select-none shrink-0 ${resolvedEmailStatus.badgeClass}`}
+                title={resolvedEmailStatus.tooltip || resolvedEmailStatus.label}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${resolvedEmailStatus.dotColor}`} />
+                <span>{resolvedEmailStatus.label}</span>
+              </span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Deliverability Health Indicator — Factual Delivery Status + Deliverability Risk (COEXISTS WITH PREFERENCE) */}
       {!isClosedLead && deliverabilityHealth && (

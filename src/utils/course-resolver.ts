@@ -355,7 +355,9 @@ export function getCanonicalCourseShortName(rawSignal: string | null | undefined
 
 export interface CanonicalLeadCourseInterest {
   canonicalName: string;
+  sessionTitle?: string | null;
   sessionDate?: string | null;
+  sessionEndDate?: string | null;
   rawSignal?: string;
   priority?: number;
 }
@@ -366,7 +368,7 @@ export interface CanonicalLeadCourseInterest {
  */
 export function resolveLeadCanonicalCourseInterests(
   lead?: { course_interest?: string | null; course_interests?: string[] | null } | null,
-  interests?: Array<{ courseName?: string | null; sessionTitle?: string | null; startDate?: string | null; priority?: number | null }> | null
+  interests?: Array<{ courseName?: string | null; sessionTitle?: string | null; startDate?: string | null; endDate?: string | null; priority?: number | null }> | null
 ): CanonicalLeadCourseInterest[] {
   const result: CanonicalLeadCourseInterest[] = [];
   const seenCanonical = new Set<string>();
@@ -380,7 +382,9 @@ export function resolveLeadCanonicalCourseInterests(
         seenCanonical.add(shortName.toLowerCase());
         result.push({
           canonicalName: shortName,
+          sessionTitle: item.sessionTitle || null,
           sessionDate: item.startDate || null,
+          sessionEndDate: item.endDate || null,
           rawSignal: item.courseName,
           priority: item.priority || 1,
         });

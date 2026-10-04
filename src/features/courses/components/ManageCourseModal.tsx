@@ -17,7 +17,13 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { formatCohortDateRange } from '../../../utils/format';
-import type { CourseSession } from '../../../types/database';
+import { createOrUpdateCourseSession } from '../services/course-operations-service';
+import type { CourseSession, CourseSessionStatus } from '../../../types/database';
+import {
+  Users,
+  MapPin,
+  RotateCcw,
+} from 'lucide-react';
 
 export interface CourseData {
   id: string;
@@ -66,7 +72,7 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
   isOpen,
   onClose,
   onCourseUpdated,
-  onOpenSessionModal,
+  onOpenSessionModal: _onOpenSessionModal,
 }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'materials' | 'templates' | 'sessions'>('details');
 
@@ -89,6 +95,20 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
   const [newMaterialFileName, setNewMaterialFileName] = useState('');
   const [newMaterialRequired, setNewMaterialRequired] = useState(true);
 
+  // Session form state (Inline / modal within ManageCourseModal)
+  const [isSessionFormOpen, setIsSessionFormOpen] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [sessionCode, setSessionCode] = useState('');
+  const [sessionTitle, setSessionTitle] = useState('');
+  const [sessionStartDate, setSessionStartDate] = useState('');
+  const [sessionEndDate, setSessionEndDate] = useState('');
+  const [sessionStatus, setSessionStatus] = useState<CourseSessionStatus>('open');
+  const [sessionCapacity, setSessionCapacity] = useState('12');
+  const [sessionLocation, setSessionLocation] = useState('Orlando, FL');
+  const [sessionInstructorName, setSessionInstructorName] = useState('');
+  const [sessionNotes, setSessionNotes] = useState('');
+  const [isSavingSession, setIsSavingSession] = useState(false);
+
   // Status & Feedback
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +124,7 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
       setError(null);
       setSuccessMessage(null);
       setIsAddingMaterial(false);
+      setIsSessionFormOpen(false);
       loadCourseRelations(course.id, course.code);
     }
   }, [course, isOpen]);
@@ -119,14 +140,33 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
 
       setMaterials(mats || []);
 
-      // 2. Load course sessions
+      // 2. Load course sessions with enrollments for available seats calculation
       const { data: sess } = await supabase
         .from('course_sessions')
-        .select('*')
+        .select(`
+          *,
+          enrollments (
+            id,
+            status
+          )
+        `)
         .eq('course_id', courseId)
         .order('start_date', { ascending: true });
 
-      setSessions(sess || []);
+      const enriched = (sess || []).map((s: any) => {
+        const confirmedCount = Array.isArray(s.enrollments)
+          ? s.enrollments.filter((e: any) => e.status === 'confirmed' || e.status === 'enrolled').length
+          : 0;
+        const availableSeats = s.capacity !== null && s.capacity !== undefined
+          ? Math.max(0, s.capacity - confirmedCount)
+          : null;
+        return {
+          ...s,
+          available_seats: s.available_seats ?? availableSeats,
+        };
+      });
+
+      setSessions(enriched);
 
       // 3. Load associated templates
       const { data: allTpls } = await supabase
@@ -267,6 +307,142 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
     } catch (err: any) {
       console.error('Error removing material:', err);
       setError(err.message || 'Erro ao desvincular material.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleOpenNewSession = () => {
+    setEditingSessionId(null);
+    const year = new Date().getFullYear();
+    const month = String(new Date().getMonth() + 2).padStart(2, '0');
+    setSessionCode(`${course.code || 'TURMA'}-${year}-${month}`);
+    setSessionTitle(`${course.name} — Turma ${month}/${year}`);
+    setSessionStartDate('');
+    setSessionEndDate('');
+    setSessionStatus('open');
+    setSessionCapacity('12');
+    setSessionLocation('Orlando, FL');
+    setSessionInstructorName('');
+    setSessionNotes('');
+    setError(null);
+    setIsSessionFormOpen(true);
+  };
+
+  const handleOpenEditSession = (sess: CourseSession) => {
+    setEditingSessionId(sess.id);
+    setSessionCode(sess.code);
+    setSessionTitle(sess.title);
+    setSessionStartDate(sess.start_date);
+    setSessionEndDate(sess.end_date);
+    setSessionStatus(sess.status);
+    setSessionCapacity(sess.capacity !== null && sess.capacity !== undefined ? String(sess.capacity) : '');
+    setSessionLocation(sess.location || 'Orlando, FL');
+    setSessionInstructorName(sess.instructor_name || '');
+    setSessionNotes(sess.notes || '');
+    setError(null);
+    setIsSessionFormOpen(true);
+  };
+
+  const handleSaveSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!sessionTitle.trim()) {
+      setError('O título da turma é obrigatório.');
+      return;
+    }
+    if (!sessionCode.trim()) {
+      setError('O código da turma é obrigatório.');
+      return;
+    }
+    if (!sessionStartDate || !sessionEndDate) {
+      setError('As datas de início e término são obrigatórias.');
+      return;
+    }
+    if (sessionEndDate < sessionStartDate) {
+      setError('A data de término não pode ser anterior à data de início.');
+      return;
+    }
+
+    const parsedCap = sessionCapacity.trim() === '' ? null : parseInt(sessionCapacity, 10);
+    if (parsedCap !== null && (isNaN(parsedCap) || parsedCap <= 0)) {
+      setError('A capacidade deve ser um número inteiro positivo ou deixada em branco.');
+      return;
+    }
+
+    setIsSavingSession(true);
+    try {
+      await createOrUpdateCourseSession({
+        sessionId: editingSessionId || undefined,
+        courseId: course.id,
+        code: sessionCode.trim().toUpperCase(),
+        title: sessionTitle.trim(),
+        status: sessionStatus,
+        startDate: sessionStartDate,
+        endDate: sessionEndDate,
+        timezone: 'America/New_York',
+        capacity: parsedCap,
+        location: sessionLocation.trim() || 'Orlando, FL',
+        instructorName: sessionInstructorName.trim() || undefined,
+        notes: sessionNotes.trim() || undefined,
+      });
+
+      await loadCourseRelations(course.id, course.code);
+      setIsSessionFormOpen(false);
+      setSuccessMessage(editingSessionId ? 'Turma atualizada com sucesso.' : 'Nova turma criada com sucesso.');
+      onCourseUpdated();
+
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 3500);
+    } catch (err: any) {
+      console.error('Failed to save session:', err);
+      setError(err.message || 'Erro ao salvar turma.');
+    } finally {
+      setIsSavingSession(false);
+    }
+  };
+
+  const handleUpdateSessionStatus = async (sess: CourseSession, newStatus: CourseSessionStatus) => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      await createOrUpdateCourseSession({
+        sessionId: sess.id,
+        courseId: course.id,
+        code: sess.code,
+        title: sess.title,
+        status: newStatus,
+        startDate: sess.start_date,
+        endDate: sess.end_date,
+        timezone: sess.timezone || 'America/New_York',
+        capacity: sess.capacity,
+        location: sess.location || 'Orlando, FL',
+        instructorName: sess.instructor_name || undefined,
+        notes: sess.notes || undefined,
+      });
+
+      await loadCourseRelations(course.id, course.code);
+      const statusLabel =
+        newStatus === 'open'
+          ? 'OPEN (Aberta)'
+          : newStatus === 'confirmed'
+          ? 'CLOSED (Fechada)'
+          : newStatus === 'completed'
+          ? 'COMPLETED (Concluída)'
+          : newStatus === 'cancelled'
+          ? 'CANCELLED (Cancelada)'
+          : newStatus;
+      setSuccessMessage(`Status da turma "${sess.title}" alterado para ${statusLabel}.`);
+      onCourseUpdated();
+
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 3500);
+    } catch (err: any) {
+      console.error('Failed to update session status:', err);
+      setError(err.message || 'Erro ao alterar status da turma.');
     } finally {
       setIsSaving(false);
     }
@@ -671,69 +847,407 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
           {/* TAB 4: TURMAS / COHORTS */}
           {activeTab === 'sessions' && (
             <div className="space-y-4">
+              {/* Header with Title and Add Button */}
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                     Turmas Cadastradas ({sessions.length})
                   </h4>
                   <p className="text-xs text-slate-500">
-                    Cohorts e cronogramas acadêmicos associados ao curso
+                    Cohorts e cronogramas acadêmicos associados exclusivamente a este curso
                   </p>
                 </div>
-                {onOpenSessionModal && (
+                {!isSessionFormOpen && (
                   <button
                     type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenSessionModal(course.id);
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 flex items-center gap-1.5 transition-colors shadow-xs"
+                    onClick={handleOpenNewSession}
+                    className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+                    data-testid="add-turma-button"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Nova Turma</span>
+                    <span>Adicionar Turma</span>
                   </button>
                 )}
               </div>
 
+              {/* Inline Session Create/Edit Form */}
+              {isSessionFormOpen && (
+                <form
+                  onSubmit={handleSaveSession}
+                  className="p-4 rounded-xl border border-blue-200 bg-blue-50/40 space-y-3.5 animate-in fade-in duration-150"
+                  data-testid="turma-form"
+                >
+                  <div className="flex items-center justify-between border-b border-blue-200/80 pb-2.5">
+                    <span className="text-xs font-bold text-blue-950">
+                      {editingSessionId ? 'Editar Turma' : 'Nova Turma do Curso'}
+                    </span>
+                    <span className="text-[11px] font-semibold text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded">
+                      {course.name} ({course.code})
+                    </span>
+                  </div>
+
+                  {/* Course Locked Indicator */}
+                  <div className="p-2.5 rounded-lg bg-white/80 border border-blue-100 text-xs text-slate-600 flex items-center justify-between">
+                    <span>
+                      <strong className="text-slate-800">Curso Canônico Vinculado:</strong> {course.name}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 uppercase font-mono">
+                      {course.code}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Nome / Título da Turma *
+                      </label>
+                      <input
+                        type="text"
+                        value={sessionTitle}
+                        onChange={(e) => setSessionTitle(e.target.value)}
+                        placeholder="Ex: Intensive Dental Implant Training — Novembro 2026"
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        required
+                        data-testid="turma-title-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Código da Turma *
+                      </label>
+                      <input
+                        type="text"
+                        value={sessionCode}
+                        onChange={(e) => setSessionCode(e.target.value)}
+                        placeholder="Ex: IDIT-2026-11"
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg font-mono uppercase focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        required
+                        data-testid="turma-code-input"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Data de Início *
+                      </label>
+                      <input
+                        type="date"
+                        value={sessionStartDate}
+                        onChange={(e) => setSessionStartDate(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        required
+                        data-testid="turma-start-date-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Data de Término *
+                      </label>
+                      <input
+                        type="date"
+                        value={sessionEndDate}
+                        onChange={(e) => setSessionEndDate(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        required
+                        data-testid="turma-end-date-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Status da Turma *
+                      </label>
+                      <select
+                        value={sessionStatus}
+                        onChange={(e) => setSessionStatus(e.target.value as CourseSessionStatus)}
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-semibold"
+                        data-testid="turma-status-select"
+                      >
+                        <option value="open">OPEN (Aberta para matrículas)</option>
+                        <option value="confirmed">CLOSED (Fechada para matrículas)</option>
+                        <option value="completed">COMPLETED (Concluída)</option>
+                        <option value="cancelled">CANCELLED (Cancelada)</option>
+                        <option value="draft">DRAFT (Rascunho)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Capacidade de Vagas
+                      </label>
+                      <input
+                        type="number"
+                        value={sessionCapacity}
+                        onChange={(e) => setSessionCapacity(e.target.value)}
+                        placeholder="12 (vazio = ilimitado)"
+                        min="1"
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        data-testid="turma-capacity-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Localização
+                      </label>
+                      <input
+                        type="text"
+                        value={sessionLocation}
+                        onChange={(e) => setSessionLocation(e.target.value)}
+                        placeholder="Orlando, FL"
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        data-testid="turma-location-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Instrutor Responsável
+                      </label>
+                      <input
+                        type="text"
+                        value={sessionInstructorName}
+                        onChange={(e) => setSessionInstructorName(e.target.value)}
+                        placeholder="Dr. Alexandre / Cirurgião convidado"
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Observações da Turma
+                    </label>
+                    <input
+                      type="text"
+                      value={sessionNotes}
+                      onChange={(e) => setSessionNotes(e.target.value)}
+                      placeholder="Ex: Inclui kit cirúrgico e translado hotel-clínica..."
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-blue-200/80">
+                    <button
+                      type="button"
+                      onClick={() => setIsSessionFormOpen(false)}
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingSession}
+                      className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                      data-testid="save-turma-button"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{isSavingSession ? 'Salvando...' : editingSessionId ? 'Atualizar Turma' : 'Criar Turma'}</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Sessions List */}
               {sessions.length === 0 ? (
-                <div className="p-8 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50">
-                  <Calendar className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                  <p className="text-xs text-slate-600 font-semibold">Nenhuma turma cadastrada para este curso</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Cadastre a primeira turma para abrir matrículas e alocação de alunos
-                  </p>
+                <div className="p-8 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50 space-y-3">
+                  <Calendar className="w-8 h-8 text-slate-400 mx-auto" />
+                  <div>
+                    <p className="text-xs text-slate-700 font-bold">Nenhuma turma cadastrada para este curso</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Cadastre a primeira turma para abrir matrículas e alocação de alunos
+                    </p>
+                  </div>
+                  {!isSessionFormOpen && (
+                    <button
+                      type="button"
+                      onClick={handleOpenNewSession}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Adicionar Primeira Turma</span>
+                    </button>
+                  )}
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {sessions.map((sess) => (
-                    <div
-                      key={sess.id}
-                      className="p-3.5 rounded-xl border border-slate-200 bg-white flex items-center justify-between text-xs"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-900">{sess.title}</span>
-                          <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
-                            {sess.code}
+                <div className="space-y-2.5">
+                  {sessions.map((sess) => {
+                    const statusConfig = {
+                      open: {
+                        label: 'OPEN',
+                        subLabel: 'Aberta',
+                        badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+                      },
+                      confirmed: {
+                        label: 'CLOSED',
+                        subLabel: 'Fechada',
+                        badgeClass: 'bg-amber-100 text-amber-800 border-amber-200',
+                      },
+                      completed: {
+                        label: 'COMPLETED',
+                        subLabel: 'Concluída',
+                        badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
+                      },
+                      cancelled: {
+                        label: 'CANCELLED',
+                        subLabel: 'Cancelada',
+                        badgeClass: 'bg-rose-100 text-rose-800 border-rose-200',
+                      },
+                      draft: {
+                        label: 'DRAFT',
+                        subLabel: 'Rascunho',
+                        badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
+                      },
+                    }[sess.status] || {
+                      label: sess.status.toUpperCase(),
+                      subLabel: '',
+                      badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
+                    };
+
+                    return (
+                      <div
+                        key={sess.id}
+                        className="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-all space-y-2"
+                        data-testid={`turma-card-${sess.id}`}
+                      >
+                        {/* Header: Title, Code, Status Badge */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-slate-900 text-xs">{sess.title}</span>
+                            <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                              {sess.code}
+                            </span>
+                          </div>
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border self-start sm:self-auto ${statusConfig.badgeClass}`}
+                            data-testid={`turma-status-badge-${sess.id}`}
+                          >
+                            <span>{statusConfig.label}</span>
+                            {statusConfig.subLabel && (
+                              <span className="opacity-80 font-normal">({statusConfig.subLabel})</span>
+                            )}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
-                          <span>{formatCohortDateRange(sess.start_date, sess.end_date)}</span>
+
+                        {/* Dates, Location, Capacity, Instructor */}
+                        <div className="flex flex-wrap items-center gap-y-1 gap-x-3 text-[11px] text-slate-500">
+                          <span className="flex items-center gap-1 font-medium text-slate-700">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                            {formatCohortDateRange(sess.start_date, sess.end_date)}
+                          </span>
+
                           {sess.location && (
-                            <>
-                              <span>•</span>
-                              <span>{sess.location}</span>
-                            </>
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                              {sess.location}
+                            </span>
+                          )}
+
+                          <span className="flex items-center gap-1">
+                            <Users className="w-3.5 h-3.5 text-slate-400" />
+                            {sess.capacity !== null && sess.capacity !== undefined
+                              ? `${sess.capacity} vagas`
+                              : 'Vagas ilimitadas'}
+                            {sess.available_seats !== null && sess.available_seats !== undefined && (
+                              <span className="font-semibold text-emerald-700">
+                                ({sess.available_seats} disponíveis)
+                              </span>
+                            )}
+                          </span>
+
+                          {sess.instructor_name && (
+                            <span className="text-slate-400 italic">
+                              Instrutor: {sess.instructor_name}
+                            </span>
                           )}
                         </div>
+
+                        {sess.notes && (
+                          <p className="text-[11px] text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                            {sess.notes}
+                          </p>
+                        )}
+
+                        {/* Action buttons (Editar, Fechar / Cancelar, Reabrir) */}
+                        <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-end gap-1.5">
+                          {sess.status === 'open' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateSessionStatus(sess, 'confirmed')}
+                                disabled={isSaving}
+                                className="px-2.5 py-1 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors cursor-pointer"
+                                title="Fechar turma para novas matrículas"
+                                data-testid={`close-turma-${sess.id}`}
+                              >
+                                Fechar Turma
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateSessionStatus(sess, 'cancelled')}
+                                disabled={isSaving}
+                                className="px-2.5 py-1 text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
+                                title="Cancelar turma"
+                                data-testid={`cancel-turma-${sess.id}`}
+                              >
+                                Cancelar
+                              </button>
+                            </>
+                          )}
+
+                          {sess.status === 'confirmed' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateSessionStatus(sess, 'open')}
+                                disabled={isSaving}
+                                className="px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                                title="Reabrir turma para matrículas"
+                                data-testid={`reopen-turma-${sess.id}`}
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>Reabrir Turma</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateSessionStatus(sess, 'cancelled')}
+                                disabled={isSaving}
+                                className="px-2.5 py-1 text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
+                                title="Cancelar turma"
+                              >
+                                Cancelar
+                              </button>
+                            </>
+                          )}
+
+                          {(sess.status === 'cancelled' || sess.status === 'completed') && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateSessionStatus(sess, 'open')}
+                              disabled={isSaving}
+                              className="px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                              title="Reativar turma como OPEN"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Reativar Turma</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditSession(sess)}
+                            className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                            title="Editar dados da turma"
+                            data-testid={`edit-turma-${sess.id}`}
+                          >
+                            <Edit2 className="w-3 h-3 text-slate-500" />
+                            <span>Editar</span>
+                          </button>
+                        </div>
                       </div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        sess.status === 'open' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
-                      }`}>
-                        {sess.status === 'open' ? 'Aberta' : sess.status}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

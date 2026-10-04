@@ -33,7 +33,7 @@ import { LeadTimeline } from './LeadTimeline';
 import { LeadTaskList } from './LeadTaskList';
 import { LeadTaskModal } from './LeadTaskModal';
 import { LeadEnrollmentCard } from './LeadEnrollmentCard';
-import { formatSessionMonthYear } from '../../pipeline/components/MinimalLeadCard';
+import { formatCohortDateRange } from '../../../utils/format';
 import { resolveLeadCanonicalCourseInterests } from '../../../utils/course-resolver';
 import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
 import { ManualEmailComposerModal } from './ManualEmailComposerModal';
@@ -210,10 +210,10 @@ export function LeadProfileContent({
         .select(`
           id,
           course_id,
-          session_id,
+          course_session_id,
           priority,
           course:courses(id, name, code),
-          session:course_sessions(id, name, start_date)
+          session:course_sessions(id, title, start_date, end_date)
         `)
         .eq('lead_id', leadId)
         .order('priority', { ascending: true });
@@ -1059,8 +1059,9 @@ export function LeadProfileContent({
             {(() => {
               const formattedRelational = courseInterests.map((ci: any) => ({
                 courseName: ci.course?.name || ci.course?.code || '',
-                sessionTitle: ci.session?.name || null,
+                sessionTitle: ci.session?.title || null,
                 startDate: ci.session?.start_date || null,
+                endDate: ci.session?.end_date || null,
                 priority: ci.priority,
               }));
               const canonicalInterests = resolveLeadCanonicalCourseInterests(lead, formattedRelational);
@@ -1076,19 +1077,29 @@ export function LeadProfileContent({
               return (
                 <div className="space-y-2">
                   {canonicalInterests.map((interest, idx) => {
-                    const formattedDate = formatSessionMonthYear(interest.sessionDate);
+                    const turmaDateStr = interest.sessionDate
+                      ? formatCohortDateRange(interest.sessionDate, interest.sessionEndDate)
+                      : null;
+                    const turmaLabel = interest.sessionTitle
+                      ? `${interest.sessionTitle}${turmaDateStr ? ` (${turmaDateStr})` : ''}`
+                      : turmaDateStr;
+
                     return (
                       <div
                         key={idx}
-                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs"
+                        className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs gap-1"
+                        data-testid={`profile-course-interest-${idx}`}
                       >
                         <span className="font-semibold text-slate-800">
                           {interest.canonicalName}
                         </span>
-                        {formattedDate && (
-                          <span className="flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+                        {turmaLabel && (
+                          <span
+                            className="flex items-center gap-1 text-[11px] text-slate-600 font-medium bg-white px-2 py-0.5 rounded-md border border-slate-200"
+                            data-testid={`profile-turma-label-${idx}`}
+                          >
                             <Calendar className="h-3 w-3 text-slate-400" />
-                            {formattedDate}
+                            <span>Turma: {turmaLabel}</span>
                           </span>
                         )}
                       </div>
