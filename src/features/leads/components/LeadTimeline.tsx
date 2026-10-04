@@ -53,8 +53,11 @@ export function countContactAttempts(activities: LeadActivity[]): number {
     'whatsapp_contact_attempt',
     'manual_email_sent',
     'manual_sms_sent',
+    'sms_manual_confirmed',
     'manual_call_logged',
     'manual_whatsapp_sent',
+    'whatsapp_manual_confirmed',
+    'whatsapp_contact_confirmed',
     'manual_contact_made',
     'call_logged',
   ]);
@@ -188,10 +191,13 @@ export function getActivityLabel(activityType: string, act?: LeadActivity): stri
     case 'manual_email_sent':
       return 'E-mail enviado';
     case 'manual_sms_sent':
+    case 'sms_manual_confirmed':
       return 'SMS enviado';
     case 'manual_call_logged':
       return 'Ligação realizada';
     case 'manual_whatsapp_sent':
+    case 'whatsapp_manual_confirmed':
+    case 'whatsapp_contact_confirmed':
       return 'WhatsApp enviado';
     case 'manual_contact_made':
       return 'Contato realizado';
@@ -333,11 +339,14 @@ function getActivityIcon(type: string, isHubSpot: boolean = false) {
     case 'manual_email_sent':
       return <Mail className="h-3 w-3 text-indigo-500" />;
     case 'manual_sms_sent':
+    case 'sms_manual_confirmed':
       return <MessageSquare className="h-3 w-3 text-sky-500" />;
     case 'manual_call_logged':
     case 'call_logged':
       return <Phone className="h-3 w-3 text-[#449bd5]" />;
     case 'manual_whatsapp_sent':
+    case 'whatsapp_manual_confirmed':
+    case 'whatsapp_contact_confirmed':
       return <WhatsAppIcon className="h-3 w-3 text-emerald-600" />;
     case 'manual_contact_made':
       return <CheckCheck className="h-3 w-3 text-teal-600" />;

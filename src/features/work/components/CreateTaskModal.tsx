@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { supabase } from '../../../lib/supabase';
 import { createCrmTask } from '../services/work-queue-service';
 import { notifyTaskDue } from '../../notifications/services/push-notification-service';
+import { SearchableLeadSelector } from './SearchableLeadSelector';
 import type { TaskPriority, TaskType } from '../../../types/database';
 
 interface CreateTaskModalProps {
@@ -35,8 +35,6 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   initialEngagementId,
 }) => {
   const [selectedLeadId, setSelectedLeadId] = useState<string>(initialLeadId || '');
-  const [leadsList, setLeadsList] = useState<Array<{ id: string; first_name: string | null; last_name: string | null; email: string | null }>>([]);
-  const [loadingLeads, setLoadingLeads] = useState(false);
   const [title, setTitle] = useState(initialTitle);
   const [taskType, setTaskType] = useState<TaskType>('follow_up');
   const [priority, setPriority] = useState<TaskPriority>(initialPriority);
@@ -55,27 +53,6 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       setPriority(initialPriority);
       setSelectedLeadId(initialLeadId || '');
       setError(null);
-
-      if (!initialLeadId) {
-        setLoadingLeads(true);
-        void (async () => {
-          try {
-            const { data } = await supabase
-              .from('leads')
-              .select('id, first_name, last_name, email')
-              .order('created_at', { ascending: false })
-              .limit(50);
-            if (data) {
-              setLeadsList(data);
-              if (data.length > 0 && !selectedLeadId) {
-                setSelectedLeadId(data[0].id);
-              }
-            }
-          } finally {
-            setLoadingLeads(false);
-          }
-        })();
-      }
     }
   }, [isOpen, initialTitle, initialPriority, initialLeadId]);
 
@@ -175,23 +152,10 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Selecionar Lead <span className="text-red-500">*</span>
               </label>
-              {loadingLeads ? (
-                <div className="text-xs text-slate-400 py-1.5">Carregando leads...</div>
-              ) : (
-                <select
-                  value={selectedLeadId}
-                  onChange={(e) => setSelectedLeadId(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5] bg-white cursor-pointer"
-                  required
-                >
-                  <option value="">Selecione um lead...</option>
-                  {leadsList.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {`${l.first_name || ''} ${l.last_name || ''}`.trim() || l.email || 'Lead sem nome'}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <SearchableLeadSelector
+                selectedLeadId={selectedLeadId}
+                onSelectLead={(lead) => setSelectedLeadId(lead ? lead.id : '')}
+              />
             </div>
           )}
 

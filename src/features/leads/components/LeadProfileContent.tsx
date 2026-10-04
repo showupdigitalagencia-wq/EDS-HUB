@@ -38,6 +38,7 @@ import { resolveLeadCanonicalCourseInterests } from '../../../utils/course-resol
 import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
 import { ManualEmailComposerModal } from './ManualEmailComposerModal';
 import { ManualSmsComposerModal } from './ManualSmsComposerModal';
+import { ManualWhatsappComposerModal } from './ManualWhatsappComposerModal';
 import { RegisterActivityModal } from './RegisterActivityModal';
 import { EditLeadModal } from './EditLeadModal';
 import { ChangeLeadStageModal } from './ChangeLeadStageModal';
@@ -99,6 +100,7 @@ export function LeadProfileContent({
   const [activeTab, setActiveTab] = useState<TabType>('resumo');
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [smsSentInfo, setSmsSentInfo] = useState<{ sentAt: string } | null>(null);
+  const [whatsappSentInfo, setWhatsappSentInfo] = useState<{ sentAt: string } | null>(null);
   const [leadEmailIdentities, setLeadEmailIdentities] = useState<ResolvedEmailIdentity[]>([]);
 
   // Safe delete lead state
@@ -139,9 +141,10 @@ export function LeadProfileContent({
   // Stage change modal
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
 
-  // Manual Email & SMS Composers & Lead Email Health
+  // Manual Email & SMS & WhatsApp Composers & Lead Email Health
   const [isEmailComposerOpen, setIsEmailComposerOpen] = useState(false);
   const [isSmsComposerOpen, setIsSmsComposerOpen] = useState(false);
+  const [isWhatsappComposerOpen, setIsWhatsappComposerOpen] = useState(false);
   const [isRegisterActivityOpen, setIsRegisterActivityOpen] = useState(false);
   const [emailHealth, setEmailHealth] = useState<LeadEmailHealthResult | null>(null);
 
@@ -235,6 +238,19 @@ export function LeadProfileContent({
         setSmsSentInfo(null);
       }
 
+      // Check for factual manual WhatsApp sent activity
+      const waConfirmedAct = (actData || []).find((a: any) =>
+        a.activity_type === 'whatsapp_contact_confirmed' ||
+        a.activity_type === 'whatsapp_manual_confirmed' ||
+        a.activity_type === 'manual_whatsapp_sent' ||
+        (a.channel === 'whatsapp' && (a.metadata as any)?.status === 'manually_confirmed')
+      );
+      if (waConfirmedAct) {
+        setWhatsappSentInfo({ sentAt: waConfirmedAct.created_at || (waConfirmedAct.metadata as any)?.sent_at });
+      } else {
+        setWhatsappSentInfo(null);
+      }
+
       // 4. Fetch Tasks (for task list & summary)
       const { data: taskData } = await supabase
         .from('tasks')
@@ -289,10 +305,12 @@ export function LeadProfileContent({
     window.addEventListener('tasks-updated', handleSync);
     window.addEventListener('lead-updated', handleSync);
     window.addEventListener('sms-sent-confirmed', handleSync);
+    window.addEventListener('whatsapp-sent-confirmed', handleSync);
     return () => {
       window.removeEventListener('tasks-updated', handleSync);
       window.removeEventListener('lead-updated', handleSync);
       window.removeEventListener('sms-sent-confirmed', handleSync);
+      window.removeEventListener('whatsapp-sent-confirmed', handleSync);
     };
   }, [leadId, fetchLeadData]);
 
@@ -443,6 +461,16 @@ export function LeadProfileContent({
                     <span>SMS enviado</span>
                   </span>
                 )}
+                {whatsappSentInfo && (
+                  <span
+                    data-testid="profile-header-whatsapp-sent-badge"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    title={whatsappSentInfo.sentAt ? `WhatsApp enviado em ${new Date(whatsappSentInfo.sentAt).toLocaleString('pt-BR')}` : 'WhatsApp enviado'}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#25d366] shrink-0" />
+                    <span>WhatsApp enviado</span>
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
                 {lead.phone_raw || lead.phone_e164 ? (
@@ -521,6 +549,7 @@ export function LeadProfileContent({
         }}
         onOpenEmailComposer={() => setIsEmailComposerOpen(true)}
         onOpenSmsComposer={() => setIsSmsComposerOpen(true)}
+        onOpenWhatsappComposer={() => setIsWhatsappComposerOpen(true)}
         onOpenRegisterActivity={() => setIsRegisterActivityOpen(true)}
         onActivityLogged={handleLeadRefresh}
       />
@@ -821,6 +850,28 @@ export function LeadProfileContent({
                 ) : (
                   <span className="text-slate-400 font-semibold italic text-xs">
                     Nenhum SMS enviado
+                  </span>
+                )}
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] mb-0.5">Status do WhatsApp</span>
+                {whatsappSentInfo ? (
+                  <span
+                    data-testid="profile-whatsapp-sent-value"
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    title={whatsappSentInfo.sentAt ? `WhatsApp enviado em ${new Date(whatsappSentInfo.sentAt).toLocaleString('pt-BR')}` : 'WhatsApp enviado'}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#25d366] shrink-0" />
+                    <span>WhatsApp enviado</span>
+                    {whatsappSentInfo.sentAt && (
+                      <span className="text-[11px] font-normal text-emerald-600">
+                        ({new Date(whatsappSentInfo.sentAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })})
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="text-slate-400 font-semibold italic text-xs">
+                    Nenhum WhatsApp enviado
                   </span>
                 )}
               </div>
@@ -1268,6 +1319,16 @@ export function LeadProfileContent({
           lead={lead}
           onClose={() => setIsSmsComposerOpen(false)}
           onSmsRecorded={handleLeadRefresh}
+        />
+      )}
+
+      {/* Manual WhatsApp Composer Modal (WhatsApp Manual Assistido) */}
+      {lead && (
+        <ManualWhatsappComposerModal
+          isOpen={isWhatsappComposerOpen}
+          lead={lead}
+          onClose={() => setIsWhatsappComposerOpen(false)}
+          onWhatsappRecorded={handleLeadRefresh}
         />
       )}
 

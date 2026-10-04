@@ -52,6 +52,7 @@ export function PipelineKanbanPage() {
   const [leadActivitiesMap, setLeadActivitiesMap] = useState<Record<string, string[]>>({});
   const [leadDeliverabilityMap, setLeadDeliverabilityMap] = useState<Record<string, LeadDeliverabilityInfo>>({});
   const [leadSmsSentMap, setLeadSmsSentMap] = useState<Record<string, { sentAt: string; formattedDate?: string }>>({});
+  const [leadWhatsappSentMap, setLeadWhatsappSentMap] = useState<Record<string, { sentAt: string; formattedDate?: string }>>({});
   const [leadPendingSmsMap, setLeadPendingSmsMap] = useState<Record<string, boolean>>({});
   const [totalLeads, setTotalLeads] = useState(0);
 
@@ -217,7 +218,7 @@ export function PipelineKanbanPage() {
       if (allLoadedCards.length > 0) {
         const leadIds = allLoadedCards.map((l) => l.id);
         try {
-          const [interestsRes, activitiesRes, delivMap, smsActivitiesRes, smsTasksRes] = await Promise.all([
+          const [interestsRes, activitiesRes, delivMap, smsActivitiesRes, whatsappActivitiesRes, smsTasksRes] = await Promise.all([
             supabase
               .from('lead_course_interests')
               .select('lead_id, priority, course:courses(name), session:course_sessions(title, start_date)')
@@ -235,6 +236,12 @@ export function PipelineKanbanPage() {
               .select('lead_id, created_at, metadata')
               .in('lead_id', leadIds.slice(0, 100))
               .eq('activity_type', 'sms_manual_confirmed')
+              .order('created_at', { ascending: false }),
+            supabase
+              .from('lead_activities')
+              .select('lead_id, created_at, metadata, activity_type')
+              .in('lead_id', leadIds.slice(0, 100))
+              .or('activity_type.in.(whatsapp_contact_confirmed,whatsapp_manual_confirmed,manual_whatsapp_sent),and(channel.eq.whatsapp,activity_type.eq.whatsapp_dispatched)')
               .order('created_at', { ascending: false }),
             supabase
               .from('tasks')
@@ -284,6 +291,20 @@ export function PipelineKanbanPage() {
               }
             });
             setLeadSmsSentMap((prev) => ({ ...prev, ...smsMap }));
+          }
+
+          if (whatsappActivitiesRes?.data && Array.isArray(whatsappActivitiesRes.data)) {
+            const waMap: Record<string, { sentAt: string; formattedDate?: string }> = {};
+            whatsappActivitiesRes.data.forEach((row: any) => {
+              if (!waMap[row.lead_id]) {
+                const sentAt = row.created_at || row.metadata?.sent_at;
+                waMap[row.lead_id] = {
+                  sentAt,
+                  formattedDate: sentAt ? new Date(sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : undefined,
+                };
+              }
+            });
+            setLeadWhatsappSentMap((prev) => ({ ...prev, ...waMap }));
           }
 
           if (smsTasksRes?.data && Array.isArray(smsTasksRes.data)) {
@@ -362,26 +383,47 @@ export function PipelineKanbanPage() {
           const newDelivMap = await batchFetchPipelineDeliverabilityHealth(filteredNewCards as Lead[]);
           setLeadDeliverabilityMap((prev) => ({ ...prev, ...newDelivMap }));
 
-          const { data: smsRows } = await supabase
-            .from('lead_activities')
-            .select('lead_id, created_at, metadata')
-            .in('lead_id', filteredNewCards.map((c) => c.id))
-            .eq('activity_type', 'sms_manual_confirmed')
-            .order('created_at', { ascending: false });
+            const { data: smsRows } = await supabase
+              .from('lead_activities')
+              .select('lead_id, created_at, metadata')
+              .in('lead_id', filteredNewCards.map((c) => c.id))
+              .eq('activity_type', 'sms_manual_confirmed')
+              .order('created_at', { ascending: false });
 
-          if (smsRows && Array.isArray(smsRows)) {
-            const moreSmsMap: Record<string, { sentAt: string; formattedDate?: string }> = {};
-            smsRows.forEach((r: any) => {
-              if (!moreSmsMap[r.lead_id]) {
-                const sentAt = r.created_at || r.metadata?.sent_at;
-                moreSmsMap[r.lead_id] = {
-                  sentAt,
-                  formattedDate: sentAt ? new Date(sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : undefined,
-                };
-              }
-            });
-            setLeadSmsSentMap((prev) => ({ ...prev, ...moreSmsMap }));
-          }
+            const { data: waRows } = await supabase
+              .from('lead_activities')
+              .select('lead_id, created_at, metadata, activity_type')
+              .in('lead_id', filteredNewCards.map((c) => c.id))
+              .or('activity_type.in.(whatsapp_contact_confirmed,whatsapp_manual_confirmed,manual_whatsapp_sent),and(channel.eq.whatsapp,activity_type.eq.whatsapp_dispatched)')
+              .order('created_at', { ascending: false });
+
+            if (smsRows && Array.isArray(smsRows)) {
+              const moreSmsMap: Record<string, { sentAt: string; formattedDate?: string }> = {};
+              smsRows.forEach((r: any) => {
+                if (!moreSmsMap[r.lead_id]) {
+                  const sentAt = r.created_at || r.metadata?.sent_at;
+                  moreSmsMap[r.lead_id] = {
+                    sentAt,
+                    formattedDate: sentAt ? new Date(sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : undefined,
+                  };
+                }
+              });
+              setLeadSmsSentMap((prev) => ({ ...prev, ...moreSmsMap }));
+            }
+
+            if (waRows && Array.isArray(waRows)) {
+              const moreWaMap: Record<string, { sentAt: string; formattedDate?: string }> = {};
+              waRows.forEach((r: any) => {
+                if (!moreWaMap[r.lead_id]) {
+                  const sentAt = r.created_at || r.metadata?.sent_at;
+                  moreWaMap[r.lead_id] = {
+                    sentAt,
+                    formattedDate: sentAt ? new Date(sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : undefined,
+                  };
+                }
+              });
+              setLeadWhatsappSentMap((prev) => ({ ...prev, ...moreWaMap }));
+            }
         } catch {}
       }
     } catch (err) {
@@ -444,6 +486,54 @@ export function PipelineKanbanPage() {
 
       setLeadsByStage(grouped);
       setLeadInterestsMap(intMap);
+
+      if (validResults.length > 0) {
+        const resultIds = validResults.map((l: any) => l.id);
+        try {
+          const [{ data: smsRows }, { data: waRows }] = await Promise.all([
+            supabase
+              .from('lead_activities')
+              .select('lead_id, created_at, metadata')
+              .in('lead_id', resultIds)
+              .eq('activity_type', 'sms_manual_confirmed')
+              .order('created_at', { ascending: false }),
+            supabase
+              .from('lead_activities')
+              .select('lead_id, created_at, metadata, activity_type')
+              .in('lead_id', resultIds)
+              .or('activity_type.in.(whatsapp_contact_confirmed,whatsapp_manual_confirmed,manual_whatsapp_sent),and(channel.eq.whatsapp,activity_type.eq.whatsapp_dispatched)')
+              .order('created_at', { ascending: false }),
+          ]);
+
+          if (smsRows && Array.isArray(smsRows)) {
+            const moreSmsMap: Record<string, { sentAt: string; formattedDate?: string }> = {};
+            smsRows.forEach((r: any) => {
+              if (!moreSmsMap[r.lead_id]) {
+                const sentAt = r.created_at || r.metadata?.sent_at;
+                moreSmsMap[r.lead_id] = {
+                  sentAt,
+                  formattedDate: sentAt ? new Date(sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : undefined,
+                };
+              }
+            });
+            setLeadSmsSentMap((prev) => ({ ...prev, ...moreSmsMap }));
+          }
+
+          if (waRows && Array.isArray(waRows)) {
+            const moreWaMap: Record<string, { sentAt: string; formattedDate?: string }> = {};
+            waRows.forEach((r: any) => {
+              if (!moreWaMap[r.lead_id]) {
+                const sentAt = r.created_at || r.metadata?.sent_at;
+                moreWaMap[r.lead_id] = {
+                  sentAt,
+                  formattedDate: sentAt ? new Date(sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : undefined,
+                };
+              }
+            });
+            setLeadWhatsappSentMap((prev) => ({ ...prev, ...moreWaMap }));
+          }
+        } catch {}
+      }
     } catch (err) {
       console.error('Error during pipeline search:', err);
     } finally {
@@ -510,15 +600,30 @@ export function PipelineKanbanPage() {
         }));
       }
     };
+    const handleWhatsappConfirmed = (e: any) => {
+      const leadId = e.detail?.leadId;
+      if (leadId) {
+        const sentAt = e.detail?.sentAt || new Date().toISOString();
+        setLeadWhatsappSentMap((prev) => ({
+          ...prev,
+          [leadId]: {
+            sentAt,
+            formattedDate: new Date(sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+          },
+        }));
+      }
+    };
     window.addEventListener('leads-purged', handlePurged);
     window.addEventListener('lead-updated', handleUpdated);
     window.addEventListener('lead-created', handleCreated);
     window.addEventListener('sms-sent-confirmed', handleSmsConfirmed);
+    window.addEventListener('whatsapp-sent-confirmed', handleWhatsappConfirmed);
     return () => {
       window.removeEventListener('leads-purged', handlePurged);
       window.removeEventListener('lead-updated', handleUpdated);
       window.removeEventListener('lead-created', handleCreated);
       window.removeEventListener('sms-sent-confirmed', handleSmsConfirmed);
+      window.removeEventListener('whatsapp-sent-confirmed', handleWhatsappConfirmed);
     };
   }, [loadPipelineData]);
 
@@ -889,6 +994,7 @@ export function PipelineKanbanPage() {
                                   attentionState={attentionState}
                                   deliverabilityHealth={deliverabilityHealth}
                                   smsSentInfo={leadSmsSentMap[lead.id] || null}
+                                  whatsappSentInfo={leadWhatsappSentMap[lead.id] || null}
                                   stageCode={stage.code}
                                   stageName={stage.name}
                                   isDragging={isDragging}

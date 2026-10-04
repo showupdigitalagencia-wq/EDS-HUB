@@ -14,6 +14,8 @@ import { LeadTimeline } from './components/LeadTimeline';
 import { LeadConversationStatus } from './components/LeadConversationStatus';
 import { LeadConversationsCard } from './LeadConversationsCard';
 import { ManualEmailComposerModal } from './components/ManualEmailComposerModal';
+import { ManualSmsComposerModal } from './components/ManualSmsComposerModal';
+import { ManualWhatsappComposerModal } from './components/ManualWhatsappComposerModal';
 import { RescheduleTaskModal } from '../work/components/RescheduleTaskModal';
 import {
   formatSessionMonthYear,
@@ -100,8 +102,10 @@ export function LeadDetailPage() {
   // Stage change modal state
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
 
-  // Manual Email Composer Modal
+  // Manual Email, SMS & WhatsApp Composer Modals
   const [isEmailComposerOpen, setIsEmailComposerOpen] = useState(false);
+  const [isSmsComposerOpen, setIsSmsComposerOpen] = useState(false);
+  const [isWhatsappComposerOpen, setIsWhatsappComposerOpen] = useState(false);
 
   const loadLeadData = useCallback(async () => {
     if (!id) return;
@@ -642,6 +646,8 @@ export function LeadDetailPage() {
             setIsTaskModalOpen(true);
           }}
           onOpenEmailComposer={() => setIsEmailComposerOpen(true)}
+          onOpenSmsComposer={() => setIsSmsComposerOpen(true)}
+          onOpenWhatsappComposer={() => setIsWhatsappComposerOpen(true)}
           onActivityLogged={loadLeadData}
         />
 
@@ -1038,6 +1044,25 @@ export function LeadDetailPage() {
             </div>
           </div>
         </div>
+      )}
+      {/* Manual SMS Composer Modal (SMS Manual Assistido) */}
+      {lead && (
+        <ManualSmsComposerModal
+          isOpen={isSmsComposerOpen}
+          lead={lead}
+          onClose={() => setIsSmsComposerOpen(false)}
+          onSmsRecorded={loadLeadData}
+        />
+      )}
+
+      {/* Manual WhatsApp Composer Modal (WhatsApp Manual Assistido) */}
+      {lead && (
+        <ManualWhatsappComposerModal
+          isOpen={isWhatsappComposerOpen}
+          lead={lead}
+          onClose={() => setIsWhatsappComposerOpen(false)}
+          onWhatsappRecorded={loadLeadData}
+        />
       )}
     </Layout>
   );

@@ -18,6 +18,7 @@ interface LeadQuickActionBarProps {
   onActivityLogged?: () => void;
   onOpenEmailComposer?: () => void;
   onOpenSmsComposer?: () => void;
+  onOpenWhatsappComposer?: () => void;
   onOpenRegisterActivity?: () => void;
 }
 
@@ -28,6 +29,7 @@ export function LeadQuickActionBar({
   onActivityLogged,
   onOpenEmailComposer,
   onOpenSmsComposer,
+  onOpenWhatsappComposer,
   onOpenRegisterActivity,
 }: LeadQuickActionBarProps) {
   const destinationPhone = resolveSmsDestinationPhone(lead);
@@ -176,19 +178,35 @@ export function LeadQuickActionBar({
 
             {/* 4. WhatsApp — Official recognizable glyph & green CTA */}
             {hasPhone ? (
-              <a
-                href={`https://wa.me/${digitsOnly}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                role="button"
-                data-testid="quick-action-whatsapp"
-                onClick={() => logIntentNonBlocking('whatsapp_contact_attempt', 'WhatsApp aberto', 'whatsapp')}
-                title={`Abrir WhatsApp para ${digitsOnly}`}
-                className={`${actionBaseClass} bg-[#25d366] hover:bg-[#20ba5a] text-white border-transparent shadow-xs cursor-pointer active:translate-y-0.5`}
-              >
-                <WhatsAppIcon className="h-4 w-4 text-white shrink-0" />
-                <span>WhatsApp</span>
-              </a>
+              onOpenWhatsappComposer ? (
+                <button
+                  type="button"
+                  data-testid="quick-action-whatsapp"
+                  onClick={() => {
+                    logIntentNonBlocking('whatsapp_contact_attempt', 'WhatsApp manual assistido iniciado', 'whatsapp');
+                    onOpenWhatsappComposer();
+                  }}
+                  title={`Abrir WhatsApp manual assistido para ${rawPhone}`}
+                  className={`${actionBaseClass} bg-[#25d366] hover:bg-[#20ba5a] text-white border-transparent shadow-xs cursor-pointer active:translate-y-0.5`}
+                >
+                  <WhatsAppIcon className="h-4 w-4 text-white shrink-0" />
+                  <span>WhatsApp</span>
+                </button>
+              ) : (
+                <a
+                  href={`https://wa.me/${digitsOnly}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  role="button"
+                  data-testid="quick-action-whatsapp"
+                  onClick={() => logIntentNonBlocking('whatsapp_contact_attempt', 'WhatsApp aberto', 'whatsapp')}
+                  title={`Abrir WhatsApp para ${digitsOnly}`}
+                  className={`${actionBaseClass} bg-[#25d366] hover:bg-[#20ba5a] text-white border-transparent shadow-xs cursor-pointer active:translate-y-0.5`}
+                >
+                  <WhatsAppIcon className="h-4 w-4 text-white shrink-0" />
+                  <span>WhatsApp</span>
+                </a>
+              )
             ) : (
               <button
                 type="button"

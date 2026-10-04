@@ -69,6 +69,7 @@ export type ActivityType =
   | 'email_manual_attempt'
   | 'sms_manual_attempt'
   | 'sms_manual_confirmed'
+  | 'whatsapp_manual_confirmed'
   | 'whatsapp_contact_confirmed'
   | 'incomplete_enrollment_captured'
   | 'incomplete_enrollment_recovered'
