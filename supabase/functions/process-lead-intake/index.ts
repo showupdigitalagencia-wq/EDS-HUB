@@ -30,6 +30,7 @@ import { sendEmail } from '../_shared/resend-adapter.ts';
 import { sendSms } from '../_shared/twilio-adapter.ts';
 import { syncEmailToTitanSent } from '../_shared/titan-imap.ts';
 import type { LeadIntakePayload, LeadIntakeResponse } from '../_shared/types.ts';
+import { downloadCourseMaterialWithRetry } from '../_shared/storage-retry.ts';
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
@@ -1366,9 +1367,13 @@ async function handleEmailPreference(
         .maybeSingle();
 
       if (material && material.is_active) {
-        const { data: fileData, error: downloadErr } = await db.storage
-          .from(material.storage_bucket)
-          .download(material.storage_path);
+        const { data: fileData, error: downloadErr } = await downloadCourseMaterialWithRetry({
+          db,
+          bucket: material.storage_bucket,
+          storagePath: material.storage_path,
+          materialId: material.id,
+          courseCode: payload.course_interest || payload.course_title || null,
+        });
 
         if (!downloadErr && fileData && fileData.size > 0) {
           const arrayBuffer = await fileData.arrayBuffer();
