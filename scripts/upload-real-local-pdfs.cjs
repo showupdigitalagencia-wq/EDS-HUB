@@ -9,7 +9,7 @@ const path = require('path');
 const https = require('https');
 
 const dir = 'C:\\Users\\luisa\\Documents\\Downloads';
-const adminKey = 'eds_internal_course_materials_mgmt_2026';
+const adminKey = 'process.env.INTERNAL_ADMIN_SECRET || ""';
 const url = 'https://xogcexclqiornuscsdmn.supabase.co';
 
 const uploads = [

@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
       existingEvent = byKey;
     }
 
-    if (existingEvent && (existingEvent.status === 'processed' || existingEvent.status === 'duplicate')) {
+    if (existingEvent && (existingEvent.status === 'processed' || existingEvent.status === 'duplicate') && !payload.is_retry) {
       return jsonResponse({
         success: true,
         intake_event_id: existingEvent.id,
@@ -344,6 +344,7 @@ Deno.serve(async (req) => {
 
       let isSourceLeadFresh = false;
       let sourceLeadAgeHours: number | null = null;
+      const isExplicitIntakeRetry = Boolean(payload.is_retry);
 
       if (rawSourceTimestamp) {
         let parsedMs = NaN;
@@ -358,10 +359,15 @@ Deno.serve(async (req) => {
           const diffMs = Date.now() - parsedMs;
           sourceLeadAgeHours = diffMs / (1000 * 60 * 60);
           // Eligible only if created at source within 4 hours (with 15 min clock skew tolerance)
-          if (sourceLeadAgeHours >= -0.25 && sourceLeadAgeHours <= 4.0) {
+          // OR if this is an explicit operator retry of an intake event that failed
+          if ((sourceLeadAgeHours >= -0.25 && sourceLeadAgeHours <= 4.0) || isExplicitIntakeRetry) {
             isSourceLeadFresh = true;
           }
+        } else if (isExplicitIntakeRetry) {
+          isSourceLeadFresh = true;
         }
+      } else if (isExplicitIntakeRetry) {
+        isSourceLeadFresh = true;
       }
 
       if (!isSourceLeadFresh) {

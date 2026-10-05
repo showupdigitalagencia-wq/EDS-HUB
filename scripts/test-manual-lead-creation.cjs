@@ -4,7 +4,7 @@
  */
 
 const url = 'https://xogcexclqiornuscsdmn.supabase.co';
-const adminKey = 'eds_internal_course_materials_mgmt_2026';
+const adminKey = 'process.env.INTERNAL_ADMIN_SECRET || ""';
 
 async function callRpc(rpcName, params) {
   const res = await fetch(`${url}/functions/v1/manage-course-materials`, {

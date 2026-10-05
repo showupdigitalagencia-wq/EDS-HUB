@@ -1,6 +1,6 @@
 async function run() {
   const url = 'https://xogcexclqiornuscsdmn.supabase.co/functions/v1/hubspot-properties-discovery';
-  const adminKey = 'eds_internal_course_materials_mgmt_2026';
+  const adminKey = 'process.env.INTERNAL_ADMIN_SECRET || ""';
 
   console.log('Calling hubspot-properties-discovery with action: audit_hubspot_missing_leads...');
   const res = await fetch(url, {

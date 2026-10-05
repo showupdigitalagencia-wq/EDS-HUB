@@ -1,5 +1,5 @@
 const url = 'https://xogcexclqiornuscsdmn.supabase.co';
-const adminKey = 'eds_internal_course_materials_mgmt_2026';
+const adminKey = 'process.env.INTERNAL_ADMIN_SECRET || ""';
 
 async function queryTable(tableName, select = '*', limit = 10, orderCol = null) {
   // We can query using manage-course-materials or a temporary test RPC

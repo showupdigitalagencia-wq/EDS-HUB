@@ -1,6 +1,6 @@
 // Production Verification Suite: Tests A through I
 const SUPABASE_URL = 'https://xogcexclqiornuscsdmn.supabase.co';
-const ADMIN_SECRET = 'eds_internal_course_materials_mgmt_2026';
+const ADMIN_SECRET = 'process.env.INTERNAL_ADMIN_SECRET || ""';
 
 async function callManager(body) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/manage-course-materials`, {

@@ -4,7 +4,7 @@
 // =============================================================================
 
 const SUPABASE_URL = 'https://xogcexclqiornuscsdmn.supabase.co';
-const ADMIN_SECRET = 'eds_internal_course_materials_mgmt_2026';
+const ADMIN_SECRET = 'process.env.INTERNAL_ADMIN_SECRET || ""';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

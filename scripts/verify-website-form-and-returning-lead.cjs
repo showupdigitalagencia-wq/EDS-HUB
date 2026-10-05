@@ -9,7 +9,7 @@
  */
 
 const url = 'https://xogcexclqiornuscsdmn.supabase.co';
-const adminKey = 'eds_internal_course_materials_mgmt_2026';
+const adminKey = 'process.env.INTERNAL_ADMIN_SECRET || ""';
 
 const runId = Date.now();
 const testPhone = `+1305${Math.floor(1000000 + Math.random() * 9000000)}`;

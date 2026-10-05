@@ -304,7 +304,7 @@ const COURSE_DOCUMENTS = [
 
 async function main() {
   const url = 'https://xogcexclqiornuscsdmn.supabase.co';
-  const adminKey = 'eds_internal_course_materials_mgmt_2026';
+  const adminKey = 'process.env.INTERNAL_ADMIN_SECRET || ""';
 
   console.log(`Starting generation and upload of ${COURSE_DOCUMENTS.length} official PDF brochures...`);
 

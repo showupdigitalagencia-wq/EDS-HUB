@@ -2,7 +2,7 @@
 
 async function testHubspotReconcile() {
   const url = 'https://xogcexclqiornuscsdmn.supabase.co/functions/v1/hubspot-reconcile';
-  const adminKey = 'eds_internal_course_materials_mgmt_2026';
+  const adminKey = 'process.env.INTERNAL_ADMIN_SECRET || ""';
 
   console.log('Calling hubspot-reconcile with lookback_days: 30...');
   const res = await fetch(url, {

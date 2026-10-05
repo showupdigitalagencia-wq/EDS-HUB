@@ -1,6 +1,6 @@
 async function runBackfill() {
   const url = 'https://xogcexclqiornuscsdmn.supabase.co/functions/v1/hubspot-properties-discovery';
-  const adminKey = 'eds_internal_course_materials_mgmt_2026';
+  const adminKey = 'process.env.INTERNAL_ADMIN_SECRET || ""';
 
   console.log('Initiating controlled production HubSpot backfill...');
   const startTime = Date.now();

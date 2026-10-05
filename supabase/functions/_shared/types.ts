@@ -26,6 +26,7 @@ export interface LeadIntakePayload {
   course_interest?: string;
   course_title?: string;
   is_new_lead?: boolean;
+  is_retry?: boolean;
   idempotency_key?: string;
   source_created_at?: string;
   raw_payload?: Record<string, unknown>;
