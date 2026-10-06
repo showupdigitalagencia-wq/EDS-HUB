@@ -23,8 +23,9 @@
 
   var EDS_CONFIG = {
     INCOMPLETE_URL: 'https://xogcexclqiornuscsdmn.supabase.co/functions/v1/capture-incomplete-enrollment',
+    COMPLETED_URL: 'https://xogcexclqiornuscsdmn.supabase.co/functions/v1/submit-public-form',
 
-    // Public anon key (safe for browser exposure; NOT service_role)
+    // Public anon key (safe for browser exposure; client publishable key)
     PUBLIC_ANON_KEY: 'sb_publishable_AyrxHrDnvNXwKvk1kBDqng_TgqHMPdw',
 
     // Keep in sync with EdsHubSyncService::$courseMap
@@ -176,11 +177,126 @@
       };
     }
 
+    function completedIdempotencyKey() {
+      var key = null;
+      try {
+        key = sessionStorage.getItem('eds_comp_key:' + slug);
+        if (!key) {
+          key = 'sub_' + slug + '_' + attemptId;
+          sessionStorage.setItem('eds_comp_key:' + slug, key);
+        }
+      } catch (_e) {
+        key = 'sub_' + slug + '_' + attemptId;
+      }
+      return key;
+    }
+
+    var directIntakeInFlight = false;
+    var directIntakeCompleted = false;
+
+    // PATH A — PRIMARY: Direct EDS HUB Intake with Bounded Retry
+    function dispatchDirectIntake(onFinished) {
+      if (directIntakeCompleted) {
+        if (typeof onFinished === 'function') onFinished(true);
+        return;
+      }
+      if (directIntakeInFlight) return;
+
+      var contact = contactInfo();
+      // Must have at least an email or phone to submit
+      if (!contact.email && !contact.phone) {
+        if (typeof onFinished === 'function') onFinished(false);
+        return;
+      }
+
+      directIntakeInFlight = true;
+      var rawCourse = courseLabel();
+      var messageEl = form.querySelector('textarea[name="message"], input[name="message"]');
+      var message = messageEl ? messageEl.value.trim() : '';
+
+      var payload = {
+        slug: slug,
+        idempotency_key: completedIdempotencyKey(),
+        external_attempt_id: attemptId,
+        fields: {
+          name: (contact.first_name + (contact.last_name ? ' ' + contact.last_name : '')).trim(),
+          first_name: contact.first_name,
+          last_name: contact.last_name || undefined,
+          email: contact.email,
+          phone: contact.phone,
+          message: message || undefined,
+          course: rawCourse || undefined,
+          course_interest: rawCourse || undefined,
+          source_page: window.location.origin + window.location.pathname,
+          submitted_at: new Date().toISOString(),
+          utm_source: utmParams.utm_source || undefined,
+          utm_medium: utmParams.utm_medium || undefined,
+          utm_campaign: utmParams.utm_campaign || undefined,
+          utm_term: utmParams.utm_term || undefined,
+          utm_content: utmParams.utm_content || undefined
+        }
+      };
+
+      // Bounded retry helper: 1 initial attempt + up to 2 retries on 5xx/network errors
+      function attemptPost(retriesLeft, delay) {
+        fetch(EDS_CONFIG.COMPLETED_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': EDS_CONFIG.PUBLIC_ANON_KEY
+          },
+          body: JSON.stringify(payload),
+          keepalive: true
+        })
+          .then(function (res) {
+            if (res.ok) {
+              directIntakeCompleted = true;
+              directIntakeInFlight = false;
+              try { sessionStorage.setItem('eds_direct_done:' + slug, 'true'); } catch (_e) {}
+              if (typeof onFinished === 'function') onFinished(true);
+            } else if (res.status >= 500 && retriesLeft > 0) {
+              // Retry on transient 5xx server errors only
+              setTimeout(function () {
+                attemptPost(retriesLeft - 1, delay * 2);
+              }, delay);
+            } else {
+              // Deterministic 4xx or retries exhausted: do not retry
+              directIntakeInFlight = false;
+              if (typeof onFinished === 'function') onFinished(false);
+            }
+          })
+          .catch(function (_err) {
+            if (retriesLeft > 0) {
+              setTimeout(function () {
+                attemptPost(retriesLeft - 1, delay * 2);
+              }, delay);
+            } else {
+              directIntakeInFlight = false;
+              if (typeof onFinished === 'function') onFinished(false);
+            }
+          });
+      }
+
+      attemptPost(2, 500); // 2 retries max, 500ms initial backoff
+    }
+
+    // Capture-phase listener: fires direct intake in parallel when visitor submits form
+    form.addEventListener('submit', function (_e) {
+      dispatchDirectIntake();
+    }, true);
+
     var api = {
       // Called after a successful submission so a new submission in the
       // same tab gets a fresh attempt ID (and idempotency key).
       reset: function () {
-        try { sessionStorage.removeItem(attemptKey(slug)); } catch (_e) {}
+        try {
+          sessionStorage.removeItem(attemptKey(slug));
+          sessionStorage.removeItem('eds_comp_key:' + slug);
+          sessionStorage.removeItem('eds_direct_done:' + slug);
+        } catch (_e) {}
+      },
+      sendCompleted: function (callback) {
+        dispatchDirectIntake(callback);
       },
       reportFailure: function () {}
     };
@@ -188,7 +304,7 @@
 
     // Incomplete capture / failure reporting only applies to dedicated course enrollment flows.
     // Course info forms (#course-info-form, /contact) are COURSE INFORMATION REQUESTS, NOT enrollments.
-    var isCourseInfoOrContact = (slug === 'course-info-form' || slug === 'contact-form' ||
+    var isCourseInfoOrContact = (slug === 'course-info-form' || slug === 'contact-form' || slug === 'website-contact' ||
       (window.location && (window.location.pathname.indexOf('/contact') !== -1 || window.location.pathname.indexOf('/request-course-information') !== -1)));
 
     if (!courseSelector || isCourseInfoOrContact) return;
@@ -268,6 +384,17 @@
   window.EdsHubForms = {
     reportFailure: function (form, errorCode) {
       try { if (form && form.edsHub) form.edsHub.reportFailure(errorCode); } catch (_e) {}
+    },
+    sendCompleted: function (form, callback) {
+      try {
+        if (form && form.edsHub && form.edsHub.sendCompleted) {
+          form.edsHub.sendCompleted(callback);
+        } else if (typeof callback === 'function') {
+          callback(false);
+        }
+      } catch (_e) {
+        if (typeof callback === 'function') callback(false);
+      }
     },
     reset: function (form) {
       try { if (form && form.edsHub) form.edsHub.reset(); } catch (_e) {}
