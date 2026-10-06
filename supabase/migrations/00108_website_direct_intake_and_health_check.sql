@@ -19,11 +19,14 @@ AS $$
 DECLARE
   v_last_direct_intake TIMESTAMPTZ;
   v_last_hubspot_reconcile TIMESTAMPTZ;
-  v_unmatched_count INT := 0;
+  v_unmatched_intakes INT := 0;
+  v_unmatched_sync_events INT := 0;
+  v_total_anomalies INT := 0;
   v_is_healthy BOOLEAN := true;
   v_status TEXT := 'healthy';
   v_details TEXT := 'All website intake and HubSpot reconciliation channels operational.';
-  v_recent_threshold TIMESTAMPTZ := now() - interval '15 minutes';
+  v_window_start TIMESTAMPTZ := now() - interval '24 hours';
+  v_window_end TIMESTAMPTZ := now() - interval '15 minutes';
 BEGIN
   -- A. Last successful direct website intake
   SELECT max(submitted_at) INTO v_last_direct_intake
@@ -36,22 +39,33 @@ BEGIN
   FROM public.integration_connections
   WHERE provider = 'hubspot';
 
-  -- C. Website contacts in HubSpot without corresponding EDS canonical lead after >15 min
-  SELECT count(*) INTO v_unmatched_count
-  FROM public.integration_sync_events ise
-  WHERE ise.provider = 'hubspot'
-    AND ise.status != 'completed'
-    AND ise.created_at < v_recent_threshold
-    AND (
-      lower(COALESCE(ise.payload->'properties'->>'recent_conversion_event_name', '')) LIKE '%contact%'
-      OR lower(COALESCE(ise.payload->'properties'->>'first_conversion_event_name', '')) LIKE '%contact%'
-      OR lower(COALESCE(ise.payload->'properties'->>'origem_do_lead', '')) LIKE '%website%'
-    );
+  -- C1. Website intake events in EDS HUB not processed after >15 minutes (within last 24h)
+  SELECT count(*) INTO v_unmatched_intakes
+  FROM public.lead_intake_events
+  WHERE source = 'website'
+    AND status != 'processed'
+    AND received_at >= v_window_start
+    AND received_at < v_window_end;
 
-  IF v_unmatched_count > 0 THEN
+  -- C2. Website sync events with HubSpot older than 15 minutes that failed (within last 24h)
+  SELECT count(*) INTO v_unmatched_sync_events
+  FROM public.integration_sync_events
+  WHERE integration = 'hubspot'
+    AND status = 'failed'
+    AND created_at >= v_window_start
+    AND created_at < v_window_end;
+
+  v_total_anomalies := v_unmatched_intakes + v_unmatched_sync_events;
+
+  IF v_total_anomalies > 0 THEN
     v_is_healthy := false;
     v_status := 'sync_anomaly';
-    v_details := format('Found %s un-reconciled website contact(s) older than 15 minutes.', v_unmatched_count);
+    v_details := format('Found %s un-reconciled website item(s) older than 15 minutes (%s intake, %s sync).', 
+                        v_total_anomalies, v_unmatched_intakes, v_unmatched_sync_events);
+  ELSIF v_last_hubspot_reconcile IS NOT NULL AND v_last_hubspot_reconcile < now() - interval '30 minutes' THEN
+    v_is_healthy := false;
+    v_status := 'reconcile_stale';
+    v_details := 'HubSpot reconciliation has not completed within the last 30 minutes.';
   END IF;
 
   RETURN jsonb_build_object(
@@ -59,7 +73,9 @@ BEGIN
     'healthy', v_is_healthy,
     'last_direct_website_intake_at', v_last_direct_intake,
     'last_hubspot_reconcile_at', v_last_hubspot_reconcile,
-    'unmatched_contacts_older_than_15m', v_unmatched_count,
+    'unmatched_contacts_older_than_15m', v_total_anomalies,
+    'unprocessed_intakes', v_unmatched_intakes,
+    'failed_sync_events', v_unmatched_sync_events,
     'details', v_details,
     'checked_at', now()
   );
