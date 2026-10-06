@@ -10,6 +10,7 @@ import {
   Phone,
   Mail,
   GraduationCap,
+  Globe,
 } from 'lucide-react';
 
 export interface FormattedCourseInterest {
@@ -80,6 +81,53 @@ import {
   getContactPreferenceBadgeClasses,
 } from '../../../utils/contact-preference';
 export { formatContactPreferenceLabel, getContactPreferenceBadgeClasses };
+
+/**
+ * Factual evaluation of whether a lead originated from the website.
+ * Inspects existing canonical lead fields (source and source_detail).
+ * Never infers from course, email, timestamps, or manual activity.
+ */
+export function isWebsiteLead(
+  lead?: { source?: string | null; source_detail?: string | null } | null
+): boolean {
+  if (!lead) return false;
+
+  const source = (lead.source || '').toLowerCase().trim();
+  const detail = (lead.source_detail || '').toLowerCase().trim();
+
+  // Explicit non-website sources (e.g. Meta ads, manual CRM entry, automated tests)
+  if (source === 'meta' || source === 'manual' || source === 'test') {
+    return false;
+  }
+
+  // Explicit canonical website source
+  if (
+    source === 'website' ||
+    source.startsWith('website/') ||
+    source.startsWith('website-') ||
+    source.startsWith('website_')
+  ) {
+    return true;
+  }
+
+  // Canonical website forms / slugs / details
+  if (
+    detail === 'contact_form' ||
+    detail === 'website' ||
+    detail === 'website-contact' ||
+    detail === 'website_contact' ||
+    detail === 'website-register' ||
+    detail === 'website_register' ||
+    detail === 'website_registration_form' ||
+    detail === 'website-form' ||
+    detail === 'register' ||
+    detail.startsWith('website')
+  ) {
+    return true;
+  }
+
+  return false;
+}
 
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -307,6 +355,8 @@ export function MinimalLeadCard({
     isClosed
   );
 
+  const isWebsite = isWebsiteLead(lead);
+
   // Resolve deduplicated canonical course interests (canonical short names only, no session/date/#)
   const canonicalInterests = resolveLeadCanonicalCourseInterests(lead, interests).slice(0, 3);
 
@@ -385,11 +435,23 @@ export function MinimalLeadCard({
           : ''
       }`}
     >
-      {/* 1. Lead Name + Drag Grip (Strongest visual emphasis) */}
+      {/* 1. Lead Name + Source Badge + Drag Grip (Strongest visual emphasis) */}
       <div className="flex items-start justify-between gap-1.5">
-        <h4 className="text-xs font-bold font-heading text-[#08254f] leading-snug line-clamp-1 group-hover:text-[#449bd5] transition-colors">
-          {fullName}
-        </h4>
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <h4 className="text-xs font-bold font-heading text-[#08254f] leading-snug truncate group-hover:text-[#449bd5] transition-colors">
+            {fullName}
+          </h4>
+          {isWebsite && (
+            <span
+              data-testid="lead-card-source-badge"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-semibold rounded-md bg-blue-50 text-blue-700 border border-blue-200 select-none shrink-0"
+              title="Origem: Site"
+            >
+              <Globe className="h-2.5 w-2.5 text-blue-500 shrink-0" />
+              <span>Site</span>
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1 shrink-0 mt-0.5">
           {lead.has_new_submission && (
             <span
