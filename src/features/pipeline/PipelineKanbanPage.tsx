@@ -343,8 +343,9 @@ export function PipelineKanbanPage() {
         qMore = qMore.is('deleted_at', null);
       }
       if (typeof qMore?.order === 'function') {
-        const o0 = qMore.order('created_at', { ascending: false });
-        qMore = (o0 && typeof o0.order === 'function') ? o0.order('id', { ascending: false }) : o0;
+        const o0 = qMore.order('last_acquisition_at', { ascending: false, nullsFirst: false });
+        const o1 = (o0 && typeof o0.order === 'function') ? o0.order('created_at', { ascending: false }) : o0;
+        qMore = (o1 && typeof o1.order === 'function') ? o1.order('id', { ascending: false }) : o1;
       }
       if (qMore && typeof qMore?.range === 'function') {
         qMore = qMore.range(from, to);
@@ -456,7 +457,7 @@ export function PipelineKanbanPage() {
       }
 
       const { data: searchResults, error: sErr } = await searchQ
-        .order('source_created_at', { ascending: false, nullsFirst: false })
+        .order('last_acquisition_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
         .limit(100);

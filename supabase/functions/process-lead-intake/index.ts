@@ -988,6 +988,13 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
     (typeof rawObj.timestamp === 'string' && rawObj.timestamp) ||
     new Date().toISOString();
 
+  const incomingAcqMs = new Date(acqTimestamp).getTime();
+  const shouldUpdateAcquisition = (existingAcq: string | null | undefined): boolean => {
+    if (!existingAcq) return true;
+    const existingMs = new Date(existingAcq).getTime();
+    return Number.isFinite(incomingAcqMs) && incomingAcqMs >= existingMs;
+  };
+
   // If explicitly flagged as new lead (e.g. from hubspot-webhook or hubspot-reconcile created_leads handoff)
   if (payload.is_new_lead === true && payload.lead_id) {
     return { leadId: payload.lead_id, isNewLead: true };
@@ -997,7 +1004,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
   if (payload.lead_id) {
     const { data: existing } = await db
       .from('leads')
-      .select('id, created_at, course_interest, course_interests')
+      .select('id, created_at, course_interest, course_interests, last_acquisition_at')
       .eq('id', payload.lead_id)
       .single();
 
@@ -1005,10 +1012,12 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
       const updateData: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
         last_inbound_activity_at: acqTimestamp,
-        last_acquisition_at: acqTimestamp,
         has_new_submission: true,
         new_submission_at: new Date().toISOString(),
       };
+      if (shouldUpdateAcquisition(existing.last_acquisition_at)) {
+        updateData.last_acquisition_at = acqTimestamp;
+      }
       if (payload.course_interest) {
         const curInterests: string[] = Array.isArray(existing.course_interests) ? existing.course_interests : [];
         const hasCourse = curInterests.some((c) => c.toLowerCase().trim() === payload.course_interest!.toLowerCase().trim());
@@ -1026,7 +1035,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
   if (payload.external_lead_id) {
     const { data: existing } = await db
       .from('leads')
-      .select('id, course_interest, course_interests')
+      .select('id, course_interest, course_interests, last_acquisition_at')
       .eq('source', payload.source)
       .eq('external_lead_id', payload.external_lead_id)
       .maybeSingle();
@@ -1035,10 +1044,12 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
       const updateData: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
         last_inbound_activity_at: acqTimestamp,
-        last_acquisition_at: acqTimestamp,
         has_new_submission: true,
         new_submission_at: new Date().toISOString(),
       };
+      if (shouldUpdateAcquisition(existing.last_acquisition_at)) {
+        updateData.last_acquisition_at = acqTimestamp;
+      }
       if (payload.course_interest) {
         const curInterests: string[] = Array.isArray(existing.course_interests) ? existing.course_interests : [];
         const hasCourse = curInterests.some((c) => c.toLowerCase().trim() === payload.course_interest!.toLowerCase().trim());
@@ -1057,7 +1068,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
     const cleanEmail = payload.email.trim().toLowerCase();
     const { data: existing } = await db
       .from('leads')
-      .select('id, created_at, pipeline_stage_id, course_interest, course_interests')
+      .select('id, created_at, pipeline_stage_id, course_interest, course_interests, last_acquisition_at')
       .or(`email.eq.${cleanEmail},email_confirmation.eq.${cleanEmail}`)
       .is('deleted_at', null)
       .order('created_at', { ascending: true })
@@ -1070,10 +1081,12 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
       const updateData: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
         last_inbound_activity_at: acqTimestamp,
-        last_acquisition_at: acqTimestamp,
         has_new_submission: true,
         new_submission_at: new Date().toISOString(),
       };
+      if (shouldUpdateAcquisition(existing.last_acquisition_at)) {
+        updateData.last_acquisition_at = acqTimestamp;
+      }
       if (payload.course_interest) {
         const curInterests: string[] = Array.isArray(existing.course_interests) ? existing.course_interests : [];
         const hasCourse = curInterests.some((c) => c.toLowerCase().trim() === payload.course_interest!.toLowerCase().trim());
@@ -1097,7 +1110,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
     if (cleanDigits.length >= 8) {
       const { data: existing } = await db
         .from('leads')
-        .select('id, created_at, pipeline_stage_id, course_interest, course_interests')
+        .select('id, created_at, pipeline_stage_id, course_interest, course_interests, last_acquisition_at')
         .or(`phone_raw.ilike.%${cleanDigits}%,phone_e164.ilike.%${cleanDigits}%`)
         .is('deleted_at', null)
         .order('created_at', { ascending: true })
@@ -1108,10 +1121,12 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
         const updateData: Record<string, unknown> = {
           updated_at: new Date().toISOString(),
           last_inbound_activity_at: acqTimestamp,
-          last_acquisition_at: acqTimestamp,
           has_new_submission: true,
           new_submission_at: new Date().toISOString(),
         };
+        if (shouldUpdateAcquisition(existing.last_acquisition_at)) {
+          updateData.last_acquisition_at = acqTimestamp;
+        }
         if (payload.course_interest) {
           const curInterests: string[] = Array.isArray(existing.course_interests) ? existing.course_interests : [];
           const hasCourse = curInterests.some((c) => c.toLowerCase().trim() === payload.course_interest!.toLowerCase().trim());

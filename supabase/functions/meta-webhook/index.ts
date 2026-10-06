@@ -821,17 +821,17 @@ Deno.serve(async (req) => {
     // Check 7.1: By source + external_lead_id
     const { data: leadByExternalId } = await db
       .from('leads')
-      .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source')
+      .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source, last_acquisition_at')
       .eq('source', 'meta')
       .eq('external_lead_id', leadgenId)
       .maybeSingle();
 
     // Check 7.2: By normalized email (primary email or canonical lead_emails)
-    let leadByEmail: { id: string; pipeline_stage_id: string; email: string; phone_e164: string | null; external_lead_id: string | null; source: string } | null = null;
+    let leadByEmail: { id: string; pipeline_stage_id: string; email: string; phone_e164: string | null; external_lead_id: string | null; source: string; last_acquisition_at?: string | null } | null = null;
     if (cleanEmail) {
       const { data } = await db
         .from('leads')
-        .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source')
+        .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source, last_acquisition_at')
         .eq('email', cleanEmail)
         .order('created_at', { ascending: true })
         .limit(1)
@@ -849,7 +849,7 @@ Deno.serve(async (req) => {
         if (emailMatch?.lead_id) {
           const { data: leadData } = await db
             .from('leads')
-            .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source')
+            .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source, last_acquisition_at')
             .eq('id', emailMatch.lead_id)
             .maybeSingle();
           leadByEmail = leadData;
@@ -858,11 +858,11 @@ Deno.serve(async (req) => {
     }
 
     // Check 7.3: By normalized E164 phone
-    let leadByPhone: { id: string; pipeline_stage_id: string; email: string; phone_e164: string | null; external_lead_id: string | null; source: string } | null = null;
+    let leadByPhone: { id: string; pipeline_stage_id: string; email: string; phone_e164: string | null; external_lead_id: string | null; source: string; last_acquisition_at?: string | null } | null = null;
     if (phoneE164) {
       const { data } = await db
         .from('leads')
-        .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source')
+        .select('id, pipeline_stage_id, email, phone_e164, external_lead_id, source, last_acquisition_at')
         .eq('phone_e164', phoneE164)
         .order('created_at', { ascending: true })
         .limit(1)
@@ -930,6 +930,7 @@ Deno.serve(async (req) => {
           course_interest: resolvedCourse && !resolvedCourse.hasConflict ? resolvedCourse.courseName : null,
           course_interests: resolvedCourse?.courseName && !resolvedCourse.hasConflict ? [resolvedCourse.courseName] : [],
           last_inbound_activity_at: sourceCreatedIso,
+          last_acquisition_at: sourceCreatedIso,
           source_created_at: sourceCreatedIso,
           created_at: sourceCreatedIso,
         })
@@ -1017,7 +1018,7 @@ Deno.serve(async (req) => {
         }
       }
     } else {
-      // Existing lead — non-destructive update, resurface via last_inbound_activity_at
+      // Existing lead — non-destructive update, resurface via last_acquisition_at & last_inbound_activity_at
       targetLeadId = matchedLead.id;
 
       const updateData: Record<string, unknown> = {
@@ -1026,6 +1027,12 @@ Deno.serve(async (req) => {
         has_new_submission: true,
         new_submission_at: new Date().toISOString(),
       };
+
+      const incomingAcqMs = new Date(sourceCreatedIso).getTime();
+      const existingAcqMs = matchedLead.last_acquisition_at ? new Date(matchedLead.last_acquisition_at).getTime() : 0;
+      if (!existingAcqMs || (Number.isFinite(incomingAcqMs) && incomingAcqMs >= existingAcqMs)) {
+        updateData.last_acquisition_at = sourceCreatedIso;
+      }
 
       if (!matchedLead.phone_e164 && phoneE164) {
         updateData.phone_e164 = phoneE164;
