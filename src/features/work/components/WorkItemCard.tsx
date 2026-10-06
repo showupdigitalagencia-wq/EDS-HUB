@@ -24,6 +24,7 @@ interface WorkItemCardProps {
   onRescheduleTask: (task: WorkItem) => void;
   onCreateTaskForLead: (item: WorkItem) => void;
   onSelectLead?: (leadId: string) => void;
+  onToggleWaitingReply?: (taskId: string, waiting: boolean) => void;
   isCompleting?: boolean;
 }
 
@@ -33,13 +34,19 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
   onRescheduleTask,
   onCreateTaskForLead,
   onSelectLead,
+  onToggleWaitingReply,
   isCompleting = false,
 }) => {
   const navigate = useNavigate();
 
+  const isWaitingReply =
+    item.category === 'needs_reply' ||
+    Boolean(item.waiting_for_response);
+
   // Resolve primary lead name and secondary email with fallback
   const cleanLeadName = (item.lead_name || '').trim();
   const cleanEmail = (item.lead_email || '').trim();
+  const cleanDescription = item.description || '';
 
   // A name is usable if it exists, is not empty, is not identical to the email, and is not a generic placeholder
   const isEmailAsName = Boolean(cleanLeadName && cleanEmail && cleanLeadName.toLowerCase() === cleanEmail.toLowerCase());
@@ -153,6 +160,8 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
       } ${
         item.priority === 'critical'
           ? 'bg-red-50/30 border-red-200/80 hover:border-red-300'
+          : isWaitingReply
+          ? 'bg-indigo-50/20 border-indigo-200/70 hover:border-indigo-300'
           : item.is_overdue
           ? 'bg-amber-50/20 border-amber-200/70 hover:border-amber-300'
           : 'bg-white border-slate-200/80 hover:border-slate-300 shadow-sm'
@@ -167,7 +176,16 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
               <span>{getCleanTypeLabel()}</span>
             </div>
             {getPriorityBadge(item.priority)}
-            {item.is_overdue && (
+            {isWaitingReply && (
+              <span
+                data-testid={`task-waiting-badge-${(item.context_id || item.id).replace(/^task:/i, '').trim()}`}
+                className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1"
+              >
+                <MessageSquare className="w-2.5 h-2.5" />
+                Aguardando Resposta
+              </span>
+            )}
+            {!isWaitingReply && item.is_overdue && (
               <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-md bg-red-50 text-red-700 border border-red-200 flex items-center gap-1">
                 <Clock className="w-2.5 h-2.5" />
                 Atrasada
@@ -216,9 +234,9 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
             </div>
           )}
 
-          {item.description && (
+          {cleanDescription && (
             <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-              {item.description}
+              {cleanDescription}
             </p>
           )}
 
@@ -263,6 +281,39 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({
             <>
               {item.category !== 'completed' ? (
                 <>
+                  {onToggleWaitingReply && (
+                    isWaitingReply ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const taskId = (item.context_id || item.id).replace(/^task:/i, '').trim();
+                          onToggleWaitingReply(taskId, false);
+                        }}
+                        data-testid={`resume-task-${(item.context_id || item.id).replace(/^task:/i, '').trim()}`}
+                        title="Remover de Aguardando Resposta e retornar à fila ativa"
+                        className="p-2 text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Retomar Tarefa</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const taskId = (item.context_id || item.id).replace(/^task:/i, '').trim();
+                          onToggleWaitingReply(taskId, true);
+                        }}
+                        data-testid={`toggle-waiting-task-${(item.context_id || item.id).replace(/^task:/i, '').trim()}`}
+                        title="Aguardando resposta do lead"
+                        className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg border border-slate-200 text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span className="hidden md:inline">Aguardando Resposta</span>
+                      </button>
+                    )
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {

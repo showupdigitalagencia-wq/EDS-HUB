@@ -316,6 +316,8 @@ export interface Task {
   updated_at: string;
   completed_at: string | null;
   external_task_id?: string | null;
+  waiting_for_response?: boolean;
+  waiting_for_response_since?: string | null;
 }
 
 export interface LeadActivity {
@@ -2104,6 +2106,8 @@ export interface WorkItem {
   context_id: string | null;
   context_type: 'task' | 'conversation' | 'lead' | 'enrollment' | 'session' | 'post_course';
   primary_action: WorkItemPrimaryAction;
+  waiting_for_response?: boolean;
+  waiting_for_response_since?: string | null;
 }
 
 export interface DailyOperationsDashboardKpis {

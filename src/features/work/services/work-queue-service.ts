@@ -235,7 +235,7 @@ export function deriveWorkItemPriority(
  * 4. Oldest waiting / created_at (detected_at ASC)
  * 5. Deterministic ID tiebreaker
  */
-export function sortWorkItems(items: WorkItem[]): WorkItem[] {
+export function sortWorkItems(items: WorkItem[], tab?: string): WorkItem[] {
   const priorityRank: Record<TaskPriority, number> = {
     critical: 1,
     high: 2,
@@ -243,7 +243,29 @@ export function sortWorkItems(items: WorkItem[]): WorkItem[] {
     low: 4,
   };
 
+  const isOverdueTab = tab === 'overdue';
+
   return [...items].sort((a, b) => {
+    // C1: Atrasadas ordering: NEWEST overdue first -> OLDEST overdue last
+    if (isOverdueTab || (a.category === 'overdue' && b.category === 'overdue')) {
+      if (a.due_at && b.due_at) {
+        // Descending by due_at: larger timestamp (closer to now) first
+        const diff = new Date(b.due_at).getTime() - new Date(a.due_at).getTime();
+        if (diff !== 0) return diff;
+      } else if (a.due_at && !b.due_at) {
+        return -1;
+      } else if (!a.due_at && b.due_at) {
+        return 1;
+      }
+
+      const pA = priorityRank[a.priority] || 5;
+      const pB = priorityRank[b.priority] || 5;
+      if (pA !== pB) return pA - pB;
+
+      return a.id.localeCompare(b.id);
+    }
+
+    // Default sorting for other tabs:
     // 1. OVERDUE FIRST
     if (a.is_overdue !== b.is_overdue) {
       return a.is_overdue ? -1 : 1;
@@ -286,6 +308,11 @@ export async function fetchDailyOperationsDashboardDirect(): Promise<DailyOperat
   const { startOfTodayIso, endOfTodayIso } = getBusinessDateRange('America/New_York');
 
   try {
+    const dueTodayQuery = supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('waiting_for_response', false).gte('due_at', startOfTodayIso).lt('due_at', endOfTodayIso);
+    const overdueQuery = supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('waiting_for_response', false).lt('due_at', startOfTodayIso);
+    const futureQuery = supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('waiting_for_response', false).gte('due_at', endOfTodayIso);
+    const waitingTasksQuery = supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('waiting_for_response', true);
+
     const [
       { count: dueTodayCount },
       { count: overdueCount },
@@ -293,23 +320,24 @@ export async function fetchDailyOperationsDashboardDirect(): Promise<DailyOperat
       { count: completedTodayCount },
       { count: paymentsCount },
       { count: coursesCount },
-      { count: needsReplyCount },
+      { count: convNeedsReplyCount },
+      { count: waitingTasksCount },
     ] = await Promise.all([
-      // Para Hoje: count ONLY today's tasks
-      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').gte('due_at', startOfTodayIso).lt('due_at', endOfTodayIso),
-      // Atrasadas: count ONLY incomplete overdue tasks
-      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').lt('due_at', startOfTodayIso),
-      // Futuras: future pending tasks
-      supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').gte('due_at', endOfTodayIso),
+      dueTodayQuery,
+      overdueQuery,
+      futureQuery,
       // Concluídas Hoje
       supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('completed_at', startOfTodayIso).lt('completed_at', endOfTodayIso),
       // Pagamentos
       supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('task_type', 'payment'),
       // Operações de Curso
       supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending').not('course_session_id', 'is', null),
-      // Aguardando Resposta
+      // Aguardando Resposta (Inbound open conversations)
       supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('status', 'open').eq('last_message_direction', 'inbound'),
+      waitingTasksQuery,
     ]);
+
+    const totalNeedsReply = (convNeedsReplyCount ?? 0) + (waitingTasksCount ?? 0);
 
     return {
       timezone: 'America/New_York',
@@ -319,14 +347,14 @@ export async function fetchDailyOperationsDashboardDirect(): Promise<DailyOperat
       overdue_count: overdueCount ?? 0,
       future_count: futureCount ?? 0,
       completed_today_count: completedTodayCount ?? 0,
-      needs_reply_count: needsReplyCount ?? 0,
+      needs_reply_count: totalNeedsReply,
       hot_leads_count: 0,
       leads_no_next_action_count: 0,
       stale_leads_count: 0,
       course_attention_count: coursesCount ?? 0,
       payment_attention_count: paymentsCount ?? 0,
       post_course_attention_count: 0,
-      total_actionable_items: (dueTodayCount ?? 0) + (overdueCount ?? 0) + (needsReplyCount ?? 0),
+      total_actionable_items: (dueTodayCount ?? 0) + (overdueCount ?? 0) + totalNeedsReply,
     };
   } catch (err) {
     console.error('[fetchDailyOperationsDashboardDirect] Failed to compute dashboard metrics:', err);
@@ -389,6 +417,8 @@ export async function fetchDailyOperationsQueueDirect(
       due_at,
       priority,
       task_source,
+      waiting_for_response,
+      waiting_for_response_since,
       created_at,
       updated_at,
       completed_at,
@@ -413,8 +443,8 @@ export async function fetchDailyOperationsQueueDirect(
 
   // Tab-specific filters
   if (tab === 'today') {
-    // TODAY: strictly calendar day = today in business timezone
-    query = query.eq('status', 'pending');
+    // TODAY: strictly calendar day = today in business timezone, excluding waiting reply
+    query = query.eq('status', 'pending').eq('waiting_for_response', false);
     if (typeof (query as any).gte === 'function') {
       query = (query as any).gte('due_at', startOfTodayIso);
     }
@@ -422,14 +452,14 @@ export async function fetchDailyOperationsQueueDirect(
       query = (query as any).lt('due_at', endOfTodayIso);
     }
   } else if (tab === 'overdue') {
-    // OVERDUE: strictly due_at < startOfTodayIso and incomplete
-    query = query.eq('status', 'pending');
+    // OVERDUE: strictly due_at < startOfTodayIso and incomplete, excluding waiting reply
+    query = query.eq('status', 'pending').eq('waiting_for_response', false);
     if (typeof (query as any).lt === 'function') {
       query = (query as any).lt('due_at', startOfTodayIso);
     }
   } else if (tab === 'future') {
-    // FUTURE: strictly due_at >= endOfTodayIso and incomplete
-    query = query.eq('status', 'pending');
+    // FUTURE: strictly due_at >= endOfTodayIso and incomplete, excluding waiting reply
+    query = query.eq('status', 'pending').eq('waiting_for_response', false);
     if (typeof (query as any).gte === 'function') {
       query = (query as any).gte('due_at', endOfTodayIso);
     }
@@ -442,7 +472,8 @@ export async function fetchDailyOperationsQueueDirect(
   } else if (tab === 'leads') {
     query = query.eq('status', 'pending');
   } else if (tab === 'needs_reply') {
-    query = query.eq('status', 'pending');
+    // Tasks explicitly marked as Aguardando Resposta
+    query = query.eq('status', 'pending').eq('waiting_for_response', true);
   }
 
   if (filters.priority) {
@@ -491,7 +522,8 @@ export async function fetchDailyOperationsQueueDirect(
       leadName = first || last || '';
     }
     const resolvedLeadName = leadName || lead?.email || 'Lead';
-    const isOverdue = t.status !== 'completed' && t.due_at ? deriveIsCalendarOverdue(t.due_at, 'America/New_York') : false;
+    const waitingReply = isTaskWaitingReply(t);
+    const isOverdue = !waitingReply && t.status !== 'completed' && t.due_at ? deriveIsCalendarOverdue(t.due_at, 'America/New_York') : false;
 
     let itemType: any = 'TASK';
     if (t.task_type === 'payment') itemType = 'PAYMENT_ATTENTION';
@@ -500,7 +532,7 @@ export async function fetchDailyOperationsQueueDirect(
     return {
       id: `task:${t.id}`,
       type: itemType,
-      category: tab as any,
+      category: (waitingReply ? 'needs_reply' : tab) as any,
       priority: t.priority || 'normal',
       title: t.title,
       description: t.description || null,
@@ -522,8 +554,17 @@ export async function fetchDailyOperationsQueueDirect(
         label: 'Marcar como concluída',
         task_id: t.id,
       },
+      waiting_for_response: waitingReply,
+      waiting_for_response_since: t.waiting_for_response_since || null,
     };
   });
+
+  // Post-processing filter to ensure Aguardando Resposta isolation across tabs
+  if (tab === 'today' || tab === 'overdue' || tab === 'future') {
+    items = items.filter(item => !isTaskWaitingReply(item));
+  } else if (tab === 'needs_reply') {
+    items = items.filter(item => isTaskWaitingReply(item));
+  }
 
   // Client-side search filtering
   if (filters.search && filters.search.trim()) {
@@ -541,7 +582,7 @@ export async function fetchDailyOperationsQueueDirect(
   return {
     tab,
     total_count: count ?? items.length,
-    items: sortWorkItems(items),
+    items: sortWorkItems(items, tab),
     page: Math.floor(offset / limit) + 1,
     page_size: limit,
   } as any;
@@ -555,9 +596,16 @@ export async function fetchDailyOperationsQueueDirect(
 export async function fetchDailyOperationsQueue(
   filters: DailyOperationsFilter = {}
 ): Promise<DailyOperationsQueueResponse> {
+  const tab = filters.tab || 'today';
+
+  if (tab === 'needs_reply') {
+    // Prioritize direct retrieval for needs_reply tasks and conversations
+    return await fetchDailyOperationsQueueDirect(filters);
+  }
+
   try {
     const { data, error } = await supabase.rpc('get_daily_operations_queue', {
-      p_tab: filters.tab || 'today',
+      p_tab: tab,
       p_sub_filter: filters.subFilter || null,
       p_priority: filters.priority || null,
       p_search: filters.search || null,
@@ -567,9 +615,13 @@ export async function fetchDailyOperationsQueue(
 
     if (!error && data && Array.isArray((data as any).items)) {
       const response = data as DailyOperationsQueueResponse;
+      let rawItems = response.items || [];
+      if (tab === 'overdue' || tab === 'today') {
+        rawItems = rawItems.filter((i) => !isTaskWaitingReply(i));
+      }
       return {
         ...response,
-        items: sortWorkItems(response.items || []),
+        items: sortWorkItems(rawItems, tab),
       };
     }
 
@@ -812,4 +864,85 @@ export function downloadCSV(content: string, filename: string): void {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+/**
+ * Helper to detect if a task is currently in "Aguardando Resposta" status.
+ * Uses structured boolean field `waiting_for_response` without mutating or parsing task descriptions.
+ * Only pending tasks are considered waiting for response (completed/cancelled are not waiting).
+ */
+export function isTaskWaitingReply(task: {
+  waiting_for_response?: boolean | null;
+  status?: string | null;
+} | null | undefined): boolean {
+  if (!task) return false;
+  if (task.status && task.status !== 'pending') return false;
+  return Boolean(task.waiting_for_response);
+}
+
+/**
+ * Puts a task in "Aguardando Resposta" or returns it to active state,
+ * persisting via structured `waiting_for_response` and `waiting_for_response_since` columns.
+ * Preserves original task history, descriptions, lead association, and due dates untouched.
+ */
+export async function setTaskWaitingReply(taskId: string, waiting: boolean): Promise<boolean> {
+  const cleanId = taskId.replace(/^task:/i, '').trim();
+
+  const { data: taskData, error: fetchErr } = await supabase
+    .from('tasks')
+    .select('id, lead_id, title, description, due_at, status')
+    .eq('id', cleanId)
+    .single();
+
+  if (fetchErr || !taskData) {
+    throw new Error(fetchErr?.message || 'Task not found: ' + cleanId);
+  }
+
+  const nowIso = new Date().toISOString();
+  const updatePayload: Record<string, any> = {
+    waiting_for_response: waiting,
+    waiting_for_response_since: waiting ? nowIso : null,
+    updated_at: nowIso,
+  };
+
+  const { error: updateErr } = await supabase
+    .from('tasks')
+    .update(updatePayload)
+    .eq('id', cleanId);
+
+  if (updateErr) {
+    throw new Error(updateErr.message);
+  }
+
+  // Best-effort audit logging into lead_activities
+  try {
+    if (taskData.lead_id) {
+      const { data: authData } = await supabase.auth.getUser();
+      await supabase.from('lead_activities').insert({
+        lead_id: taskData.lead_id,
+        activity_type: 'task_updated',
+        actor_type: 'user',
+        actor_id: authData?.user?.id || null,
+        summary: waiting
+          ? `Tarefa colocada em Aguardando Resposta: ${taskData.title || ''}`
+          : `Tarefa retornada para fila ativa: ${taskData.title || ''}`,
+        metadata: {
+          task_id: cleanId,
+          waiting_for_response: waiting,
+          due_at: taskData.due_at,
+        },
+      });
+    }
+  } catch {
+    // Non-blocking
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
+    if (taskData.lead_id) {
+      window.dispatchEvent(new CustomEvent('lead-updated', { detail: { leadId: taskData.lead_id } }));
+    }
+  }
+
+  return true;
 }

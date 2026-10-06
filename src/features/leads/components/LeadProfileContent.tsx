@@ -32,7 +32,7 @@ import { LeadConversationsCard } from '../LeadConversationsCard';
 import { LeadTimeline } from './LeadTimeline';
 import { LeadTaskList } from './LeadTaskList';
 import { LeadTaskModal } from './LeadTaskModal';
-import { LeadEnrollmentCard } from './LeadEnrollmentCard';
+import { MatriculaCourseTurmaModal } from './MatriculaCourseTurmaModal';
 import { formatCohortDateRange } from '../../../utils/format';
 import { resolveLeadCanonicalCourseInterests } from '../../../utils/course-resolver';
 import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
@@ -140,6 +140,7 @@ export function LeadProfileContent({
 
   // Stage change modal
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
+  const [isMatriculaModalOpen, setIsMatriculaModalOpen] = useState(false);
 
   // Manual Email & SMS & WhatsApp Composers & Lead Email Health
   const [isEmailComposerOpen, setIsEmailComposerOpen] = useState(false);
@@ -555,43 +556,102 @@ export function LeadProfileContent({
       />
 
       {/* Current Pipeline Stage Section with 'Alterar etapa' action */}
-      <div
-        className="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-        data-testid="lead-stage-bar"
-      >
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-[#08254f]/10 text-[#08254f]">
-            <Kanban className="h-4 w-4" />
-          </div>
-          <div>
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-              Etapa atual:
-            </span>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span
-                className="text-sm font-bold text-[#08254f] font-heading"
-                data-testid="profile-current-stage-name"
-              >
-                {pipelineStage?.name || 'Novo Lead'}
-              </span>
-              <Badge variant="navy" size="sm">
-                {pipelineStage?.name || 'Novo Lead'}
-              </Badge>
-            </div>
-          </div>
-        </div>
+      {(() => {
+        const isEnrollmentStage =
+          pipelineStage?.code === 'enrollment' ||
+          (pipelineStage?.name || '').toLowerCase().includes('matrícula') ||
+          (pipelineStage?.name || '').toLowerCase().includes('matricula');
 
-        <button
-          type="button"
-          onClick={() => setIsStageModalOpen(true)}
-          className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#08254f] bg-slate-100 hover:bg-slate-200 border border-slate-200/80 rounded-xl transition-colors cursor-pointer self-start sm:self-auto"
-          title="Alterar etapa deste lead no pipeline"
-          data-testid="alterar-etapa-button"
-        >
-          <Kanban className="h-3.5 w-3.5 text-[#449bd5]" />
-          <span>Alterar etapa</span>
-        </button>
-      </div>
+        const primaryCourseInterest = courseInterests.length > 0 ? courseInterests[0] : null;
+        const enrolledCourseName = primaryCourseInterest?.course?.name || lead.course_interest || null;
+        const enrolledTurmaLabel = primaryCourseInterest?.session
+          ? (primaryCourseInterest.session.title
+              ? `${primaryCourseInterest.session.title} (${formatCohortDateRange(primaryCourseInterest.session.start_date, primaryCourseInterest.session.end_date)})`
+              : formatCohortDateRange(primaryCourseInterest.session.start_date, primaryCourseInterest.session.end_date))
+          : null;
+
+        return (
+          <div
+            className="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-2xs space-y-2.5"
+            data-testid="lead-stage-bar"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-[#08254f]/10 text-[#08254f]">
+                  <Kanban className="h-4 w-4" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                    Etapa atual:
+                  </span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span
+                      className="text-sm font-bold text-[#08254f] font-heading"
+                      data-testid="profile-current-stage-name"
+                    >
+                      {pipelineStage?.name || 'Novo Lead'}
+                    </span>
+                    <Badge variant="navy" size="sm">
+                      {pipelineStage?.name || 'Novo Lead'}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsStageModalOpen(true)}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#08254f] bg-slate-100 hover:bg-slate-200 border border-slate-200/80 rounded-xl transition-colors cursor-pointer self-start sm:self-auto"
+                title="Alterar etapa deste lead no pipeline"
+                data-testid="alterar-etapa-button"
+              >
+                <Kanban className="h-3.5 w-3.5 text-[#449bd5]" />
+                <span>Alterar etapa</span>
+              </button>
+            </div>
+
+            {/* Matrícula Stage Compact Course & Turma Assignment Area */}
+            {isEnrollmentStage && (
+              <div
+                className="pt-2.5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-slate-50/70 p-2.5 rounded-xl border border-slate-200/60"
+                data-testid="matricula-course-turma-container"
+              >
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <div
+                    className="flex items-center gap-1.5 text-xs font-bold text-[#08254f]"
+                    data-testid="matricula-course-badge"
+                  >
+                    <GraduationCap className="h-3.5 w-3.5 text-[#449bd5] shrink-0" />
+                    <span className="truncate">
+                      {enrolledCourseName || 'Curso não definido'}
+                    </span>
+                  </div>
+                  <span className="text-slate-300 hidden sm:inline">•</span>
+                  <div
+                    className="flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200/80"
+                    data-testid="matricula-turma-badge"
+                  >
+                    <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
+                    <span>
+                      Turma: {enrolledTurmaLabel || 'Não definida'}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsMatriculaModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-[#08254f] hover:text-[#125e95] bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition-colors cursor-pointer self-start sm:self-auto"
+                  data-testid="matricula-definir-turma-button"
+                >
+                  <Edit2 className="h-3 w-3 text-[#449bd5]" />
+                  <span>{enrolledTurmaLabel ? 'Alterar' : 'Definir Turma'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Recent Conversation Status Banner */}
       <LeadConversationStatus
@@ -1110,12 +1170,7 @@ export function LeadProfileContent({
             })()}
           </div>
 
-          {/* 4. Matrículas & Financeiro Card (Complete Operational Capability) */}
-          <LeadEnrollmentCard
-            leadId={lead.id}
-            leadSource={lead.source}
-            onEnrollmentChanged={handleLeadRefresh}
-          />
+
 
           {/* 5. Próximas Tarefas & Resumo Operacional Card */}
           <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
@@ -1471,6 +1526,16 @@ export function LeadProfileContent({
         onClose={() => setIsFormModalOpen(false)}
         leadId={lead.id}
         leadName={`${lead.first_name || ''} ${lead.last_name || ''}`.trim()}
+      />
+
+      {/* Matrícula Course & Turma Assignment Modal */}
+      <MatriculaCourseTurmaModal
+        isOpen={isMatriculaModalOpen}
+        onClose={() => setIsMatriculaModalOpen(false)}
+        leadId={lead.id}
+        currentCourseId={courseInterests.length > 0 ? courseInterests[0].course_id : null}
+        currentCourseSessionId={courseInterests.length > 0 ? courseInterests[0].course_session_id : null}
+        onSuccess={handleLeadRefresh}
       />
     </div>
   );

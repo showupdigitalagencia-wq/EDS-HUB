@@ -19,6 +19,7 @@ import {
   fetchDailyOperationsDashboard,
   fetchDailyOperationsQueue,
   completeCrmTask,
+  setTaskWaitingReply,
   exportWorkQueueCSV,
   downloadCSV,
 } from './services/work-queue-service';
@@ -50,6 +51,7 @@ export const WorkDashboardPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  const [togglingTaskId, setTogglingTaskId] = useState<string | null>(null);
 
   // Modals state
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
@@ -155,6 +157,28 @@ export const WorkDashboardPage: React.FC = () => {
       setTimeout(() => setError(null), 4000);
     } finally {
       setCompletingTaskId(null);
+    }
+  };
+
+  const handleToggleWaitingReply = async (taskId: string, waiting: boolean) => {
+    if (togglingTaskId) return;
+    const cleanId = (taskId || '').replace(/^task:/i, '').trim();
+    try {
+      setTogglingTaskId(cleanId);
+      setError(null);
+      await setTaskWaitingReply(cleanId, waiting);
+      setSuccessMessage(
+        waiting
+          ? 'Tarefa colocada em Aguardando Resposta'
+          : 'Tarefa retornada para a fila ativa'
+      );
+      setTimeout(() => setSuccessMessage(null), 3000);
+      await Promise.all([loadKpis(), loadQueue()]);
+    } catch {
+      setError('Não foi possível alterar status da tarefa.');
+      setTimeout(() => setError(null), 4000);
+    } finally {
+      setTogglingTaskId(null);
     }
   };
 
@@ -674,6 +698,7 @@ export const WorkDashboardPage: React.FC = () => {
                       onRescheduleTask={handleOpenReschedule}
                       onCreateTaskForLead={handleOpenCreateForLead}
                       onSelectLead={setSelectedLeadId}
+                      onToggleWaitingReply={handleToggleWaitingReply}
                     />
                   </div>
                 );
