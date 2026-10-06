@@ -82,4 +82,5 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.check_website_sync_health() TO postgres, service_role, authenticated;
+REVOKE EXECUTE ON FUNCTION public.check_website_sync_health() FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.check_website_sync_health() TO authenticated, service_role;
