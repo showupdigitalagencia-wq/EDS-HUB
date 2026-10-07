@@ -213,6 +213,7 @@ export function LeadProfileContent({
           course_id,
           course_session_id,
           priority,
+          notes,
           course:courses(id, name, code),
           session:course_sessions(id, title, start_date, end_date)
         `)
@@ -1118,7 +1119,7 @@ export function LeadProfileContent({
 
             {(() => {
               const formattedRelational = courseInterests.map((ci: any) => ({
-                courseName: ci.course?.name || ci.course?.code || '',
+                courseName: ci.course?.name || ci.course?.code || ci.notes || '',
                 sessionTitle: ci.session?.title || null,
                 startDate: ci.session?.start_date || null,
                 endDate: ci.session?.end_date || null,

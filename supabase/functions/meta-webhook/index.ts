@@ -1050,19 +1050,31 @@ Deno.serve(async (req) => {
           .eq('id', targetLeadId)
           .maybeSingle();
 
-        const currentInterests: string[] = Array.isArray(existingLead?.course_interests)
-          ? existingLead.course_interests
-          : [];
+        const currentInterests: string[] = [];
+        if (Array.isArray(existingLead?.course_interests)) {
+          for (const item of existingLead.course_interests) {
+            if (item && typeof item === 'string' && !currentInterests.some(c => c.toLowerCase().trim() === item.toLowerCase().trim())) {
+              currentInterests.push(item.trim());
+            }
+          }
+        }
+        if (existingLead?.course_interest) {
+          const parts = existingLead.course_interest.split(',').map((s: string) => s.trim()).filter(Boolean);
+          for (const part of parts) {
+            if (!currentInterests.some(c => c.toLowerCase().trim() === part.toLowerCase().trim())) {
+              currentInterests.push(part);
+            }
+          }
+        }
+
         const hasCourse = currentInterests.some(
           (c) => c.toLowerCase().trim() === resolvedCourse.courseName.toLowerCase().trim()
         );
 
         if (!hasCourse) {
-          const mergedList = [...currentInterests, resolvedCourse.courseName];
-          updateData.course_interests = mergedList;
-          updateData.course_interest = existingLead?.course_interest
-            ? `${existingLead.course_interest}, ${resolvedCourse.courseName}`
-            : resolvedCourse.courseName;
+          currentInterests.push(resolvedCourse.courseName);
+          updateData.course_interests = currentInterests;
+          updateData.course_interest = currentInterests.join(', ');
         }
       }
 
@@ -1086,14 +1098,34 @@ Deno.serve(async (req) => {
           .maybeSingle();
 
         if (!existingInterest) {
-          await db.from('lead_course_interests').insert({
-            lead_id: targetLeadId,
-            course_id: resolvedCourse.courseId,
-            course_session_id: resolvedCourse.courseSessionId || null,
-            priority: 1,
-            source: 'form',
-            status: 'active',
-          });
+          const { data: existingRows } = await db
+            .from('lead_course_interests')
+            .select('priority')
+            .eq('lead_id', targetLeadId);
+
+          const usedPriorities = new Set(
+            (existingRows || []).map((r: any) => r.priority).filter((p: any) => p !== null && p !== undefined)
+          );
+          let assignedPriority: number | null = null;
+          for (let p = 1; p <= 3; p++) {
+            if (!usedPriorities.has(p)) {
+              assignedPriority = p;
+              break;
+            }
+          }
+
+          try {
+            await db.from('lead_course_interests').insert({
+              lead_id: targetLeadId,
+              course_id: resolvedCourse.courseId,
+              course_session_id: resolvedCourse.courseSessionId || null,
+              priority: assignedPriority,
+              source: 'meta',
+              status: 'active',
+            });
+          } catch (cErr: any) {
+            console.warn('[meta-webhook] Failed inserting returning lead_course_interests:', cErr.message);
+          }
         }
       }
 

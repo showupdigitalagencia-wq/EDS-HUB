@@ -157,6 +157,11 @@ Deno.serve(async (req) => {
     // --- 5. Find or create lead ---
     const { leadId, isNewLead } = await findOrCreateLead(db, payload, intakeEventId);
 
+    // Sync course interest into relational lead_course_interests
+    if (payload.course_interest) {
+      await syncLeadCourseInterest(db, leadId, payload.course_interest, payload.source);
+    }
+
     // Update intake event with lead_id
     await db
       .from('lead_intake_events')
@@ -975,6 +980,137 @@ function sanitizeForStorage(p: LeadIntakePayload): Record<string, unknown> {
   return rest as Record<string, unknown>;
 }
 
+function accumulateCourseInterests(
+  existingCourseInterests: unknown,
+  existingCourseInterest: string | null | undefined,
+  newCourseInterest: string | null | undefined
+): { course_interests: string[]; course_interest: string } {
+  const list: string[] = [];
+  if (Array.isArray(existingCourseInterests)) {
+    for (const item of existingCourseInterests) {
+      if (item && typeof item === 'string') {
+        const trimmed = item.trim();
+        if (trimmed && !list.some((x) => x.toLowerCase() === trimmed.toLowerCase())) {
+          list.push(trimmed);
+        }
+      }
+    }
+  }
+  if (existingCourseInterest) {
+    for (const part of existingCourseInterest.split(',')) {
+      const trimmed = part.trim();
+      if (trimmed && !list.some((x) => x.toLowerCase() === trimmed.toLowerCase())) {
+        list.push(trimmed);
+      }
+    }
+  }
+  if (newCourseInterest) {
+    const trimmedNew = newCourseInterest.trim();
+    if (trimmedNew && !list.some((x) => x.toLowerCase() === trimmedNew.toLowerCase())) {
+      list.push(trimmedNew);
+    }
+  }
+  return {
+    course_interests: list,
+    course_interest: list.join(', '),
+  };
+}
+
+async function syncLeadCourseInterest(
+  db: any,
+  leadId: string,
+  courseInterestName: string,
+  source: string = 'form'
+) {
+  if (!courseInterestName || !leadId) return;
+
+  try {
+    const { data: courses } = await db
+      .from('courses')
+      .select('id, name, code')
+      .eq('active', true);
+
+    let resolvedCourseId: string | null = null;
+    if (courses && courses.length > 0) {
+      const lowerTarget = courseInterestName.toLowerCase().trim();
+      const matched = courses.find((c: any) => {
+        const cName = c.name.toLowerCase();
+        const cCode = c.code.toLowerCase();
+        return (
+          cName === lowerTarget ||
+          cCode === lowerTarget ||
+          cName.includes(lowerTarget) ||
+          lowerTarget.includes(cName) ||
+          (lowerTarget.includes('wisdom') && cName.includes('wisdom')) ||
+          (lowerTarget.includes('zygo') && cName.includes('zygo')) ||
+          (lowerTarget.includes('advanced') && cName.includes('advanced')) ||
+          (lowerTarget.includes('intensiv') && cName.includes('intensiv')) ||
+          (lowerTarget.includes('endo') && cName.includes('endo')) ||
+          (lowerTarget.includes('perio') && cName.includes('perio')) ||
+          (lowerTarget.includes('rehab') && cName.includes('rehab')) ||
+          (lowerTarget.includes('anomal') && cName.includes('anomal')) ||
+          (lowerTarget.includes('prf') && cName.includes('prf'))
+        );
+      });
+      if (matched) {
+        resolvedCourseId = matched.id;
+      }
+    }
+
+    if (!resolvedCourseId) {
+      console.warn(`[process-lead-intake] Could not resolve course_id for course interest "${courseInterestName}"`);
+      return;
+    }
+
+    // Check if lead already has this course in lead_course_interests
+    const { data: existingInterest } = await db
+      .from('lead_course_interests')
+      .select('id')
+      .eq('lead_id', leadId)
+      .eq('course_id', resolvedCourseId)
+      .maybeSingle();
+
+    if (existingInterest) {
+      return;
+    }
+
+    // Find next available priority slot 1..3
+    const { data: existingRows } = await db
+      .from('lead_course_interests')
+      .select('priority')
+      .eq('lead_id', leadId);
+
+    const usedPriorities = new Set(
+      (existingRows || []).map((r: any) => r.priority).filter((p: any) => p !== null && p !== undefined)
+    );
+    let assignedPriority: number | null = null;
+    for (let p = 1; p <= 3; p++) {
+      if (!usedPriorities.has(p)) {
+        assignedPriority = p;
+        break;
+      }
+    }
+
+    const validSource = ['manual', 'post_course', 'form', 'hubspot', 'hubspot_sync', 'meta'].includes(source)
+      ? source
+      : 'form';
+
+    const { error: insErr } = await db.from('lead_course_interests').insert({
+      lead_id: leadId,
+      course_id: resolvedCourseId,
+      priority: assignedPriority,
+      source: validSource,
+      status: 'active',
+    });
+
+    if (insErr) {
+      console.warn('[process-lead-intake] Failed inserting lead_course_interests:', insErr.message);
+    }
+  } catch (err: any) {
+    console.warn('[process-lead-intake] syncLeadCourseInterest unexpected error:', err.message);
+  }
+}
+
 // deno-lint-ignore no-explicit-any
 async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEventId: string) {
   const rawObj = (payload.raw_payload || {}) as Record<string, unknown>;
@@ -1019,12 +1155,9 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
         updateData.last_acquisition_at = acqTimestamp;
       }
       if (payload.course_interest) {
-        const curInterests: string[] = Array.isArray(existing.course_interests) ? existing.course_interests : [];
-        const hasCourse = curInterests.some((c) => c.toLowerCase().trim() === payload.course_interest!.toLowerCase().trim());
-        if (!hasCourse) {
-          updateData.course_interests = [...curInterests, payload.course_interest];
-          updateData.course_interest = existing.course_interest ? `${existing.course_interest}, ${payload.course_interest}` : payload.course_interest;
-        }
+        const acc = accumulateCourseInterests(existing.course_interests, existing.course_interest, payload.course_interest);
+        updateData.course_interests = acc.course_interests;
+        updateData.course_interest = acc.course_interest;
       }
       await db.from('leads').update(updateData).eq('id', existing.id);
       return { leadId: existing.id, isNewLead: payload.is_new_lead === true };
@@ -1051,12 +1184,9 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
         updateData.last_acquisition_at = acqTimestamp;
       }
       if (payload.course_interest) {
-        const curInterests: string[] = Array.isArray(existing.course_interests) ? existing.course_interests : [];
-        const hasCourse = curInterests.some((c) => c.toLowerCase().trim() === payload.course_interest!.toLowerCase().trim());
-        if (!hasCourse) {
-          updateData.course_interests = [...curInterests, payload.course_interest];
-          updateData.course_interest = existing.course_interest ? `${existing.course_interest}, ${payload.course_interest}` : payload.course_interest;
-        }
+        const acc = accumulateCourseInterests(existing.course_interests, existing.course_interest, payload.course_interest);
+        updateData.course_interests = acc.course_interests;
+        updateData.course_interest = acc.course_interest;
       }
       await db.from('leads').update(updateData).eq('id', existing.id);
       return { leadId: existing.id, isNewLead: false };
@@ -1088,12 +1218,9 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
         updateData.last_acquisition_at = acqTimestamp;
       }
       if (payload.course_interest) {
-        const curInterests: string[] = Array.isArray(existing.course_interests) ? existing.course_interests : [];
-        const hasCourse = curInterests.some((c) => c.toLowerCase().trim() === payload.course_interest!.toLowerCase().trim());
-        if (!hasCourse) {
-          updateData.course_interests = [...curInterests, payload.course_interest];
-          updateData.course_interest = existing.course_interest ? `${existing.course_interest}, ${payload.course_interest}` : payload.course_interest;
-        }
+        const acc = accumulateCourseInterests(existing.course_interests, existing.course_interest, payload.course_interest);
+        updateData.course_interests = acc.course_interests;
+        updateData.course_interest = acc.course_interest;
       }
       if (payload.email_confirmation && payload.email_confirmation.trim().toLowerCase() !== cleanEmail) {
         updateData.email_confirmation = payload.email_confirmation.trim().toLowerCase();
@@ -1128,12 +1255,9 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
           updateData.last_acquisition_at = acqTimestamp;
         }
         if (payload.course_interest) {
-          const curInterests: string[] = Array.isArray(existing.course_interests) ? existing.course_interests : [];
-          const hasCourse = curInterests.some((c) => c.toLowerCase().trim() === payload.course_interest!.toLowerCase().trim());
-          if (!hasCourse) {
-            updateData.course_interests = [...curInterests, payload.course_interest];
-            updateData.course_interest = existing.course_interest ? `${existing.course_interest}, ${payload.course_interest}` : payload.course_interest;
-          }
+          const acc = accumulateCourseInterests(existing.course_interests, existing.course_interest, payload.course_interest);
+          updateData.course_interests = acc.course_interests;
+          updateData.course_interest = acc.course_interest;
         }
         await db.from('leads').update(updateData).eq('id', existing.id);
         return { leadId: existing.id, isNewLead: false };

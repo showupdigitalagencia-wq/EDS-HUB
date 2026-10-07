@@ -96,11 +96,56 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
           setSessions(sessionsRes.data as CourseSession[]);
         }
 
-        if (interestsRes.data && interestsRes.data.length > 0) {
-          const mapped: CourseInterestEditEntry[] = interestsRes.data.slice(0, 3).map((item: any) => ({
-            courseId: item.course_id,
-            sessionId: item.course_session_id || '',
-          }));
+        const loadedCourses = coursesRes.data || [];
+        const mapped: CourseInterestEditEntry[] = (interestsRes.data || []).map((item: any) => ({
+          courseId: item.course_id,
+          sessionId: item.course_session_id || '',
+        }));
+
+        // Enrich with any courses present on lead.course_interests or lead.course_interest
+        const existingCourseIds = new Set(mapped.map((m) => m.courseId).filter(Boolean));
+        const leadRawCourses: string[] = [];
+        if (Array.isArray(lead.course_interests)) {
+          for (const c of lead.course_interests) {
+            if (c && typeof c === 'string') leadRawCourses.push(c.trim());
+          }
+        }
+        if (lead.course_interest) {
+          for (const c of lead.course_interest.split(',')) {
+            const trimmed = c.trim();
+            if (trimmed) leadRawCourses.push(trimmed);
+          }
+        }
+
+        for (const rawName of leadRawCourses) {
+          const lowerRaw = rawName.toLowerCase();
+          const matchedCourse = loadedCourses.find((c: any) => {
+            const cName = c.name.toLowerCase();
+            const cCode = c.code.toLowerCase();
+            return (
+              cName === lowerRaw ||
+              cCode === lowerRaw ||
+              cName.includes(lowerRaw) ||
+              lowerRaw.includes(cName) ||
+              (lowerRaw.includes('wisdom') && cName.includes('wisdom')) ||
+              (lowerRaw.includes('zygo') && cName.includes('zygo')) ||
+              (lowerRaw.includes('advanced') && cName.includes('advanced')) ||
+              (lowerRaw.includes('intensiv') && cName.includes('intensiv')) ||
+              (lowerRaw.includes('endo') && cName.includes('endo')) ||
+              (lowerRaw.includes('perio') && cName.includes('perio')) ||
+              (lowerRaw.includes('rehab') && cName.includes('rehab'))
+            );
+          });
+          if (matchedCourse && !existingCourseIds.has(matchedCourse.id)) {
+            existingCourseIds.add(matchedCourse.id);
+            mapped.push({
+              courseId: matchedCourse.id,
+              sessionId: '',
+            });
+          }
+        }
+
+        if (mapped.length > 0) {
           setInterests(mapped);
         } else {
           setInterests([{ courseId: '', sessionId: '' }]);
@@ -144,7 +189,7 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
 
   if (!isOpen || !lead) return null;
 
-  // Add another course interest (up to 3 max)
+  // Add another course interest (up to 3 prioritized)
   const handleAddInterest = () => {
     if (interests.length < 3) {
       setInterests([...interests, { courseId: '', sessionId: '' }]);
@@ -252,21 +297,52 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
         }
       }
 
-      // 4. Resolve Prioritized Course Interests
-      const validInterests = interests
-        .filter((i) => Boolean(i.courseId))
-        .slice(0, 3)
-        .map((item, idx) => ({
-          courseId: item.courseId,
-          sessionId: item.sessionId ? item.sessionId : null,
-          priority: (idx + 1) as 1 | 2 | 3,
-        }));
+      // 4. Resolve Prioritized Course Interests (preserves all distinct courses)
+      const seenCourseIds = new Set<string>();
+      const dedupedInterests: CourseInterestEditEntry[] = [];
+      for (const item of interests) {
+        if (!item.courseId || seenCourseIds.has(item.courseId)) continue;
+        seenCourseIds.add(item.courseId);
+        dedupedInterests.push(item);
+      }
+
+      const validInterests = dedupedInterests.map((item, idx) => ({
+        courseId: item.courseId,
+        sessionId: item.sessionId ? item.sessionId : null,
+        priority: (idx < 3 ? ((idx + 1) as 1 | 2 | 3) : null),
+      }));
 
       // Find course names for legacy snapshots
       const courseMap = new Map(courses.map((c) => [c.id, c.name]));
       const courseNames = validInterests
         .map((vi) => courseMap.get(vi.courseId))
         .filter(Boolean) as string[];
+
+      // Query existing interests to ensure unprioritized/additional courses are never destroyed
+      const { data: existingAllInterests } = await supabase
+        .from('lead_course_interests')
+        .select('course_id, course_session_id, priority, source')
+        .eq('lead_id', lead.id);
+
+      const unprioritizedToPreserve = (existingAllInterests || []).filter(
+        (e: any) => !seenCourseIds.has(e.course_id)
+      );
+
+      for (const up of unprioritizedToPreserve) {
+        const name = courseMap.get(up.course_id);
+        if (name && !courseNames.includes(name)) {
+          courseNames.push(name);
+        }
+      }
+
+      // Preserve any unmapped raw strings already on the lead
+      if (Array.isArray(lead.course_interests)) {
+        for (const raw of lead.course_interests) {
+          if (raw && typeof raw === 'string' && !courseNames.some((c) => c.toLowerCase().trim() === raw.toLowerCase().trim())) {
+            courseNames.push(raw.trim());
+          }
+        }
+      }
       const primaryCourseName = courseNames[0] || null;
 
       // 5. Update Current Lead strictly in-place (DO NOT touch pipeline_stage_id)
@@ -280,7 +356,7 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
           phone_e164: phoneE164,
           contact_preference: toDbContactPreference(contactPreference),
           referred_by: referredBy.trim() || null,
-          course_interest: primaryCourseName,
+          course_interest: courseNames.join(', ') || primaryCourseName,
           course_interests: courseNames,
           updated_at: new Date().toISOString(),
         })
@@ -288,22 +364,32 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
 
       if (updateErr) throw updateErr;
 
-      // 6. Update lead_course_interests (delete old & insert new prioritized rows)
+      // 6. Update lead_course_interests (delete old & insert new prioritized rows while preserving unprioritized)
       await supabase
         .from('lead_course_interests')
         .delete()
         .eq('lead_id', lead.id);
 
-      if (validInterests.length > 0) {
-        const rowsToInsert = validInterests.map((item) => ({
+      const rowsToInsert = [
+        ...validInterests.map((item) => ({
           lead_id: lead.id,
           course_id: item.courseId,
           course_session_id: item.sessionId,
           priority: item.priority,
           source: 'manual',
           status: 'active',
-        }));
+        })),
+        ...unprioritizedToPreserve.map((item: any) => ({
+          lead_id: lead.id,
+          course_id: item.course_id,
+          course_session_id: item.course_session_id || null,
+          priority: null,
+          source: item.source || 'manual',
+          status: 'active',
+        })),
+      ];
 
+      if (rowsToInsert.length > 0) {
         const { error: intErr } = await supabase
           .from('lead_course_interests')
           .insert(rowsToInsert);
@@ -515,7 +601,7 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
             </div>
           </div>
 
-          {/* Course Interests (Up to 3 prioritized) */}
+          {/* Course Interests */}
           <div className="pt-2 border-t border-slate-100">
             <div className="flex items-center justify-between mb-2">
               <label className="block text-xs font-bold font-heading text-slate-800 uppercase tracking-wider">
@@ -549,7 +635,7 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-slate-600">
-                        Prioridade #{idx + 1}
+                        {idx < 3 ? `Prioridade #${idx + 1}` : `Interesse #${idx + 1}`}
                       </span>
                       {interests.length > 1 && (
                         <button
