@@ -227,7 +227,7 @@ Deno.serve(async (req) => {
     if (template_key) {
       const { data: tplRecord } = await db
         .from('email_templates')
-        .select('id, name, template_key, category, content_json')
+        .select('id, name, template_key, category, content_json, html_template')
         .eq('template_key', template_key)
         .maybeSingle();
 
@@ -332,10 +332,12 @@ Deno.serve(async (req) => {
       if (requestedTemplateKey && APPROVED_COURSE_TEMPLATES[requestedTemplateKey]) {
         const standardText = APPROVED_COURSE_TEMPLATES[requestedTemplateKey].getText(lead).trim();
         if (effectiveBody === standardText || !effectiveBody) {
-          htmlBody = APPROVED_COURSE_TEMPLATES[requestedTemplateKey].getHtml(lead);
+          htmlBody = tplRecord?.html_template || APPROVED_COURSE_TEMPLATES[requestedTemplateKey].getHtml(lead);
         } else {
           htmlBody = effectiveBody.includes('<p>') ? effectiveBody : `<p>${effectiveBody.replace(/\n/g, '<br/>')}</p>`;
         }
+      } else if (tplRecord?.html_template) {
+        htmlBody = tplRecord.html_template;
       } else if (isZygomaticTpl) {
         htmlBody = getApprovedZygomaticHtml(lead);
       } else {

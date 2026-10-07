@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { EmailBlock, BlockType } from './types';
 import { renderBlocksToHtml, renderBlocksToText } from './utils/htmlGenerator';
+import { RichTextEditor } from './components/RichTextEditor';
 import {
   Heading,
   AlignLeft,
@@ -430,12 +431,13 @@ export function BlockEditor({
 
                     {block.type === 'text' && (
                       <div className="space-y-2.5">
-                        <textarea
-                          rows={3}
+                        <RichTextEditor
                           value={block.text}
-                          onChange={(e) => updateBlockField(block.id, { text: e.target.value })}
+                          onChange={(text) => updateBlockField(block.id, { text })}
+                          align={block.align}
+                          color={block.color}
                           placeholder="Digite o texto do parágrafo..."
-                          className="w-full p-3 text-xs sm:text-sm text-slate-800 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#08254f] focus:border-[#08254f] leading-relaxed"
+                          className="p-1 border border-slate-200 rounded-lg bg-slate-50/50"
                         />
                         <div className="flex items-center gap-1.5 text-xs">
                           <span className="text-slate-400 font-medium">Alinhamento:</span>

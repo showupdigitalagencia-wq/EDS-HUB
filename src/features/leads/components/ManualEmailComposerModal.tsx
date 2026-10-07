@@ -27,7 +27,7 @@ import {
   resolveZygomaticSalutation,
   APPROVED_COURSE_TEMPLATES,
 } from '../../../utils/salutation';
-import { getTemplateSubject, getTemplateChannel } from '../../../utils/template-variables';
+import { getTemplateSubject, getTemplateChannel, renderTemplateCentral } from '../../../utils/template-variables';
 import type { Lead, EmailTemplate } from '../../../types';
 
 export interface ManualEmailComposerModalProps {
@@ -203,8 +203,8 @@ export function ManualEmailComposerModal({
 
       if (approvedPkg) {
         setSelectedTemplateKey(approvedPkg.templateKey);
-        setSubject(approvedPkg.subject);
-        setBody(approvedPkg.getText(lead));
+        setSubject(getTemplateSubject(tpl) || approvedPkg.subject);
+        setBody(tpl.text_template ? renderTemplateCentral(tpl.text_template, lead) : approvedPkg.getText(lead));
         const attList = approvedPkg.attachmentNames.map((name) => ({
           displayName: name,
           canRemove: false,

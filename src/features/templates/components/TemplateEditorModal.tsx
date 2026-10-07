@@ -3,6 +3,8 @@ import { supabase } from '../../../lib/supabase';
 import { BlockEditor } from '../../editor/BlockEditor';
 import { CategorySelect } from './CategorySelect';
 import { sanitizeHtml } from '../../../utils/sanitize-html';
+import { convertHtmlToBlocks } from '../../../utils/rich-text-sanitizer';
+import { RichTextEditor } from '../../editor/components/RichTextEditor';
 import {
   getTemplateChannel,
   getTemplateSubject,
@@ -10,6 +12,7 @@ import {
   calculateSmsSegments,
   renderTemplateWithSampleData,
   SAMPLE_PREVIEW_DATA,
+  APPROVED_COURSE_TEMPLATES,
   type TemplateChannel,
 } from '../../../utils/template-variables';
 import { renderBlocksToHtml, renderBlocksToText } from '../../editor/utils/htmlGenerator';
@@ -126,7 +129,27 @@ export function TemplateEditorModal({
       setCategory(editingTemplate.category || 'general');
 
       if (ch === 'email') {
-        setSubject(getTemplateSubject(editingTemplate));
+        const tplKey =
+          editingTemplate.template_key ||
+          (editingTemplate.name?.toLowerCase().includes('zygomatic')
+            ? 'zygomatic_course_details'
+            : editingTemplate.name?.toLowerCase().includes('wisdom')
+              ? 'wisdom_course_details'
+              : editingTemplate.name?.toLowerCase().includes('periodontal')
+                ? 'periodontal_course_details'
+                : editingTemplate.name?.toLowerCase().includes('endo')
+                  ? 'endodontic_course_details'
+                  : editingTemplate.name?.toLowerCase().includes('implant')
+                    ? 'implant_course_details'
+                    : editingTemplate.name?.toLowerCase().includes('rehab')
+                      ? 'rehabilitation_course_details'
+                      : null);
+
+        const approvedPkg = tplKey ? APPROVED_COURSE_TEMPLATES[tplKey] : null;
+        const rawSubject = getTemplateSubject(editingTemplate);
+        const resolvedSubject = rawSubject || approvedPkg?.subject || editingTemplate.name || '';
+        setSubject(resolvedSubject);
+
         const cj = editingTemplate.content_json;
         let loadedBlocks: EmailBlock[] = [];
         if (Array.isArray(cj)) {
@@ -138,20 +161,48 @@ export function TemplateEditorModal({
         ) {
           loadedBlocks = (cj as { blocks: EmailBlock[] }).blocks;
         }
+
+        // Hydration Fallback: If content_json has no blocks, parse from html_template or approved package
+        if (loadedBlocks.length === 0) {
+          const sourceHtml =
+            editingTemplate.html_template ||
+            (approvedPkg ? approvedPkg.getHtml(SAMPLE_PREVIEW_DATA) : '');
+
+          if (sourceHtml && sourceHtml.trim()) {
+            loadedBlocks = convertHtmlToBlocks(sourceHtml);
+          } else if (editingTemplate.text_template && editingTemplate.text_template.trim()) {
+            loadedBlocks = [
+              {
+                id: `text-${Date.now()}`,
+                type: 'text',
+                text: editingTemplate.text_template.trim(),
+                align: 'left',
+                color: '#334155',
+              },
+            ];
+          }
+        }
+
         setCurrentBlocks(loadedBlocks);
         setCurrentHtml(editingTemplate.html_template || renderBlocksToHtml(loadedBlocks));
         setCurrentText(editingTemplate.text_template || renderBlocksToText(loadedBlocks));
         setSmsBody('');
 
-        const tplKey =
-          editingTemplate.template_key ||
-          (editingTemplate.name?.toLowerCase().includes('zygomatic')
-            ? 'zygomatic_course_details'
-            : null);
-        if (tplKey) {
-          void loadAttachment(tplKey);
+        const initialAttName = editingTemplate.attachment_name || approvedPkg?.attachmentNames?.[0] || null;
+        if (initialAttName) {
+          setAttachment({
+            file_name: initialAttName,
+            display_name: initialAttName,
+            is_required: true,
+            file_size_bytes: 0,
+            is_pdf: true,
+          });
         } else {
           setAttachment(null);
+        }
+
+        if (tplKey) {
+          void loadAttachment(tplKey);
         }
       } else {
         setSubject('');
@@ -352,7 +403,17 @@ export function TemplateEditorModal({
       editingTemplate?.template_key ||
       (editingTemplate?.name?.toLowerCase().includes('zygomatic')
         ? 'zygomatic_course_details'
-        : (name.toLowerCase().replace(/\s+/g, '_') || 'custom_email_template'))
+        : editingTemplate?.name?.toLowerCase().includes('wisdom')
+          ? 'wisdom_course_details'
+          : editingTemplate?.name?.toLowerCase().includes('periodontal')
+            ? 'periodontal_course_details'
+            : editingTemplate?.name?.toLowerCase().includes('endo')
+              ? 'endodontic_course_details'
+              : editingTemplate?.name?.toLowerCase().includes('implant')
+                ? 'implant_course_details'
+                : editingTemplate?.name?.toLowerCase().includes('rehab')
+                  ? 'rehabilitation_course_details'
+                  : (name.toLowerCase().replace(/\s+/g, '_') || 'custom_email_template'))
     );
   };
 
@@ -541,6 +602,7 @@ export function TemplateEditorModal({
 
     try {
       if (channel === 'email') {
+        const effectiveKey = getEffectiveKey();
         const payloadContentJson = {
           channel: 'email',
           subject: subject.trim(),
@@ -554,6 +616,7 @@ export function TemplateEditorModal({
               name: name.trim(),
               description: description.trim() || null,
               category,
+              template_key: effectiveKey,
               content_json: payloadContentJson,
               html_template: currentHtml,
               text_template: currentText,
@@ -569,6 +632,7 @@ export function TemplateEditorModal({
             name: name.trim(),
             description: description.trim() || null,
             category,
+            template_key: effectiveKey,
             content_json: payloadContentJson,
             html_template: currentHtml,
             text_template: currentText,
@@ -1085,13 +1149,12 @@ export function TemplateEditorModal({
                           )}
 
                           {block.type === 'text' && (
-                            <textarea
-                              rows={Math.max(2, block.text.split('\n').length)}
+                            <RichTextEditor
                               value={block.text}
-                              onChange={(e) => handleUpdateBlock(block.id, { text: e.target.value })}
+                              onChange={(text) => handleUpdateBlock(block.id, { text })}
+                              align={block.align}
+                              color={block.color}
                               placeholder="Escreva sua mensagem aqui..."
-                              className="w-full text-slate-800 text-sm sm:text-base leading-relaxed bg-transparent border-0 focus:outline-none focus:ring-0 p-0 resize-none font-sans"
-                              style={{ textAlign: block.align }}
                             />
                           )}
 

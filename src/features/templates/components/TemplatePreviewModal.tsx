@@ -74,21 +74,29 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
 
   const emailData = useMemo(() => {
     if (!template || channel !== 'email') return null;
+
+    const rawSubject = getTemplateSubject(template) || approvedPackage?.subject || template.name;
+    const substitutedSubject = renderTemplateWithSampleData(rawSubject, 'global');
+
+    if (template.html_template && template.html_template.trim()) {
+      const substitutedHtml = renderTemplateWithSampleData(template.html_template, 'global');
+      const safeHtml = sanitizeHtml(substitutedHtml);
+      return {
+        subject: substitutedSubject,
+        html: safeHtml,
+      };
+    }
+
     if (approvedPackage) {
       return {
-        subject: approvedPackage.subject,
+        subject: substitutedSubject,
         html: sanitizeHtml(approvedPackage.getHtml(SAMPLE_PREVIEW_DATA)),
       };
     }
 
-    const rawSubject = getTemplateSubject(template) || template.name;
-    const substitutedSubject = renderTemplateWithSampleData(rawSubject, 'global');
-    const substitutedHtml = renderTemplateWithSampleData(template.html_template, 'global');
-    const safeHtml = sanitizeHtml(substitutedHtml);
-
     return {
       subject: substitutedSubject,
-      html: safeHtml,
+      html: '<p style="color:#64748b; font-size:13px; text-align:center; padding: 20px;">(Template sem conteúdo HTML)</p>',
     };
   }, [template, channel, approvedPackage]);
 

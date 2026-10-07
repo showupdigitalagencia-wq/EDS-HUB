@@ -14,6 +14,7 @@ import {
   resolveSafeFirstName,
   resolveDoctorSalutation,
   resolveDoctorGreeting,
+  resolveSafeLastName,
   resolveZygomaticSalutation,
   getApprovedZygomaticText,
   getApprovedZygomaticHtml,
@@ -1452,9 +1453,32 @@ async function handleEmailPreference(
   const replyTo = 'info@expdentalsolutions.com';
 
   const isZygomatic = templateKey === 'zygomatic_course_details';
-  const subject = approvedTpl.subject;
-  const body = approvedTpl.getText(payload);
-  const escapedHtmlBody = approvedTpl.getHtml(payload);
+
+  // CANONICAL TEMPLATE SOURCE: Query public.email_templates for active saved template
+  const { data: dbTemplate } = await db
+    .from('email_templates')
+    .select('id, name, template_key, content_json, html_template, text_template, has_attachment, attachment_name')
+    .eq('template_key', templateKey)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  let subject: string;
+  let body: string;
+  let escapedHtmlBody: string;
+
+  if (dbTemplate && dbTemplate.html_template && dbTemplate.html_template.trim()) {
+    const rawSubject = (dbTemplate.content_json as any)?.subject || dbTemplate.name || approvedTpl.subject;
+    subject = renderAutomatedEmailVariables(rawSubject, payload);
+    escapedHtmlBody = renderAutomatedEmailVariables(dbTemplate.html_template, payload);
+    body = dbTemplate.text_template && dbTemplate.text_template.trim()
+      ? renderAutomatedEmailVariables(dbTemplate.text_template, payload)
+      : htmlToPlainTextSimple(escapedHtmlBody);
+  } else {
+    // Robust fallback to approved template package if database record is missing or empty
+    subject = approvedTpl.subject;
+    body = approvedTpl.getText(payload);
+    escapedHtmlBody = approvedTpl.getHtml(payload);
+  }
 
   // Attachment handling: Query template_attachments for this template
   const attachmentsToSend: Array<{ filename: string; content: string; contentType?: string }> = [];
@@ -2076,6 +2100,62 @@ function renderTemplate(
 
   // Strip any remaining unresolved template tags safely
   res = res.replace(/\{\{\s*[\w.]+\s*\}\}/g, '');
+  return res;
+}
+
+function htmlToPlainTextSimple(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function renderAutomatedEmailVariables(
+  templateContent: string,
+  payload: LeadIntakePayload
+): string {
+  if (!templateContent) return '';
+
+  const prefix = templateContent.includes('Hi ') ? 'Hi' : 'Hello';
+  const safeFirst = resolveSafeFirstName(payload.first_name);
+  const safeLast = resolveSafeLastName(payload.last_name, payload.first_name || payload.full_name);
+
+  let res = templateContent;
+
+  if (safeLast) {
+    res = res.replace(/\{\{\s*salutation\s*\}\}/gi, safeLast);
+    res = res.replace(/\{\{\s*last_name\s*\}\}/gi, safeLast);
+    res = res.replace(/\{\{\s*salutation_line\s*\}\}/gi, `${prefix} Dr. ${safeLast}`);
+    res = res.replace(/\{\{\s*doctor_greeting\s*\}\}/gi, `${prefix} Dr. ${safeLast},`);
+  } else {
+    // If no reliable surname, strictly use Doctor greeting
+    res = res.replace(/(?:Hello|Hi)\s+Dr\.\s*\{\{\s*(?:salutation|last_name)\s*\}\}/gi, `${prefix} Doctor`);
+    res = res.replace(/\{\{\s*salutation\s*\}\}/gi, 'Doctor');
+    res = res.replace(/\{\{\s*last_name\s*\}\}/gi, 'Doctor');
+    res = res.replace(/\{\{\s*salutation_line\s*\}\}/gi, `${prefix} Doctor`);
+    res = res.replace(/\{\{\s*doctor_greeting\s*\}\}/gi, `${prefix} Doctor,`);
+  }
+
+  const courseInterest = payload.course_interest || payload.course_title || 'Course';
+  res = res
+    .replace(/\{\{\s*first_name\s*\}\}/gi, safeFirst)
+    .replace(/\{\{\s*course_name\s*\}\}/gi, courseInterest)
+    .replace(/\{\{\s*course_date_range\s*\}\}/gi, 'November 7–10, 2026')
+    .replace(/\{\{\s*course_tuition\s*\}\}/gi, '$8,200');
+
+  // Strip remaining unmapped {{...}} safely
+  res = res.replace(/\{\{\s*[\w.]+\s*\}\}/g, '');
+
   return res;
 }
 

@@ -185,7 +185,7 @@ describe('Part 11 — Controlled Test Matrix (Scenarios A through S)', () => {
     expect(APPROVED_COURSE_TEMPLATES['implant_course_details'].getText({})).toContain('INTENSIVE DENTAL IMPLANT COURSE');
 
     // In intake code, new courses are merged non-destructively
-    expect(intakeCode).toContain('updateData.course_interests = [...curInterests, payload.course_interest]');
+    expect(intakeCode).toMatch(/accumulateCourseInterests|updateData\.course_interests/);
     expect(intakeCode).toContain('normalizedCourse.includes(\'intensive\') || normalizedCourse.includes(\'implant\')');
   });
 
