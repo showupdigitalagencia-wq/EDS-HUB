@@ -75,7 +75,7 @@ export function LeadQuickActionBar({
   };
 
   const actionBaseClass =
-    'inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold rounded-xl border transition-all duration-150 select-none min-h-[40px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#449bd5]';
+    'w-full relative inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold rounded-xl border transition-all duration-150 select-none min-h-[40px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#449bd5]';
 
   const commButtonActive =
     'bg-white hover:bg-slate-50 text-[#08254f] border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-xs active:translate-y-0.5 cursor-pointer';
@@ -84,193 +84,190 @@ export function LeadQuickActionBar({
     'bg-slate-50 text-slate-400 border-slate-200/60 opacity-50 cursor-not-allowed';
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 p-3 sm:p-3.5 shadow-2xs space-y-2.5">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        {/* GROUP 1: Direct Communication (Ligar, SMS, Email, WhatsApp) */}
-        <div className="flex-1">
-          <div className="flex items-center justify-between mb-1.5 px-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Comunicação
-            </span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {/* 1. Ligar */}
-            {hasPhone ? (
-              <a
-                href={`tel:${rawPhone.trim()}`}
-                role="button"
-                data-testid="quick-action-call"
-                onClick={() => logIntentNonBlocking('call_manual_attempt', 'Ligação iniciada', 'call')}
-                title={`Ligar para ${rawPhone}`}
-                className={`${actionBaseClass} ${commButtonActive}`}
-              >
-                <Phone className="h-4 w-4 text-[#449bd5] shrink-0" />
-                <span>Ligar</span>
-              </a>
-            ) : (
-              <button
-                type="button"
-                disabled
-                data-testid="quick-action-call"
-                title="Telefone não informado"
-                className={`${actionBaseClass} ${commButtonDisabled}`}
-              >
-                <Phone className="h-4 w-4 text-slate-300 shrink-0" />
-                <span>Ligar</span>
-              </button>
-            )}
-
-            {/* 2. SMS — Manual Assisted Dispatch */}
-            {onOpenSmsComposer && hasPhone ? (
-              <button
-                type="button"
-                data-testid="quick-action-sms"
-                onClick={() => {
-                  logIntentNonBlocking('sms_manual_attempt', 'SMS manual assistido iniciado', 'sms');
-                  onOpenSmsComposer();
-                }}
-                title={`Enviar SMS manual para ${rawPhone}`}
-                className={`${actionBaseClass} ${commButtonActive}`}
-              >
-                <MessageSquare className="h-4 w-4 text-[#449bd5] shrink-0" />
-                <span>SMS</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled
-                data-testid="quick-action-sms"
-                title="SMS indisponível: canal Twilio/SMS inativo no momento."
-                className={`${actionBaseClass} ${commButtonDisabled}`}
-              >
-                <MessageSquare className="h-4 w-4 text-slate-300 shrink-0" />
-                <span>SMS</span>
-              </button>
-            )}
-
-            {/* 3. Email — Canonical internal composer without mailto */}
-            {isValidEmail ? (
-              <button
-                type="button"
-                data-testid="quick-action-email"
-                onClick={() => {
-                  logIntentNonBlocking('email_manual_attempt', 'Email manual aberto para contato', 'email');
-                  onOpenEmailComposer?.();
-                }}
-                title={`Enviar email para ${cleanEmail}`}
-                className={`${actionBaseClass} ${commButtonActive}`}
-              >
-                <Mail className="h-4 w-4 text-[#449bd5] shrink-0" />
-                <span>Email</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled
-                data-testid="quick-action-email"
-                title="Este lead não possui um e-mail válido."
-                className={`${actionBaseClass} ${commButtonDisabled}`}
-              >
-                <Mail className="h-4 w-4 text-slate-300 shrink-0" />
-                <span>Email</span>
-              </button>
-            )}
-
-            {/* 4. WhatsApp — Official recognizable glyph & green CTA */}
-            {hasPhone ? (
-              onOpenWhatsappComposer ? (
-                <button
-                  type="button"
-                  data-testid="quick-action-whatsapp"
-                  onClick={() => {
-                    logIntentNonBlocking('whatsapp_contact_attempt', 'WhatsApp manual assistido iniciado', 'whatsapp');
-                    onOpenWhatsappComposer();
-                  }}
-                  title={`Abrir WhatsApp manual assistido para ${rawPhone}`}
-                  className={`${actionBaseClass} bg-[#25d366] hover:bg-[#20ba5a] text-white border-transparent shadow-xs cursor-pointer active:translate-y-0.5`}
-                >
-                  <WhatsAppIcon className="h-4 w-4 text-white shrink-0" />
-                  <span>WhatsApp</span>
-                </button>
-              ) : (
-                <a
-                  href={`https://wa.me/${digitsOnly}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  role="button"
-                  data-testid="quick-action-whatsapp"
-                  onClick={() => logIntentNonBlocking('whatsapp_contact_attempt', 'WhatsApp aberto', 'whatsapp')}
-                  title={`Abrir WhatsApp para ${digitsOnly}`}
-                  className={`${actionBaseClass} bg-[#25d366] hover:bg-[#20ba5a] text-white border-transparent shadow-xs cursor-pointer active:translate-y-0.5`}
-                >
-                  <WhatsAppIcon className="h-4 w-4 text-white shrink-0" />
-                  <span>WhatsApp</span>
-                </a>
-              )
-            ) : (
-              <button
-                type="button"
-                disabled
-                data-testid="quick-action-whatsapp"
-                title="Telefone não informado"
-                className={`${actionBaseClass} ${commButtonDisabled}`}
-              >
-                <WhatsAppIcon className="h-4 w-4 text-slate-300 shrink-0" />
-                <span>WhatsApp</span>
-              </button>
-            )}
-          </div>
+    <div className="bg-white rounded-2xl border border-slate-200/80 p-3 sm:p-3.5 shadow-2xs space-y-3">
+      {/* GROUP 1: Direct Communication (Ligar, SMS, Email, WhatsApp) */}
+      <div className="w-full">
+        <div className="flex items-center justify-between mb-1.5 px-0.5">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Comunicação
+          </span>
         </div>
-
-        {/* Divider on large screens */}
-        <div className="hidden lg:block w-px h-10 bg-slate-200/80 self-end mb-1" />
-
-        {/* GROUP 2: Operational Actions (Adicionar Tarefa, Pagamento) */}
-        <div className="lg:w-auto">
-          <div className="flex items-center justify-between mb-1.5 px-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Operacional
-            </span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {/* 5. Adicionar Tarefa */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {/* 1. Ligar */}
+          {hasPhone ? (
+            <a
+              href={`tel:${rawPhone.trim()}`}
+              role="button"
+              data-testid="quick-action-call"
+              onClick={() => logIntentNonBlocking('call_manual_attempt', 'Ligação iniciada', 'call')}
+              title={`Ligar para ${rawPhone}`}
+              className={`${actionBaseClass} ${commButtonActive}`}
+            >
+              <Phone className="h-4 w-4 text-[#449bd5] shrink-0 pointer-events-none" />
+              <span className="pointer-events-none">Ligar</span>
+            </a>
+          ) : (
             <button
               type="button"
-              data-testid="quick-action-add-task"
-              onClick={onOpenTaskModal}
-              title="Adicionar nova tarefa para este lead"
-              className={`${actionBaseClass} bg-slate-50 hover:bg-slate-100 text-[#08254f] border-slate-200/90 shadow-2xs hover:border-slate-300 cursor-pointer`}
+              disabled
+              data-testid="quick-action-call"
+              title="Telefone não informado"
+              className={`${actionBaseClass} ${commButtonDisabled}`}
             >
-              <PlusCircle className="h-4 w-4 text-[#08254f] shrink-0" />
-              <span className="truncate">Adicionar Tarefa</span>
+              <Phone className="h-4 w-4 text-slate-300 shrink-0 pointer-events-none" />
+              <span className="pointer-events-none">Ligar</span>
             </button>
+          )}
 
-            {/* 6. Pagamento (Task Reminder Semantics) */}
+          {/* 2. SMS — Manual Assisted Dispatch */}
+          {onOpenSmsComposer && hasPhone ? (
             <button
               type="button"
-              data-testid="quick-action-payment"
-              onClick={onOpenPaymentModal}
-              title="Agendar lembrete operacional de pagamento"
-              className={`${actionBaseClass} bg-amber-50/70 hover:bg-amber-100/80 text-amber-900 border-amber-200/80 hover:border-amber-300 shadow-2xs cursor-pointer`}
+              data-testid="quick-action-sms"
+              onClick={() => {
+                logIntentNonBlocking('sms_manual_attempt', 'SMS manual assistido iniciado', 'sms');
+                onOpenSmsComposer();
+              }}
+              title={`Enviar SMS manual para ${rawPhone}`}
+              className={`${actionBaseClass} ${commButtonActive}`}
             >
-              <CalendarCheck className="h-4 w-4 text-amber-600 shrink-0" />
-              <span className="truncate">Pagamento</span>
+              <MessageSquare className="h-4 w-4 text-[#449bd5] shrink-0 pointer-events-none" />
+              <span className="pointer-events-none">SMS</span>
             </button>
+          ) : (
+            <button
+              type="button"
+              disabled
+              data-testid="quick-action-sms"
+              title="SMS indisponível: canal Twilio/SMS inativo no momento."
+              className={`${actionBaseClass} ${commButtonDisabled}`}
+            >
+              <MessageSquare className="h-4 w-4 text-slate-300 shrink-0 pointer-events-none" />
+              <span className="pointer-events-none">SMS</span>
+            </button>
+          )}
 
-            {/* 7. Registrar Atividade (Manual CRM History) */}
-            {onOpenRegisterActivity && (
+          {/* 3. Email — Canonical internal composer without mailto */}
+          {isValidEmail ? (
+            <button
+              type="button"
+              data-testid="quick-action-email"
+              onClick={() => {
+                logIntentNonBlocking('email_manual_attempt', 'Email manual aberto para contato', 'email');
+                onOpenEmailComposer?.();
+              }}
+              title={`Enviar email para ${cleanEmail}`}
+              className={`${actionBaseClass} ${commButtonActive}`}
+            >
+              <Mail className="h-4 w-4 text-[#449bd5] shrink-0 pointer-events-none" />
+              <span className="pointer-events-none">Email</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled
+              data-testid="quick-action-email"
+              title="Este lead não possui um e-mail válido."
+              className={`${actionBaseClass} ${commButtonDisabled}`}
+            >
+              <Mail className="h-4 w-4 text-slate-300 shrink-0 pointer-events-none" />
+              <span className="pointer-events-none">Email</span>
+            </button>
+          )}
+
+          {/* 4. WhatsApp — Official recognizable glyph & green CTA */}
+          {hasPhone ? (
+            onOpenWhatsappComposer ? (
               <button
                 type="button"
-                data-testid="quick-action-register-activity"
-                onClick={onOpenRegisterActivity}
-                title="Registrar atividade de contato realizada fora do EDS HUB"
-                className={`${actionBaseClass} bg-blue-50/70 hover:bg-blue-100/80 text-[#08254f] border-blue-200/80 hover:border-blue-300 shadow-2xs cursor-pointer col-span-2 sm:col-span-1`}
+                data-testid="quick-action-whatsapp"
+                onClick={() => {
+                  logIntentNonBlocking('whatsapp_contact_attempt', 'WhatsApp manual assistido iniciado', 'whatsapp');
+                  onOpenWhatsappComposer();
+                }}
+                title={`Abrir WhatsApp manual assistido para ${rawPhone}`}
+                className={`${actionBaseClass} bg-[#25d366] hover:bg-[#20ba5a] text-white border-transparent shadow-xs cursor-pointer active:translate-y-0.5`}
               >
-                <ClipboardList className="h-4 w-4 text-[#449bd5] shrink-0" />
-                <span className="truncate">Registrar Atividade</span>
+                <WhatsAppIcon className="h-4 w-4 text-white shrink-0 pointer-events-none" />
+                <span className="pointer-events-none">WhatsApp</span>
               </button>
-            )}
-          </div>
+            ) : (
+              <a
+                href={`https://wa.me/${digitsOnly}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                role="button"
+                data-testid="quick-action-whatsapp"
+                onClick={() => logIntentNonBlocking('whatsapp_contact_attempt', 'WhatsApp aberto', 'whatsapp')}
+                title={`Abrir WhatsApp para ${digitsOnly}`}
+                className={`${actionBaseClass} bg-[#25d366] hover:bg-[#20ba5a] text-white border-transparent shadow-xs cursor-pointer active:translate-y-0.5`}
+              >
+                <WhatsAppIcon className="h-4 w-4 text-white shrink-0 pointer-events-none" />
+                <span className="pointer-events-none">WhatsApp</span>
+              </a>
+            )
+          ) : (
+            <button
+              type="button"
+              disabled
+              data-testid="quick-action-whatsapp"
+              title="Telefone não informado"
+              className={`${actionBaseClass} ${commButtonDisabled}`}
+            >
+              <WhatsAppIcon className="h-4 w-4 text-slate-300 shrink-0 pointer-events-none" />
+              <span className="pointer-events-none">WhatsApp</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100/90" />
+
+      {/* GROUP 2: Operational Actions (Adicionar Tarefa, Pagamento, Registrar Atividade) */}
+      <div className="w-full">
+        <div className="flex items-center justify-between mb-1.5 px-0.5">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Operacional
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {/* 5. Adicionar Tarefa */}
+          <button
+            type="button"
+            data-testid="quick-action-add-task"
+            onClick={onOpenTaskModal}
+            title="Adicionar nova tarefa para este lead"
+            className={`${actionBaseClass} bg-slate-50 hover:bg-slate-100 text-[#08254f] border-slate-200/90 shadow-2xs hover:border-slate-300 cursor-pointer`}
+          >
+            <PlusCircle className="h-4 w-4 text-[#08254f] shrink-0 pointer-events-none" />
+            <span className="truncate pointer-events-none">Adicionar Tarefa</span>
+          </button>
+
+          {/* 6. Pagamento (Task Reminder Semantics) */}
+          <button
+            type="button"
+            data-testid="quick-action-payment"
+            onClick={onOpenPaymentModal}
+            title="Agendar lembrete operacional de pagamento"
+            className={`${actionBaseClass} bg-amber-50/70 hover:bg-amber-100/80 text-amber-900 border-amber-200/80 hover:border-amber-300 shadow-2xs cursor-pointer`}
+          >
+            <CalendarCheck className="h-4 w-4 text-amber-600 shrink-0 pointer-events-none" />
+            <span className="truncate pointer-events-none">Pagamento</span>
+          </button>
+
+          {/* 7. Registrar Atividade (Manual CRM History) */}
+          {onOpenRegisterActivity && (
+            <button
+              type="button"
+              data-testid="quick-action-register-activity"
+              onClick={onOpenRegisterActivity}
+              title="Registrar atividade de contato realizada fora do EDS HUB"
+              className={`${actionBaseClass} bg-blue-50/70 hover:bg-blue-100/80 text-[#08254f] border-blue-200/80 hover:border-blue-300 shadow-2xs cursor-pointer col-span-2 sm:col-span-1`}
+            >
+              <ClipboardList className="h-4 w-4 text-[#449bd5] shrink-0 pointer-events-none" />
+              <span className="truncate pointer-events-none">Registrar Atividade</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

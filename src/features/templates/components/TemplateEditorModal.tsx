@@ -17,6 +17,7 @@ import {
 } from '../../../utils/template-variables';
 import { renderBlocksToHtml, renderBlocksToText } from '../../editor/utils/htmlGenerator';
 import { getTemplateUsage, type TemplateUsage } from '../services/template-usage-service';
+import { invalidateCanonicalTemplateCache } from '../services/canonical-template-service';
 import type { EmailTemplate } from '../../../types';
 import type { EmailBlock, BlockType } from '../../editor/types';
 import {
@@ -678,6 +679,7 @@ export function TemplateEditorModal({
         }
       }
 
+      invalidateCanonicalTemplateCache();
       onSaveSuccess();
       onClose();
     } catch (err) {

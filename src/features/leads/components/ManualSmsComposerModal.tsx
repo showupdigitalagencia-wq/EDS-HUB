@@ -17,10 +17,10 @@ import {
   AlertCircle,
   Phone,
   Clock,
+  Loader2,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import {
-  resolveSafeFirstName,
   getApprovedZygomaticSmsText,
   getApprovedIntensiveAdvancedSmsText,
   getApprovedEndodonticsSmsText,
@@ -30,6 +30,13 @@ import {
 } from '../../../utils/salutation';
 import { formatContactPreferenceLabel, resolveCanonicalPreference } from '../../../utils/contact-preference';
 import { resolveSmsDestinationPhone } from '../../../utils/phone';
+import {
+  fetchCanonicalSmsTemplates,
+  resolveDefaultSmsTemplate,
+  hydrateTemplateForLead,
+  type CanonicalSmsTemplate,
+  DEFAULT_FALLBACK_SMS_TEMPLATES,
+} from '../../templates/services/canonical-template-service';
 import type { Lead } from '../../../types';
 
 export interface ManualSmsComposerModalProps {
@@ -61,7 +68,7 @@ I’m happy to answer any questions and help you find the course that best match
 export const OFFICIAL_GENERAL_SMS_BODY =
   'Hello {{first_name}}, thank you for your interest in Expert Dental Solutions. We received your request and would love to answer your questions regarding our hands-on surgical programs.';
 
-const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
+export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
   {
     id: 'intensive_advanced_followup_sms',
     name: 'Contato SMS inicial — Intensive + Advanced',
@@ -99,37 +106,18 @@ const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
   },
 ];
 
-function resolveDefaultSmsTemplateId(lead: Lead): string {
-  const interestStr = `${lead.course_interest || ''} ${JSON.stringify(lead.course_interests || [])}`.toLowerCase();
-  if (interestStr.includes('zygoma')) return 'zygomatic_followup_sms';
-  if (interestStr.includes('endo')) return 'endodontics_followup_sms';
-  if (interestStr.includes('wisdom') || interestStr.includes('molar')) return 'wisdom_followup_sms';
-  if (interestStr.includes('rehab')) return 'rehabilitation_followup_sms';
-  if (interestStr.includes('perio')) return 'periodontal_followup_sms';
-  if (interestStr.includes('implant') || interestStr.includes('intensive') || interestStr.includes('advanced')) {
-    return 'intensive_advanced_followup_sms';
-  }
-  return 'zygomatic_followup_sms';
-}
-
-function renderSmsBody(tpl: SmsTemplate, lead: Lead): string {
-  if (tpl.generator) {
-    return tpl.generator(lead);
-  }
-  const firstName = resolveSafeFirstName(lead.first_name, 'Doctor');
-  return (tpl.body || '').replace(/\{\{\s*first_name\s*\}\}/g, firstName);
-}
-
 export function ManualSmsComposerModal({
   isOpen,
   onClose,
   lead,
   onSmsRecorded,
 }: ManualSmsComposerModalProps) {
+  const [templates, setTemplates] = useState<CanonicalSmsTemplate[]>(DEFAULT_FALLBACK_SMS_TEMPLATES);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('zygomatic_followup_sms');
   const [messageText, setMessageText] = useState('');
   const [hasOpenedApp, setHasOpenedApp] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
 
@@ -137,27 +125,47 @@ export function ManualSmsComposerModal({
   const rawPhone = destinationPhone || lead.phone_e164 || lead.phone_raw || '';
   const digitsOnly = destinationPhone.replace(/\D/g, '') || rawPhone.replace(/\D/g, '');
 
-  // Initialize template text with safe variable replacement
+  // Load canonical templates dynamically from email_templates on open
   useEffect(() => {
     if (!isOpen) return;
     setHasOpenedApp(false);
     setError(null);
     submittingRef.current = false;
+    setIsLoadingTemplates(true);
 
-    const defaultTplId = resolveDefaultSmsTemplateId(lead);
-    setSelectedTemplateId(defaultTplId);
+    let isMounted = true;
+    fetchCanonicalSmsTemplates(true)
+      .then((loadedTemplates) => {
+        if (!isMounted) return;
+        setTemplates(loadedTemplates);
+        const defaultTpl = resolveDefaultSmsTemplate(loadedTemplates, lead);
+        setSelectedTemplateId(defaultTpl.id);
+        setMessageText(hydrateTemplateForLead(defaultTpl.text_template, lead));
+      })
+      .catch((err) => {
+        console.warn('[ManualSmsComposer] Failed to load canonical templates:', err);
+        if (!isMounted) return;
+        const defaultTpl = resolveDefaultSmsTemplate(DEFAULT_FALLBACK_SMS_TEMPLATES, lead);
+        setTemplates(DEFAULT_FALLBACK_SMS_TEMPLATES);
+        setSelectedTemplateId(defaultTpl.id);
+        setMessageText(hydrateTemplateForLead(defaultTpl.text_template, lead));
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingTemplates(false);
+      });
 
-    const tpl = DEFAULT_SMS_TEMPLATES.find((t) => t.id === defaultTplId) || DEFAULT_SMS_TEMPLATES[0];
-    setMessageText(renderSmsBody(tpl, lead));
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, lead]);
 
   if (!isOpen) return null;
 
   const handleTemplateChange = (templateId: string) => {
     setSelectedTemplateId(templateId);
-    const tpl = DEFAULT_SMS_TEMPLATES.find((t) => t.id === templateId);
+    const tpl = templates.find((t) => t.id === templateId);
     if (tpl) {
-      setMessageText(renderSmsBody(tpl, lead));
+      setMessageText(hydrateTemplateForLead(tpl.text_template, lead));
     }
   };
 
@@ -408,15 +416,23 @@ export function ManualSmsComposerModal({
 
           {/* Template Selector */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Modelo de Mensagem
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-700">
+                Modelo de Mensagem
+              </label>
+              {isLoadingTemplates && (
+                <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                  <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+                  <span>Sincronizando...</span>
+                </span>
+              )}
+            </div>
             <select
               value={selectedTemplateId}
               onChange={(e) => handleTemplateChange(e.target.value)}
               className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             >
-              {DEFAULT_SMS_TEMPLATES.map((t) => (
+              {templates.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
                 </option>

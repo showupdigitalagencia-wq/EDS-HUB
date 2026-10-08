@@ -8,6 +8,7 @@
 import {
   resolveSalutation,
   resolveSafeFirstName,
+  resolveSafeLastName,
   resolveZygomaticSalutation,
 } from './salutation';
 export {
@@ -168,6 +169,7 @@ export function renderTemplateWithSampleData(
   const zygomaticSalutation = resolveZygomaticSalutation(SAMPLE_PREVIEW_DATA);
 
   let output = text
+    .replace(/\[SURNAME\]/gi, SAMPLE_PREVIEW_DATA.last_name || 'Silva')
     .replace(/\{\{\s*salutation_line\s*\}\}/gi, zygomaticSalutation)
     .replace(/\{\{\s*salutation\s*\}\}/gi, salutation)
     .replace(/\{\{\s*first_name\s*\}\}/gi, SAMPLE_PREVIEW_DATA.first_name)
@@ -218,12 +220,24 @@ export function renderTemplateCentral(
 
   const safeFirstName = resolveSafeFirstName(leadVars?.first_name, 'Doctor');
   const safeSalutation = resolveSalutation(leadVars?.last_name, leadVars?.first_name, 'Doctor');
+  const safeSurname = resolveSafeLastName(leadVars?.last_name, leadVars?.first_name);
   const zygomaticSalutation = resolveZygomaticSalutation(leadVars);
   const courseName = leadVars?.course_name || 'Zygomatic Implant Training';
   const courseDateRange = leadVars?.course_date_range || 'November 7–10, 2026';
   const courseTuition = leadVars?.course_tuition || '$17,500';
 
-  let output = text
+  let output = text;
+
+  if (safeSurname) {
+    output = output.replace(/\[SURNAME\]/gi, safeSurname);
+  } else {
+    output = output
+      .replace(/Hello Dr\.\s*\[SURNAME\]/gi, 'Hello Doctor')
+      .replace(/Hi Dr\.\s*\[SURNAME\]/gi, 'Hi Doctor')
+      .replace(/\[SURNAME\]/gi, 'Doctor');
+  }
+
+  output = output
     .replace(/\{\{\s*salutation_line\s*\}\}/gi, zygomaticSalutation)
     .replace(/\{\{\s*salutation\s*\}\}/gi, safeSalutation)
     .replace(/\{\{\s*first_name\s*\}\}/gi, safeFirstName)

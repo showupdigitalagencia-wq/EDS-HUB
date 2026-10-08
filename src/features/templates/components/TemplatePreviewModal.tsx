@@ -103,6 +103,15 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
   const smsData = useMemo(() => {
     if (!template || channel !== 'sms') return null;
 
+    // CANONICAL TEMPLATE SOURCE: Prioritize saved/edited text_template
+    if (template.text_template && template.text_template.trim()) {
+      const substitutedText = renderTemplateWithSampleData(template.text_template, 'global');
+      return {
+        text: substitutedText,
+        segments: calculateSmsSegments(substitutedText),
+      };
+    }
+
     if (template.template_key && APPROVED_SMS_TEMPLATES[template.template_key]) {
       const substitutedText = APPROVED_SMS_TEMPLATES[template.template_key].getText(SAMPLE_PREVIEW_DATA);
       return {

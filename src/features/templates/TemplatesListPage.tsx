@@ -8,6 +8,7 @@ import { TemplateEditorModal } from './components/TemplateEditorModal';
 import { TemplatePreviewModal } from './components/TemplatePreviewModal';
 import { getTemplateChannel } from '../../utils/template-variables';
 import { checkTemplateDeleteSafety, getTemplateUsage, type TemplateUsage } from './services/template-usage-service';
+import { invalidateCanonicalTemplateCache } from './services/canonical-template-service';
 import type { EmailTemplate } from '../../types';
 import {
   Plus,
@@ -123,6 +124,7 @@ export function TemplatesListPage() {
     try {
       const { error: delErr } = await supabase.from('email_templates').delete().eq('id', tpl.id);
       if (delErr) throw delErr;
+      invalidateCanonicalTemplateCache();
       fetchTemplates();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Falha ao excluir template');

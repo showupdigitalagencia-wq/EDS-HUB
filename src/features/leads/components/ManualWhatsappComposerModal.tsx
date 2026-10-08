@@ -30,6 +30,11 @@ import {
 } from '../../../utils/salutation';
 import { resolveSmsDestinationPhone } from '../../../utils/phone';
 import { WhatsAppIcon } from '../../../components/icons/WhatsAppIcon';
+import {
+  fetchCanonicalSmsTemplates,
+  hydrateTemplateForLead,
+  type CanonicalSmsTemplate,
+} from '../../templates/services/canonical-template-service';
 import type { Lead } from '../../../types';
 
 export interface ManualWhatsappComposerModalProps {
@@ -109,6 +114,7 @@ export const ManualWhatsappComposerModal: React.FC<ManualWhatsappComposerModalPr
   lead,
   onWhatsappRecorded,
 }) => {
+  const [canonicalTemplates, setCanonicalTemplates] = useState<CanonicalSmsTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [messageText, setMessageText] = useState('');
   const [hasOpenedApp, setHasOpenedApp] = useState(false);
@@ -129,21 +135,39 @@ export const ManualWhatsappComposerModal: React.FC<ManualWhatsappComposerModalPr
     submittingRef.current = false;
 
     const defaultTplId = resolveDefaultWhatsappTemplateId(lead);
-
     if (defaultTplId) {
       setSelectedTemplateId(defaultTplId);
       setUnknownCourseNotice(false);
-      const tpl = SHARED_WHATSAPP_TEMPLATES.find((t) => t.id === defaultTplId);
-      if (tpl) {
-        setMessageText(tpl.generator(lead));
-      }
+      const staticTpl = SHARED_WHATSAPP_TEMPLATES.find((t) => t.id === defaultTplId);
+      if (staticTpl) setMessageText(staticTpl.generator(lead));
     } else {
-      // Course is unknown: DO NOT guess an unrelated generic message.
-      // Clear selection and require manual selection of an approved course.
       setSelectedTemplateId('');
       setMessageText('');
       setUnknownCourseNotice(true);
     }
+
+    let isMounted = true;
+    fetchCanonicalSmsTemplates(false)
+      .then((loaded) => {
+        if (!isMounted) return;
+        setCanonicalTemplates(loaded);
+        if (defaultTplId) {
+          const equivalentSmsKey = defaultTplId.replace('_whatsapp', '_sms');
+          const canonical = loaded.find(
+            (t) => t.template_key === equivalentSmsKey || t.id === equivalentSmsKey
+          );
+          if (canonical && canonical.text_template) {
+            setMessageText(hydrateTemplateForLead(canonical.text_template, lead));
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback already initialized synchronously
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, lead]);
 
   if (!isOpen) return null;
@@ -151,9 +175,17 @@ export const ManualWhatsappComposerModal: React.FC<ManualWhatsappComposerModalPr
   const handleTemplateChange = (templateId: string) => {
     setSelectedTemplateId(templateId);
     setUnknownCourseNotice(false);
-    const tpl = SHARED_WHATSAPP_TEMPLATES.find((t) => t.id === templateId);
-    if (tpl) {
-      setMessageText(tpl.generator(lead));
+    const equivalentSmsKey = templateId.replace('_whatsapp', '_sms');
+    const canonical = canonicalTemplates.find(
+      (t) => t.template_key === equivalentSmsKey || t.id === equivalentSmsKey
+    );
+    if (canonical && canonical.text_template) {
+      setMessageText(hydrateTemplateForLead(canonical.text_template, lead));
+    } else {
+      const tpl = SHARED_WHATSAPP_TEMPLATES.find((t) => t.id === templateId);
+      if (tpl) {
+        setMessageText(tpl.generator(lead));
+      }
     }
   };
 
