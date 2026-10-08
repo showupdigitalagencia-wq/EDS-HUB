@@ -425,10 +425,16 @@ Deno.serve(async (req) => {
         const supabaseUrl = Deno.env.get('SUPABASE_URL');
         const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
+        const isWebsite = slug === 'website-contact' || slug === 'website-register' || (form.slug && form.slug.startsWith('website-')) || form.source === 'website';
         const isWebsiteContact = slug === 'website-contact' || form.source_detail === 'contact_form';
+        const isWebsiteRegister = slug === 'website-register' || form.source_detail === 'website_registration_form';
         const intakePayload: LeadIntakePayload = {
-          source: isWebsiteContact ? 'website' : 'form',
-          source_detail: isWebsiteContact ? 'contact_form' : (form.source_detail || 'website'),
+          source: isWebsite ? 'website' : 'form',
+          source_detail: isWebsiteContact
+            ? 'contact_form'
+            : isWebsiteRegister
+            ? 'website_registration_form'
+            : (form.source_detail || 'website'),
           intake_event_id: intakeEventId,
           lead_id: leadId,
           external_event_id: submissionId,

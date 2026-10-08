@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import type { Course, CourseSession, Lead, ContactPreference } from '../../../types';
-import { formatCohortDateRange } from '../../../utils/format';
 import { normalizePhoneDigits } from '../utils/qualificationMapping';
 import { normalizePhoneSafe } from '../../../utils/phone';
 import { resolveCanonicalPreference, toDbContactPreference } from '../../../utils/contact-preference';
+import { TurmaSelect } from '../../courses/components/TurmaSelect';
+import { ensureCourseSessionForLabel } from '../../courses/services/turma-catalog-service';
 import {
   X,
   Edit2,
@@ -306,11 +307,25 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
         dedupedInterests.push(item);
       }
 
-      const validInterests = dedupedInterests.map((item, idx) => ({
-        courseId: item.courseId,
-        sessionId: item.sessionId ? item.sessionId : null,
-        priority: (idx < 3 ? ((idx + 1) as 1 | 2 | 3) : null),
-      }));
+      const validInterests = await Promise.all(
+        dedupedInterests.map(async (item, idx) => {
+          let resolvedSessionId: string | null = null;
+          if (item.sessionId && item.sessionId.trim()) {
+            try {
+              const sess = await ensureCourseSessionForLabel(item.courseId, item.sessionId.trim());
+              resolvedSessionId = sess.id;
+            } catch (err) {
+              console.warn('Could not ensure course session row for lead interest, using raw session ID:', err);
+              resolvedSessionId = item.sessionId.trim();
+            }
+          }
+          return {
+            courseId: item.courseId,
+            sessionId: resolvedSessionId,
+            priority: (idx < 3 ? ((idx + 1) as 1 | 2 | 3) : null),
+          };
+        })
+      );
 
       // Find course names for legacy snapshots
       const courseMap = new Map(courses.map((c) => [c.id, c.name]));
@@ -622,12 +637,6 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
 
             <div className="space-y-3">
               {interests.map((interest, idx) => {
-                const availableSessions = interest.courseId
-                  ? sessions.filter(
-                      (s) => s.course_id === interest.courseId && (s.status === 'open' || s.id === interest.sessionId)
-                    )
-                  : [];
-
                 return (
                   <div
                     key={idx}
@@ -668,32 +677,15 @@ export function EditLeadModal({ isOpen, onClose, lead, onLeadUpdated }: EditLead
                       </div>
 
                       <div>
-                        <select
+                        <TurmaSelect
+                          label=""
+                          placeholder="Turma / Data do curso..."
                           value={interest.sessionId}
-                          onChange={(e) => handleSessionChange(idx, e.target.value)}
-                          disabled={isSubmitting || !interest.courseId || availableSessions.length === 0}
-                          className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#449bd5] focus:ring-1 focus:ring-[#449bd5] transition-all cursor-pointer disabled:bg-slate-100 disabled:text-slate-400"
-                          data-testid={`edit-lead-session-select-${idx}`}
-                        >
-                          <option value="">
-                            {!interest.courseId
-                              ? 'Selecione o curso primeiro'
-                              : availableSessions.length === 0
-                              ? 'Nenhuma turma disponível'
-                              : 'Sem turma definida'}
-                          </option>
-                          {availableSessions.map((session) => {
-                            const dateFmt = formatCohortDateRange(session.start_date, session.end_date);
-                            const label = dateFmt
-                              ? `${session.title || 'Turma'} (${dateFmt})`
-                              : session.title || 'Turma';
-                            return (
-                              <option key={session.id} value={session.id}>
-                                {label}
-                              </option>
-                            );
-                          })}
-                        </select>
+                          onChange={(val) => handleSessionChange(idx, val)}
+                          disabled={isSubmitting || !interest.courseId}
+                          courseSessions={sessions.filter((s) => s.course_id === interest.courseId)}
+                          testId={`edit-lead-session-select-${idx}`}
+                        />
                       </div>
                     </div>
                   </div>

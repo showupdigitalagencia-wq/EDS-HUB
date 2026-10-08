@@ -879,7 +879,7 @@ Deno.serve(async (req) => {
 
 function validatePayload(p: LeadIntakePayload): string[] {
   const errors: string[] = [];
-  const validSources = ['meta', 'google', 'manual', 'test', 'form', 'facebook', 'instagram', 'hubspot'];
+  const validSources = ['meta', 'google', 'manual', 'test', 'form', 'facebook', 'instagram', 'hubspot', 'website'];
   if (!p.source || !validSources.includes(p.source.toLowerCase())) {
     errors.push('Invalid or missing source');
   }

@@ -1657,8 +1657,8 @@ export interface CourseSession {
   code: string;
   title: string;
   status: CourseSessionStatus;
-  start_date: string;
-  end_date: string;
+  start_date: string | null;
+  end_date: string | null;
   timezone: string;
   capacity: number | null;
   location: string | null;

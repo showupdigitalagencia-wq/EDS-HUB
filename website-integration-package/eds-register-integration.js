@@ -277,6 +277,7 @@
         promo_code: promoEl ? promoEl.value.trim() : '',
         terms_accepted: termsEl ? termsEl.checked : true,
         source_page: window.location.origin + window.location.pathname,
+        submitted_at: new Date().toISOString(),
         utm_source: utm.utm_source || null,
         utm_medium: utm.utm_medium || null,
         utm_campaign: utm.utm_campaign || null,
@@ -284,13 +285,15 @@
         utm_content: utm.utm_content || null
       };
 
+      // Direct intake to EDS HUB submit-public-form with keepalive
       return fetch(EDS_CONFIG.COMPLETED_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'apikey': EDS_CONFIG.PUBLIC_ANON_KEY
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        keepalive: true
       })
       .then(function (res) {
         return res.json();
@@ -303,6 +306,16 @@
         console.warn('[EDS HUB] Notice: Completed form sync skipped', err);
       });
     };
+
+    // 6. Autonomous capture-phase submit listener: guarantees direct intake to EDS HUB
+    // without requiring manual template calls or waiting for third-party scripts.
+    var intakeDispatched = false;
+    form.addEventListener('submit', function (_e) {
+      if (!intakeDispatched) {
+        intakeDispatched = true;
+        window.sendEdsHubCompletedForm();
+      }
+    }, true);
   }
 
   if (document.readyState === 'loading') {

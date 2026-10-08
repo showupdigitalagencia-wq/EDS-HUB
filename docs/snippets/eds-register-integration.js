@@ -396,12 +396,21 @@
       }
     });
 
-    // 3. Fallback: Hook into submit event to ensure hidden attempt ID is current
-    form.addEventListener('submit', function () {
-      if (hiddenInput) {
-        hiddenInput.value = getEdsFormAttemptId();
-      }
-    });
+    // 3. Capture-phase submit listener: guarantees direct intake to EDS HUB submit-public-form
+    let submittedDirect = false;
+    form.addEventListener(
+      'submit',
+      function () {
+        if (hiddenInput) {
+          hiddenInput.value = getEdsFormAttemptId();
+        }
+        if (!submittedDirect) {
+          submittedDirect = true;
+          window.sendEdsHubCompletedForm(form);
+        }
+      },
+      true
+    );
   }
 
   // Run on DOM ready

@@ -18,6 +18,8 @@ import {
 import { supabase } from '../../../lib/supabase';
 import { formatCohortDateRange } from '../../../utils/format';
 import { createOrUpdateCourseSession } from '../services/course-operations-service';
+import { TurmaSelect } from './TurmaSelect';
+import { parseRepresentativeDates } from '../services/turma-catalog-service';
 import type { CourseSession, CourseSessionStatus } from '../../../types/database';
 import {
   Users,
@@ -314,12 +316,13 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
 
   const handleOpenNewSession = () => {
     setEditingSessionId(null);
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 2).padStart(2, '0');
-    setSessionCode(`${course.code || 'TURMA'}-${year}-${month}`);
-    setSessionTitle(`${course.name} — Turma ${month}/${year}`);
-    setSessionStartDate('');
-    setSessionEndDate('');
+    setSessionTitle('Nov/26');
+    const dates = parseRepresentativeDates('Nov/26');
+    setSessionStartDate(dates.startDate || '');
+    setSessionEndDate(dates.endDate || '');
+    const cleanTag = 'NOV26';
+    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+    setSessionCode(`${course.code || 'CS'}-${cleanTag}-${randomSuffix}`);
     setSessionStatus('open');
     setSessionCapacity('12');
     setSessionLocation('Orlando, FL');
@@ -333,8 +336,8 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
     setEditingSessionId(sess.id);
     setSessionCode(sess.code);
     setSessionTitle(sess.title);
-    setSessionStartDate(sess.start_date);
-    setSessionEndDate(sess.end_date);
+    setSessionStartDate(sess.start_date || '');
+    setSessionEndDate(sess.end_date || '');
     setSessionStatus(sess.status);
     setSessionCapacity(sess.capacity !== null && sess.capacity !== undefined ? String(sess.capacity) : '');
     setSessionLocation(sess.location || 'Orlando, FL');
@@ -348,21 +351,25 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
     e.preventDefault();
     setError(null);
 
-    if (!sessionTitle.trim()) {
-      setError('O título da turma é obrigatório.');
+    const finalTitle = sessionTitle.trim();
+    if (!finalTitle) {
+      setError('A turma / data do curso é obrigatória.');
       return;
     }
-    if (!sessionCode.trim()) {
-      setError('O código da turma é obrigatório.');
-      return;
+
+    let finalStartDate = sessionStartDate;
+    let finalEndDate = sessionEndDate;
+    if (!finalStartDate || !finalEndDate) {
+      const dates = parseRepresentativeDates(finalTitle);
+      finalStartDate = dates.startDate || '';
+      finalEndDate = dates.endDate || '';
     }
-    if (!sessionStartDate || !sessionEndDate) {
-      setError('As datas de início e término são obrigatórias.');
-      return;
-    }
-    if (sessionEndDate < sessionStartDate) {
-      setError('A data de término não pode ser anterior à data de início.');
-      return;
+
+    let finalCode = sessionCode.trim();
+    if (!finalCode) {
+      const cleanTag = finalTitle.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      finalCode = `${course.code || 'CS'}-${cleanTag}-${randomSuffix}`;
     }
 
     const parsedCap = sessionCapacity.trim() === '' ? null : parseInt(sessionCapacity, 10);
@@ -376,11 +383,11 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
       await createOrUpdateCourseSession({
         sessionId: editingSessionId || undefined,
         courseId: course.id,
-        code: sessionCode.trim().toUpperCase(),
-        title: sessionTitle.trim(),
+        code: finalCode.toUpperCase(),
+        title: finalTitle,
         status: sessionStatus,
-        startDate: sessionStartDate,
-        endDate: sessionEndDate,
+        startDate: finalStartDate,
+        endDate: finalEndDate,
         timezone: 'America/New_York',
         capacity: parsedCap,
         location: sessionLocation.trim() || 'Orlando, FL',
@@ -851,10 +858,10 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                    Turmas Cadastradas ({sessions.length})
+                    Turmas deste curso ({sessions.length})
                   </h4>
                   <p className="text-xs text-slate-500">
-                    Cohorts e cronogramas acadêmicos associados exclusivamente a este curso
+                    Cohorts e cronogramas associados exclusivamente a este curso
                   </p>
                 </div>
                 {!isSessionFormOpen && (
@@ -896,137 +903,161 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="sm:col-span-2">
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Nome / Título da Turma *
-                      </label>
-                      <input
-                        type="text"
-                        value={sessionTitle}
-                        onChange={(e) => setSessionTitle(e.target.value)}
-                        placeholder="Ex: Intensive Dental Implant Training — Novembro 2026"
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                        required
-                        data-testid="turma-title-input"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Código da Turma *
-                      </label>
-                      <input
-                        type="text"
-                        value={sessionCode}
-                        onChange={(e) => setSessionCode(e.target.value)}
-                        placeholder="Ex: IDIT-2026-11"
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg font-mono uppercase focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                        required
-                        data-testid="turma-code-input"
-                      />
-                    </div>
-                  </div>
+                  {/* Primary Simplified UI: Turma / Data do curso */}
+                  <TurmaSelect
+                    label="Turma / Data do curso"
+                    value={sessionTitle}
+                    onChange={(selectedLabel) => {
+                      setSessionTitle(selectedLabel);
+                      if (selectedLabel) {
+                        const dates = parseRepresentativeDates(selectedLabel);
+                        setSessionStartDate(dates.startDate || '');
+                        setSessionEndDate(dates.endDate || '');
+                        const cleanTag = selectedLabel.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+                        setSessionCode(`${course.code || 'CS'}-${cleanTag}-${randomSuffix}`);
+                      }
+                    }}
+                    courseSessions={sessions}
+                    required
+                    testId="turma-select-manage"
+                  />
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Data de Início *
-                      </label>
-                      <input
-                        type="date"
-                        value={sessionStartDate}
-                        onChange={(e) => setSessionStartDate(e.target.value)}
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                        required
-                        data-testid="turma-start-date-input"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Data de Término *
-                      </label>
-                      <input
-                        type="date"
-                        value={sessionEndDate}
-                        onChange={(e) => setSessionEndDate(e.target.value)}
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                        required
-                        data-testid="turma-end-date-input"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Status da Turma *
-                      </label>
-                      <select
-                        value={sessionStatus}
-                        onChange={(e) => setSessionStatus(e.target.value as CourseSessionStatus)}
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-semibold"
-                        data-testid="turma-status-select"
-                      >
-                        <option value="open">OPEN (Aberta para matrículas)</option>
-                        <option value="confirmed">CLOSED (Fechada para matrículas)</option>
-                        <option value="completed">COMPLETED (Concluída)</option>
-                        <option value="cancelled">CANCELLED (Cancelada)</option>
-                        <option value="draft">DRAFT (Rascunho)</option>
-                      </select>
-                    </div>
-                  </div>
+                  {/* Collapsed Legacy Academic Details */}
+                  <details className="group pt-1 border-t border-blue-100/80">
+                    <summary className="text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer font-medium select-none py-1">
+                      Configurações técnicas avançadas (código, datas, status, vagas)
+                    </summary>
+                    <div className="pt-2 space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Nome / Título da Turma *
+                          </label>
+                          <input
+                            type="text"
+                            value={sessionTitle}
+                            onChange={(e) => setSessionTitle(e.target.value)}
+                            placeholder="Ex: Nov/26"
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                            data-testid="turma-title-input"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Código da Turma *
+                          </label>
+                          <input
+                            type="text"
+                            value={sessionCode}
+                            onChange={(e) => setSessionCode(e.target.value)}
+                            placeholder="Ex: IDIT-2026-11"
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg font-mono uppercase focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                            data-testid="turma-code-input"
+                          />
+                        </div>
+                      </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Capacidade de Vagas
-                      </label>
-                      <input
-                        type="number"
-                        value={sessionCapacity}
-                        onChange={(e) => setSessionCapacity(e.target.value)}
-                        placeholder="12 (vazio = ilimitado)"
-                        min="1"
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                        data-testid="turma-capacity-input"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Localização
-                      </label>
-                      <input
-                        type="text"
-                        value={sessionLocation}
-                        onChange={(e) => setSessionLocation(e.target.value)}
-                        placeholder="Orlando, FL"
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                        data-testid="turma-location-input"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Instrutor Responsável
-                      </label>
-                      <input
-                        type="text"
-                        value={sessionInstructorName}
-                        onChange={(e) => setSessionInstructorName(e.target.value)}
-                        placeholder="Dr. Alexandre / Cirurgião convidado"
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Data de Início
+                          </label>
+                          <input
+                            type="date"
+                            value={sessionStartDate}
+                            onChange={(e) => setSessionStartDate(e.target.value)}
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                            data-testid="turma-start-date-input"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Data de Término
+                          </label>
+                          <input
+                            type="date"
+                            value={sessionEndDate}
+                            onChange={(e) => setSessionEndDate(e.target.value)}
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                            data-testid="turma-end-date-input"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Status da Turma
+                          </label>
+                          <select
+                            value={sessionStatus}
+                            onChange={(e) => setSessionStatus(e.target.value as CourseSessionStatus)}
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-semibold"
+                            data-testid="turma-status-select"
+                          >
+                            <option value="open">OPEN (Aberta para matrículas)</option>
+                            <option value="confirmed">CLOSED (Fechada para matrículas)</option>
+                            <option value="completed">COMPLETED (Concluída)</option>
+                            <option value="cancelled">CANCELLED (Cancelada)</option>
+                            <option value="draft">DRAFT (Rascunho)</option>
+                          </select>
+                        </div>
+                      </div>
 
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Observações da Turma
-                    </label>
-                    <input
-                      type="text"
-                      value={sessionNotes}
-                      onChange={(e) => setSessionNotes(e.target.value)}
-                      placeholder="Ex: Inclui kit cirúrgico e translado hotel-clínica..."
-                      className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Capacidade de Vagas
+                          </label>
+                          <input
+                            type="number"
+                            value={sessionCapacity}
+                            onChange={(e) => setSessionCapacity(e.target.value)}
+                            placeholder="12 (vazio = ilimitado)"
+                            min="1"
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                            data-testid="turma-capacity-input"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Localização
+                          </label>
+                          <input
+                            type="text"
+                            value={sessionLocation}
+                            onChange={(e) => setSessionLocation(e.target.value)}
+                            placeholder="Orlando, FL"
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                            data-testid="turma-location-input"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Instrutor Responsável
+                          </label>
+                          <input
+                            type="text"
+                            value={sessionInstructorName}
+                            onChange={(e) => setSessionInstructorName(e.target.value)}
+                            placeholder="Dr. Alexandre"
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                          Observações da Turma
+                        </label>
+                        <input
+                          type="text"
+                          value={sessionNotes}
+                          onChange={(e) => setSessionNotes(e.target.value)}
+                          placeholder="Observações internas..."
+                          className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  </details>
 
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-blue-200/80">
                     <button
@@ -1043,7 +1074,7 @@ export const ManageCourseModal: React.FC<ManageCourseModalProps> = ({
                       data-testid="save-turma-button"
                     >
                       <Save className="w-3.5 h-3.5" />
-                      <span>{isSavingSession ? 'Salvando...' : editingSessionId ? 'Atualizar Turma' : 'Criar Turma'}</span>
+                      <span>{isSavingSession ? 'Salvando...' : 'Salvar'}</span>
                     </button>
                   </div>
                 </form>

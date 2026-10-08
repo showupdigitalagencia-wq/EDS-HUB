@@ -567,7 +567,7 @@ export function LeadProfileContent({
         const enrolledCourseName = primaryCourseInterest?.course?.name || lead.course_interest || null;
         const enrolledTurmaLabel = primaryCourseInterest?.session
           ? (primaryCourseInterest.session.title
-              ? `${primaryCourseInterest.session.title} (${formatCohortDateRange(primaryCourseInterest.session.start_date, primaryCourseInterest.session.end_date)})`
+              ? primaryCourseInterest.session.title
               : formatCohortDateRange(primaryCourseInterest.session.start_date, primaryCourseInterest.session.end_date))
           : null;
 
@@ -1142,7 +1142,7 @@ export function LeadProfileContent({
                       ? formatCohortDateRange(interest.sessionDate, interest.sessionEndDate)
                       : null;
                     const turmaLabel = interest.sessionTitle
-                      ? `${interest.sessionTitle}${turmaDateStr ? ` (${turmaDateStr})` : ''}`
+                      ? interest.sessionTitle
                       : turmaDateStr;
 
                     return (

@@ -25,8 +25,8 @@ export interface CreateOrUpdateSessionPayload {
   code: string;
   title: string;
   status: CourseSessionStatus;
-  startDate: string;
-  endDate: string;
+  startDate?: string | null;
+  endDate?: string | null;
   timezone?: string;
   capacity?: number | null;
   location?: string;
@@ -115,8 +115,8 @@ export function evaluatePostCourseTransitionEligibility(
     course_session_id?: string | null;
     session?: {
       status: string;
-      start_date: string;
-      end_date: string;
+      start_date?: string | null;
+      end_date?: string | null;
     } | null;
     participation?: {
       completion_status: string;
@@ -153,7 +153,7 @@ export function evaluatePostCourseTransitionEligibility(
     (e) =>
       e.session &&
       ['draft', 'open', 'confirmed'].includes(e.session.status) &&
-      e.session.end_date >= currentDateStr
+      Boolean(e.session.end_date && e.session.end_date >= currentDateStr)
   );
   if (ongoing) {
     return {
@@ -175,7 +175,7 @@ export function evaluatePostCourseTransitionEligibility(
 
   // Condition D: Another confirmed enrollment with future session
   const future = confirmed.find(
-    (e) => e.session && e.session.start_date > currentDateStr
+    (e) => e.session && Boolean(e.session.start_date && e.session.start_date > currentDateStr)
   );
   if (future) {
     return {
@@ -306,8 +306,8 @@ export async function createOrUpdateCourseSession(
     p_code: payload.code,
     p_title: payload.title,
     p_status: payload.status,
-    p_start_date: payload.startDate,
-    p_end_date: payload.endDate,
+    p_start_date: payload.startDate || null,
+    p_end_date: payload.endDate || null,
     p_timezone: payload.timezone || 'America/New_York',
     p_capacity: payload.capacity ?? null,
     p_location: payload.location || 'Orlando, FL',

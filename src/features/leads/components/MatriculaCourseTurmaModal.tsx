@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, GraduationCap, Calendar, Loader2, AlertCircle, Check } from 'lucide-react';
+import { X, GraduationCap, Loader2, AlertCircle, Check } from 'lucide-react';
 import type { Course, CourseSession } from '../../../types/database';
 import { fetchCourses } from '../../revenue/services/revenue-service';
 import { fetchAvailableSessionsForCourse } from '../../courses/services/course-operations-service';
-import { formatCohortDateRange } from '../../../utils/format';
+import { ensureCourseSessionForLabel } from '../../courses/services/turma-catalog-service';
+import { TurmaSelect } from '../../courses/components/TurmaSelect';
 import { supabase } from '../../../lib/supabase';
 
 interface MatriculaCourseTurmaModalProps {
@@ -65,7 +66,7 @@ export const MatriculaCourseTurmaModal: React.FC<MatriculaCourseTurmaModalProps>
       }
     };
 
-    loadInitial();
+    void loadInitial();
   }, [isOpen, leadId, currentCourseId, currentCourseSessionId]);
 
   // When course changes, load its sessions
@@ -100,6 +101,18 @@ export const MatriculaCourseTurmaModal: React.FC<MatriculaCourseTurmaModalProps>
     setError(null);
 
     try {
+      // Resolve session ID safely from catalog label or existing session ID
+      let resolvedSessionId: string | null = null;
+      if (selectedSessionId && selectedSessionId.trim()) {
+        try {
+          const sess = await ensureCourseSessionForLabel(selectedCourseId, selectedSessionId.trim());
+          resolvedSessionId = sess.id;
+        } catch (sessErr) {
+          console.warn('Could not ensure course session row, using raw session ID:', sessErr);
+          resolvedSessionId = selectedSessionId.trim();
+        }
+      }
+
       // 1. Update or create lead_course_interests
       const { data: existingInterests, error: fetchErr } = await supabase
         .from('lead_course_interests')
@@ -117,7 +130,7 @@ export const MatriculaCourseTurmaModal: React.FC<MatriculaCourseTurmaModalProps>
           .from('lead_course_interests')
           .update({
             course_id: selectedCourseId,
-            course_session_id: selectedSessionId || null,
+            course_session_id: resolvedSessionId,
           })
           .eq('id', existingInterests[0].id);
 
@@ -128,7 +141,7 @@ export const MatriculaCourseTurmaModal: React.FC<MatriculaCourseTurmaModalProps>
           .insert({
             lead_id: leadId,
             course_id: selectedCourseId,
-            course_session_id: selectedSessionId || null,
+            course_session_id: resolvedSessionId,
             priority: 1,
           });
 
@@ -159,7 +172,7 @@ export const MatriculaCourseTurmaModal: React.FC<MatriculaCourseTurmaModalProps>
           .from('enrollments')
           .update({
             course_id: selectedCourseId,
-            course_session_id: selectedSessionId || null,
+            course_session_id: resolvedSessionId,
             updated_at: new Date().toISOString(),
           })
           .eq('id', enrollments[0].id);
@@ -249,45 +262,15 @@ export const MatriculaCourseTurmaModal: React.FC<MatriculaCourseTurmaModalProps>
 
               {/* Turma Selector */}
               <div>
-                <label
-                  htmlFor="matricula-turma-select"
-                  className="block text-xs font-semibold text-slate-700 mb-1"
-                >
-                  Turma (Sessão Presencial)
-                </label>
-                {loadingSessions ? (
-                  <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#125e95]" />
-                    <span>Buscando turmas disponíveis...</span>
-                  </div>
-                ) : (
-                  <>
-                    <select
-                      id="matricula-turma-select"
-                      data-testid="matricula-turma-select"
-                      value={selectedSessionId}
-                      onChange={(e) => setSelectedSessionId(e.target.value)}
-                      className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#125e95]/20 focus:border-[#125e95]"
-                    >
-                      <option value="">Selecione uma turma...</option>
-                      {sessions.map((s) => {
-                        const dateRange = formatCohortDateRange(s.start_date, s.end_date);
-                        return (
-                          <option key={s.id} value={s.id}>
-                            {s.title} {dateRange ? `(${dateRange})` : ''}
-                          </option>
-                        );
-                      })}
-                    </select>
-
-                    {selectedCourseId && sessions.length === 0 && (
-                      <p className="text-[11px] text-slate-500 mt-1 italic flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-slate-400" />
-                        Nenhuma turma aberta encontrada para este curso.
-                      </p>
-                    )}
-                  </>
-                )}
+                <TurmaSelect
+                  label="Turma / Data do curso"
+                  value={selectedSessionId}
+                  onChange={(val) => setSelectedSessionId(val)}
+                  courseSessions={sessions}
+                  disabled={loadingSessions || !selectedCourseId}
+                  placeholder="Selecione a turma / data..."
+                  testId="matricula-turma-select"
+                />
               </div>
             </>
           )}
