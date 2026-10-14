@@ -680,7 +680,7 @@ export function PipelineKanbanPage() {
       const next = { ...prev };
       for (const stageId in next) {
         next[stageId] = next[stageId].map((l) =>
-          l.id === leadId ? { ...l, has_new_submission: false, new_inbound_count: 0 } : l
+          l.id === leadId ? { ...l, has_new_submission: false, new_inbound_count: 0, is_returning_submission: false } : l
         );
       }
       return next;

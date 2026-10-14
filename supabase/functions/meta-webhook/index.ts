@@ -1026,6 +1026,7 @@ Deno.serve(async (req) => {
         last_inbound_activity_at: new Date().toISOString(),
         has_new_submission: true,
         new_submission_at: new Date().toISOString(),
+        is_returning_submission: true,
       };
 
       const incomingAcqMs = new Date(sourceCreatedIso).getTime();

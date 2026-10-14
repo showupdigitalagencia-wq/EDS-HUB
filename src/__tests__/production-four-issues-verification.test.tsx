@@ -92,6 +92,7 @@ describe('PRODUCTION FOUR ISSUES VERIFICATION SUITE', () => {
         course_interest: 'Wisdom',
         has_new_submission: true,
         new_inbound_count: 1,
+        is_returning_submission: true,
       } as unknown as Lead;
 
       render(

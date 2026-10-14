@@ -1234,6 +1234,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
         last_inbound_activity_at: acqTimestamp,
         has_new_submission: true,
         new_submission_at: new Date().toISOString(),
+        is_returning_submission: true,
       };
       if (shouldUpdateAcquisition(existing.last_acquisition_at)) {
         updateData.last_acquisition_at = acqTimestamp;
@@ -1263,6 +1264,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
         last_inbound_activity_at: acqTimestamp,
         has_new_submission: true,
         new_submission_at: new Date().toISOString(),
+        is_returning_submission: true,
       };
       if (shouldUpdateAcquisition(existing.last_acquisition_at)) {
         updateData.last_acquisition_at = acqTimestamp;
@@ -1297,6 +1299,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
         last_inbound_activity_at: acqTimestamp,
         has_new_submission: true,
         new_submission_at: new Date().toISOString(),
+        is_returning_submission: true,
       };
       if (shouldUpdateAcquisition(existing.last_acquisition_at)) {
         updateData.last_acquisition_at = acqTimestamp;
@@ -1334,6 +1337,7 @@ async function findOrCreateLead(db: any, payload: LeadIntakePayload, _intakeEven
           last_inbound_activity_at: acqTimestamp,
           has_new_submission: true,
           new_submission_at: new Date().toISOString(),
+          is_returning_submission: true,
         };
         if (shouldUpdateAcquisition(existing.last_acquisition_at)) {
           updateData.last_acquisition_at = acqTimestamp;

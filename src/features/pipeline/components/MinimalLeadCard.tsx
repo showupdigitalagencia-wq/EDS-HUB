@@ -363,24 +363,21 @@ export function MinimalLeadCard({
   const isWebsite = isWebsiteLead(lead);
 
   // Determine inbound / returning attention state
+  const hasNewSubmission = Boolean(lead.has_new_submission);
   const newInboundCount = lead.new_inbound_count || 1;
   const isMultipleInbound = newInboundCount >= 2;
-  const isReturningLead = (() => {
-    const code = (stageCode || '').toLowerCase();
-    const name = (stageName || '').toLowerCase();
-    if (code && code !== 'capture') return true;
-    if (name && !name.includes('novo') && !name.includes('captura')) return true;
-    if (lead.created_at && lead.new_submission_at) {
-      const diffMs = new Date(lead.new_submission_at).getTime() - new Date(lead.created_at).getTime();
-      if (diffMs > 60000) return true;
-    }
-    return false;
-  })();
 
-  const inboundBadgeLabel = isMultipleInbound
+  // Canonical rendering rule:
+  // has_new_submission = true AND is_returning_submission = true -> show Retorno
+  // Otherwise -> no Retorno badge. Strictly zero inference from stage, age, or elapsed time.
+  const isReturningLead = Boolean(hasNewSubmission && lead.is_returning_submission);
+
+  const inboundBadgeLabel = isReturningLead
+    ? isMultipleInbound
+      ? `Retorno • ${newInboundCount} novas entradas`
+      : 'Retorno'
+    : isMultipleInbound
     ? `${newInboundCount} novas entradas`
-    : isReturningLead
-    ? 'Retorno'
     : 'Nova entrada • Novo formulário';
 
   // Resolve deduplicated canonical course interests (canonical short names only, no session/date/#)
