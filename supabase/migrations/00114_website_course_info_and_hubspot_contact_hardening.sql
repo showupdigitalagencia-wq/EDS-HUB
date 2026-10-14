@@ -1149,6 +1149,6 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.process_form_submission_transaction FROM public;
-GRANT EXECUTE ON FUNCTION public.process_form_submission_transaction TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.process_hubspot_inbound_batch TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.process_form_submission_transaction(TEXT, TEXT, JSONB, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) FROM public;
+GRANT EXECUTE ON FUNCTION public.process_form_submission_transaction(TEXT, TEXT, JSONB, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.process_hubspot_inbound_batch(JSONB) TO authenticated, service_role;

@@ -189,6 +189,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.complete_crm_task(UUID, TEXT, TEXT) TO authenticated, service_role;
 
 -- 4. Turma Catalog & Session Reuse Functions (Issue 3)
+DROP FUNCTION IF EXISTS public.save_custom_turma_option(TEXT);
 CREATE OR REPLACE FUNCTION public.save_custom_turma_option(p_label TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -370,7 +371,7 @@ BEGIN
 
       UPDATE public.course_sessions
       SET title = 'Turma Arquivada (' || COALESCE(r.code, 'Dup') || ')',
-          status = 'closed'
+          status = 'cancelled'
       WHERE id = r.id;
     ELSE
       -- No legitimate session exists; fix the title to a human-readable title
@@ -596,7 +597,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.process_form_submission_transaction TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.process_form_submission_transaction(TEXT, TEXT, JSONB, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO authenticated, service_role;
 
 -- 7. Update process_hubspot_inbound_batch (Issue 4 - Soft Delete Recovery & Inbound Count)
 CREATE OR REPLACE FUNCTION public.process_hubspot_inbound_batch(
