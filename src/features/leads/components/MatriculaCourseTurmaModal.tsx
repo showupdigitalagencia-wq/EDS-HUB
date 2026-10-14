@@ -104,12 +104,18 @@ export const MatriculaCourseTurmaModal: React.FC<MatriculaCourseTurmaModalProps>
       // Resolve session ID safely from catalog label or existing session ID
       let resolvedSessionId: string | null = null;
       if (selectedSessionId && selectedSessionId.trim()) {
-        try {
-          const sess = await ensureCourseSessionForLabel(selectedCourseId, selectedSessionId.trim());
-          resolvedSessionId = sess.id;
-        } catch (sessErr) {
-          console.warn('Could not ensure course session row, using raw session ID:', sessErr);
-          resolvedSessionId = selectedSessionId.trim();
+        const trimmed = selectedSessionId.trim();
+        const existing = sessions.find((s) => s.id === trimmed);
+        if (existing) {
+          resolvedSessionId = existing.id;
+        } else {
+          try {
+            const sess = await ensureCourseSessionForLabel(selectedCourseId, trimmed);
+            resolvedSessionId = sess.id;
+          } catch (sessErr) {
+            console.warn('Could not ensure course session row, using raw session ID:', sessErr);
+            resolvedSessionId = trimmed;
+          }
         }
       }
 

@@ -45,6 +45,14 @@ export const STANDARD_TURMA_OPTIONS = [
 
 export const OUTRAS_LABEL = 'Outras';
 
+/**
+ * Checks whether a string is a UUID
+ */
+export function isUuid(str: string | null | undefined): boolean {
+  if (!str || typeof str !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+}
+
 // In-memory cache for dynamic options
 let cachedGlobalOptions: string[] | null = null;
 
@@ -59,8 +67,8 @@ export function parseRepresentativeDates(_label: string): { startDate: string | 
 /**
  * Loads the global unified list of human-readable turma labels:
  * 1. Standard options (exact order)
- * 2. Custom options from app_settings
- * 3. Any session titles from course_sessions
+ * 2. Custom options from app_settings (excluding UUIDs)
+ * 3. Any session titles from course_sessions (excluding UUIDs)
  */
 export async function fetchGlobalTurmaOptions(): Promise<string[]> {
   try {
@@ -75,7 +83,11 @@ export async function fetchGlobalTurmaOptions(): Promise<string[]> {
         .single();
 
       if (settings?.custom_turma_options && Array.isArray(settings.custom_turma_options)) {
-        customFromSettings.push(...settings.custom_turma_options.filter((s: any) => typeof s === 'string' && s.trim()));
+        customFromSettings.push(
+          ...settings.custom_turma_options.filter(
+            (s: any) => typeof s === 'string' && s.trim() && !isUuid(s.trim()) && s.trim() !== OUTRAS_LABEL
+          )
+        );
       }
     } catch (_err) {
       // Ignore if column not queryable in older mocks
@@ -90,7 +102,10 @@ export async function fetchGlobalTurmaOptions(): Promise<string[]> {
       if (sessions && Array.isArray(sessions)) {
         for (const s of sessions) {
           if (s?.title && typeof s.title === 'string') {
-            customFromSessions.push(s.title.trim());
+            const trimmed = s.title.trim();
+            if (trimmed && !isUuid(trimmed) && trimmed !== OUTRAS_LABEL) {
+              customFromSessions.push(trimmed);
+            }
           }
         }
       }
@@ -100,7 +115,7 @@ export async function fetchGlobalTurmaOptions(): Promise<string[]> {
 
     const merged = new Set<string>(STANDARD_TURMA_OPTIONS);
     for (const opt of [...customFromSettings, ...customFromSessions]) {
-      if (opt && opt !== OUTRAS_LABEL) {
+      if (opt && opt !== OUTRAS_LABEL && !isUuid(opt)) {
         merged.add(opt);
       }
     }
@@ -116,10 +131,11 @@ export async function fetchGlobalTurmaOptions(): Promise<string[]> {
 /**
  * Atomically saves a newly added custom turma option (e.g. 'Jan/28') to app_settings
  * and updates memory cache so it becomes available across the app immediately.
+ * Strictly rejects any UUID string from being saved as a custom option.
  */
 export async function saveCustomTurmaOption(label: string): Promise<string[]> {
   const trimmed = label.trim();
-  if (!trimmed || trimmed === OUTRAS_LABEL) {
+  if (!trimmed || trimmed === OUTRAS_LABEL || isUuid(trimmed)) {
     return cachedGlobalOptions || [...STANDARD_TURMA_OPTIONS];
   }
 
@@ -130,7 +146,10 @@ export async function saveCustomTurmaOption(label: string): Promise<string[]> {
         p_label: trimmed,
       });
       if (Array.isArray(rpcRes)) {
-        const set = new Set<string>([...STANDARD_TURMA_OPTIONS, ...rpcRes]);
+        const set = new Set<string>([
+          ...STANDARD_TURMA_OPTIONS,
+          ...rpcRes.filter((o: string) => !isUuid(o)),
+        ]);
         cachedGlobalOptions = Array.from(set);
         return cachedGlobalOptions;
       }
@@ -145,7 +164,7 @@ export async function saveCustomTurmaOption(label: string): Promise<string[]> {
       .single();
 
     const existingArray: string[] = Array.isArray(current?.custom_turma_options)
-      ? current.custom_turma_options
+      ? current.custom_turma_options.filter((o: string) => !isUuid(o))
       : [];
 
     if (!existingArray.includes(trimmed)) {
@@ -161,7 +180,6 @@ export async function saveCustomTurmaOption(label: string): Promise<string[]> {
     return cachedGlobalOptions;
   } catch (err) {
     console.warn('Failed to save custom turma option:', err);
-    // Even if remote persistence fails, keep in-memory
     const set = new Set<string>([...(cachedGlobalOptions || STANDARD_TURMA_OPTIONS), trimmed]);
     cachedGlobalOptions = Array.from(set);
     return cachedGlobalOptions;
@@ -170,7 +188,10 @@ export async function saveCustomTurmaOption(label: string): Promise<string[]> {
 
 /**
  * Finds an existing course session for a course matching a turma label, or creates one safely.
- * Reuses existing course_sessions rows so no competing architecture is introduced.
+ * Strict rules:
+ * - If passed an existing session UUID, resolves and returns the existing session.
+ * - NEVER creates a session whose title is a UUID.
+ * - Idempotently reuses existing course session for course_id + exact human-readable label.
  */
 export async function ensureCourseSessionForLabel(
   courseId: string,
@@ -182,6 +203,23 @@ export async function ensureCourseSessionForLabel(
   }
   if (!trimmed) {
     throw new Error('Turma label is required.');
+  }
+
+  // Handle case where input is already a UUID (resolve existing session, NEVER insert UUID title)
+  if (isUuid(trimmed)) {
+    const { data: sessionById, error: fetchErr } = await supabase
+      .from('course_sessions')
+      .select('*')
+      .eq('id', trimmed)
+      .maybeSingle();
+
+    if (sessionById) {
+      return sessionById as CourseSession;
+    }
+    if (fetchErr) {
+      console.warn('Error fetching session by UUID:', fetchErr);
+    }
+    throw new Error(`Invalid turma identifier: UUID ${trimmed} does not match any session.`);
   }
 
   // 1. Try atomic database helper if available
@@ -202,7 +240,7 @@ export async function ensureCourseSessionForLabel(
     // Fallback to client-side find or insert
   }
 
-  // 2. Client-side check for existing session
+  // 2. Client-side check for existing session for this course matching title
   const { data: existingSessions } = await supabase
     .from('course_sessions')
     .select('*')
@@ -210,8 +248,7 @@ export async function ensureCourseSessionForLabel(
 
   const matched = (existingSessions || []).find(
     (s: any) =>
-      s.id === trimmed ||
-      (s.title && s.title.trim().toLowerCase() === trimmed.toLowerCase())
+      s.title && s.title.trim().toLowerCase() === trimmed.toLowerCase()
   );
 
   if (matched) {
@@ -219,7 +256,7 @@ export async function ensureCourseSessionForLabel(
   }
 
   // 3. Insert new label-only session for this course with null dates (never fake dates)
-  const cleanTag = trimmed.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  const cleanTag = trimmed.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'TURMA';
   const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
   const sessionCode = `CS-${cleanTag}-${randomSuffix}`;
 

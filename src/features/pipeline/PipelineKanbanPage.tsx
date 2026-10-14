@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Layout } from '../../components/Layout';
 import { LoadingState } from '../../components/LoadingState';
@@ -9,6 +9,9 @@ import {
   Plus,
   Search,
   ChevronDown,
+  Sparkles,
+  ArrowLeft,
+  Check,
 } from 'lucide-react';
 import { NewLeadModal } from '../leads/components/NewLeadModal';
 import { LeadProfileDrawer } from '../leads/components/LeadProfileDrawer';
@@ -652,20 +655,49 @@ export function PipelineKanbanPage() {
     };
   }, [loadPipelineData]);
 
+  // Global Attention Queue State ("Novas entradas")
+  const [isAttentionQueueOpen, setIsAttentionQueueOpen] = useState(false);
+
+  // Compute all leads currently in the Global Attention Queue (has_new_submission === true)
+  const newInboundLeads = useMemo(() => {
+    const all = Object.values(leadsByStage).flat();
+    const seen = new Set<string>();
+    const unique: Lead[] = [];
+    for (const l of all) {
+      if (l.has_new_submission && !seen.has(l.id)) {
+        seen.add(l.id);
+        unique.push(l);
+      }
+    }
+    return unique.sort(compareLeadsNewestFirst);
+  }, [leadsByStage]);
+
+  const newInboundCount = newInboundLeads.length;
+
+  // Handle explicit new submission acknowledgment without altering stage or history
+  const handleAcknowledgeLead = useCallback(async (leadId: string) => {
+    setLeadsByStage((prev) => {
+      const next = { ...prev };
+      for (const stageId in next) {
+        next[stageId] = next[stageId].map((l) =>
+          l.id === leadId ? { ...l, has_new_submission: false, new_inbound_count: 0 } : l
+        );
+      }
+      return next;
+    });
+
+    try {
+      await supabase.rpc('acknowledge_lead_new_submission', { p_lead_id: leadId });
+    } catch (err) {
+      console.warn('Failed to acknowledge lead new submission:', err);
+    }
+  }, []);
+
   // Handle lead card selection and new submission acknowledgment
   const handleCardClick = (lead: Lead) => {
     setSelectedLeadId(lead.id);
     if (lead.has_new_submission) {
-      setLeadsByStage((prev) => {
-        const next = { ...prev };
-        for (const stageId in next) {
-          next[stageId] = next[stageId].map((l) =>
-            l.id === lead.id ? { ...l, has_new_submission: false } : l
-          );
-        }
-        return next;
-      });
-      void supabase.rpc('acknowledge_lead_new_submission', { p_lead_id: lead.id });
+      void handleAcknowledgeLead(lead.id);
     }
   };
 
@@ -821,6 +853,7 @@ export function PipelineKanbanPage() {
   }, [operationalStages]);
 
   const scrollToStage = (stageCode: string) => {
+    setIsAttentionQueueOpen(false);
     setActiveMobileStageCode(stageCode);
     const col = document.getElementById(`kanban-col-${stageCode}`);
     if (col) {
@@ -839,6 +872,34 @@ export function PipelineKanbanPage() {
       }
       actions={
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          {/* Global Attention Queue Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsAttentionQueueOpen((prev) => !prev)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs shrink-0 ${
+              isAttentionQueueOpen
+                ? 'bg-amber-600 text-white'
+                : newInboundCount > 0
+                ? 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100'
+                : 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
+            }`}
+            data-testid="toggle-novas-entradas-queue"
+            title="Fila global de novas entradas e retornos"
+          >
+            <Sparkles className={`h-3.5 w-3.5 ${newInboundCount > 0 ? 'text-amber-500' : 'text-slate-400'}`} />
+            <span>Novas entradas</span>
+            {newInboundCount > 0 && (
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  isAttentionQueueOpen ? 'bg-white/20 text-white' : 'bg-amber-500 text-white'
+                }`}
+                data-testid="novas-entradas-count-badge"
+              >
+                {newInboundCount}
+              </span>
+            )}
+          </button>
+
           {/* Complete Full-CRM Search Input */}
           <div className="relative w-44 sm:w-60">
             <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${isSearching ? 'animate-spin text-[#449bd5]' : 'text-slate-400'}`} />
@@ -924,9 +985,37 @@ export function PipelineKanbanPage() {
 
             {/* 1. Mobile Quick-Jump Stage Navigation Bar (< lg) */}
             <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none -mx-4 px-4 sm:-mx-6 sm:px-6">
+              {/* First Pill: Novas entradas attention queue for iPhone */}
+              <button
+                type="button"
+                onClick={() => setIsAttentionQueueOpen(true)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer shrink-0 ${
+                  isAttentionQueueOpen
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : newInboundCount > 0
+                    ? 'bg-amber-50 text-amber-900 border border-amber-300'
+                    : 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
+                }`}
+                data-testid="mobile-quick-novas-entradas"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Novas entradas</span>
+                <span
+                  className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                    isAttentionQueueOpen
+                      ? 'bg-white/20 text-white'
+                      : newInboundCount > 0
+                      ? 'bg-amber-200 text-amber-900'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {newInboundCount}
+                </span>
+              </button>
+
               {operationalStages.map((stage) => {
                 const count = stageCounts[stage.id] ?? (leadsByStage[stage.id]?.length || 0);
-                const isActive = activeMobileStageCode === stage.code;
+                const isActive = !isAttentionQueueOpen && activeMobileStageCode === stage.code;
 
                 return (
                   <button
@@ -954,8 +1043,107 @@ export function PipelineKanbanPage() {
               })}
             </div>
 
-            {/* 2. Responsive Premium Kanban Board (Mobile Horizontal Snap Scroll + Desktop Full Grid) */}
-            <div className="overflow-x-auto pb-4 pt-0.5 snap-x snap-mandatory scroll-smooth w-full -mx-4 px-4 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
+            {/* 2. Global Attention Queue ("Novas entradas") or Responsive Kanban Board */}
+            {isAttentionQueueOpen ? (
+              <div
+                className="bg-white rounded-2xl border border-amber-200 p-4 sm:p-6 shadow-xs space-y-4"
+                data-testid="global-attention-queue-container"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
+                      <Sparkles className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm sm:text-base font-bold text-slate-900 font-heading">
+                          Novas Entradas & Retornos
+                        </h3>
+                        <span
+                          className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200"
+                          data-testid="attention-queue-total-count"
+                        >
+                          {newInboundCount}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        Leads com novos formulários aguardando atendimento comercial, em qualquer estágio do funil.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAttentionQueueOpen(false)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer self-start sm:self-auto"
+                    data-testid="btn-back-to-kanban"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    <span>Voltar ao Kanban</span>
+                  </button>
+                </div>
+
+                {newInboundLeads.length === 0 ? (
+                  <div className="py-12 text-center space-y-2">
+                    <div className="mx-auto w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <Check className="h-5 w-5" />
+                    </div>
+                    <p className="text-xs font-semibold text-slate-800">Todas as novas entradas foram atendidas!</p>
+                    <p className="text-[11px] text-slate-400">Nenhum formulário novo ou retorno pendente de visualização.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {newInboundLeads.map((lead) => {
+                      const leadStage = stages.find((s) => s.id === lead.pipeline_stage_id);
+                      const interests = leadInterestsMap[lead.id] || extractCourseInterests(lead);
+                      const activities = leadActivitiesMap[lead.id] || [];
+                      const deliverabilityHealth = leadDeliverabilityMap[lead.id];
+                      const attentionState = resolveAttentionState(lead, activities, {
+                        deliverabilityHealth,
+                        stageCode: leadStage?.code,
+                        hasPendingSmsTask: !!leadPendingSmsMap[lead.id],
+                        hasConfirmedSms: !!leadSmsSentMap[lead.id],
+                      });
+
+                      return (
+                        <div key={lead.id} className="relative group space-y-1">
+                          <div className="flex items-center justify-between text-[11px] font-medium px-1">
+                            <span className="text-slate-500">
+                              Estágio atual:{' '}
+                              <span className="font-bold text-[#08254f]">
+                                {leadStage?.name || 'Novo Lead'}
+                              </span>
+                            </span>
+                            {lead.last_acquisition_at && (
+                              <span className="text-[10px] text-slate-400">
+                                {new Date(lead.last_acquisition_at).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            )}
+                          </div>
+                          <MinimalLeadCard
+                            lead={lead}
+                            interests={interests}
+                            attentionState={attentionState}
+                            deliverabilityHealth={deliverabilityHealth}
+                            emailStatusInfo={deliverabilityHealth?.recentEmailStatus || null}
+                            smsSentInfo={leadSmsSentMap[lead.id] || null}
+                            whatsappSentInfo={leadWhatsappSentMap[lead.id] || null}
+                            stageCode={leadStage?.code}
+                            stageName={leadStage?.name}
+                            onClick={() => handleCardClick(lead)}
+                            onAcknowledge={handleAcknowledgeLead}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* 3. Responsive Premium Kanban Board (Mobile Horizontal Snap Scroll + Desktop Full Grid) */
+              <div className="overflow-x-auto pb-4 pt-0.5 snap-x snap-mandatory scroll-smooth w-full -mx-4 px-4 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
               <div className="flex gap-3 sm:gap-4 min-w-max lg:min-w-0 lg:w-full">
                 {operationalStages.map((stage) => {
                   const stageLeads = leadsByStage[stage.id] || [];
@@ -1026,6 +1214,7 @@ export function PipelineKanbanPage() {
                                   isDragging={isDragging}
                                   onDragStart={(e) => handleDragStart(e, lead.id)}
                                   onClick={() => handleCardClick(lead)}
+                                  onAcknowledge={handleAcknowledgeLead}
                                 />
                               );
                             })}
@@ -1074,8 +1263,9 @@ export function PipelineKanbanPage() {
                 })}
               </div>
             </div>
-          </>
-        )}
+          )}
+        </>
+      )}
 
         {/* Modal: New Lead */}
         <NewLeadModal

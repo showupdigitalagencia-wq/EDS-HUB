@@ -221,6 +221,7 @@ export interface Lead {
   last_acquisition_at?: string | null;
   has_new_submission?: boolean;
   new_submission_at?: string | null;
+  new_inbound_count?: number;
   lead_score?: number;
   lead_score_updated_at?: string | null;
   created_at: string;

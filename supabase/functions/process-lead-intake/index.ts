@@ -273,7 +273,8 @@ Deno.serve(async (req) => {
       payload.source_detail === 'website' ||
       payload.source_detail === 'website-form' ||
       payload.source_detail === 'contact_form' ||
-      payload.source_detail === 'website_registration_form';
+      payload.source_detail === 'website_registration_form' ||
+      payload.source_detail === 'course_information_request';
 
     const isMetaLead =
       payload.source === 'meta' ||
@@ -316,7 +317,89 @@ Deno.serve(async (req) => {
         summary: 'Incomplete website registration received. Automated first-contact outreach is held until registration completion.',
         metadata: { source: payload.source, source_detail: payload.source_detail },
       });
-      actionSucceeded = true;
+    } else if (payload.source_detail === 'course_information_request') {
+      // REQUEST COURSE INFORMATION EMAIL RULE:
+      // High-confidence factual course -> send approved course-specific first email with required attachments.
+      // Unknown / conflicting / unresolved course -> ZERO automated email (manual review).
+      // NOT an ad lead: do NOT send SMS, do NOT classify as ad lead.
+      const rawCourse = payload.course_interest || payload.course_title;
+      const normalizedCourse = rawCourse ? String(rawCourse).toLowerCase().trim() : '';
+
+      const isConflicting = Boolean(
+        rawCourse && (
+          (normalizedCourse.includes('wisdom') && normalizedCourse.includes('zygoma')) ||
+          (normalizedCourse.includes('endo') && normalizedCourse.includes('perio')) ||
+          (normalizedCourse.includes('rehab') && normalizedCourse.includes('wisdom')) ||
+          (normalizedCourse.includes('wisdom') && normalizedCourse.includes('implant'))
+        )
+      );
+
+      const approvedTplKey = (!isConflicting && rawCourse)
+        ? resolveApprovedCourseTemplateKey(rawCourse)
+        : null;
+
+      if (!approvedTplKey || approvedTplKey === 'lead_intake_email') {
+        // Unknown, conflicting, or unresolved course:
+        // ZERO automated email. Send to ZERO recipients.
+        await db.from('tasks').insert({
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          task_type: 'data_review',
+          title: 'Triagem de Curso Não Identificado — Request Course Info',
+          description: `Interesse de curso não identificado com alta confiança no formulário do site (valor: "${rawCourse || 'nenhum'}"). Envio de e-mail automático suprimido (0 envios). Realizar triagem manual.`,
+          status: 'pending',
+          created_by: 'system',
+        });
+        tasksCreated += 1;
+
+        await db.from('lead_activities').insert({
+          lead_id: leadId,
+          intake_event_id: intakeEventId,
+          activity_type: 'outreach_suppressed',
+          actor_type: 'system',
+          summary: 'Envio automático de e-mail suspenso: curso no formulário do site não identificado com alta confiança ou conflitante. Lead mantido para acompanhamento manual.',
+          metadata: {
+            source: payload.source,
+            source_detail: payload.source_detail,
+            course_interest: rawCourse || null,
+            reason: isConflicting ? 'conflicting_course' : 'unidentified_course',
+            recipients_sent: 0,
+          },
+        });
+        actionSucceeded = true;
+      } else {
+        // High-confidence factual course:
+        const sourceDataForResolution: Record<string, unknown> = {
+          ...((payload.raw_payload && typeof payload.raw_payload === 'object') ? payload.raw_payload as Record<string, unknown> : {}),
+          ...((payload.raw_data && typeof payload.raw_data === 'object') ? payload.raw_data as Record<string, unknown> : {}),
+          email: payload.email,
+          email_confirmation: payload.email_confirmation,
+        };
+        const canonicalEmailRes = resolveCanonicalEmails(sourceDataForResolution, payload.source || 'website');
+        const resolvedIdentities = canonicalEmailRes.emails;
+
+        if (resolvedIdentities.length > 0) {
+          const emailRes = await handleEmailPreference(
+            db, payload, leadId, intakeEventId, salutation, idempotencyKey, resolvedIdentities,
+          );
+          messagesSent += emailRes.sent;
+          messagesFailed += emailRes.failed;
+          tasksCreated += emailRes.tasksCreated;
+          errors.push(...emailRes.errors);
+          actionSucceeded = emailRes.allSucceeded;
+        } else {
+          await db.from('lead_activities').insert({
+            lead_id: leadId,
+            intake_event_id: intakeEventId,
+            activity_type: 'processing_failed',
+            actor_type: 'system',
+            summary: 'Request Course Info has no valid email address for course email dispatch.',
+            metadata: { source: payload.source, source_detail: payload.source_detail },
+          });
+          actionSucceeded = false;
+          errors.push('No valid email address for course information email');
+        }
+      }
     } else if (!isProvenAdLead(payload)) {
       // NON-AD SOURCE RULE:
       // Automatic first-contact email is strictly restricted to approved advertising Lead Ads (Meta / Facebook / Instagram Lead Ads).

@@ -682,20 +682,94 @@ export async function rescheduleCrmTask(
   newDueAt: string | null,
   reason?: string
 ): Promise<{ success: boolean; task_id: string; old_due_at: string; new_due_at: string }> {
-  const { data, error } = await supabase.rpc('reschedule_crm_task', {
-    p_task_id: taskId,
-    p_new_due_at: newDueAt,
-    p_reason: reason || null,
-  });
+  const cleanTaskId = (taskId || '').replace(/^task:/i, '').trim();
+  if (!cleanTaskId) {
+    throw new Error('Task ID is required');
+  }
 
-  if (error) throw new Error(error.message);
+  // 1. Primary Attempt: Canonical RPC with audit logging
+  try {
+    const { data, error } = await supabase.rpc('reschedule_crm_task', {
+      p_task_id: cleanTaskId,
+      p_new_due_at: newDueAt,
+      p_reason: reason || null,
+    });
+
+    if (!error && data) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('tasks-updated'));
+        window.dispatchEvent(new CustomEvent('lead-updated'));
+      }
+      return data;
+    }
+    if (error) {
+      console.warn('reschedule_crm_task RPC failed, attempting resilient direct fallback:', error);
+    }
+  } catch (rpcErr) {
+    console.warn('reschedule_crm_task exception, attempting resilient direct fallback:', rpcErr);
+  }
+
+  // 2. Resilient Direct Fallback: Update task and record audit log safely without nonexistent columns
+  const { data: existingTask, error: fetchErr } = await supabase
+    .from('tasks')
+    .select('id, lead_id, title, due_at')
+    .eq('id', cleanTaskId)
+    .single();
+
+  if (fetchErr || !existingTask) {
+    throw new Error(fetchErr?.message || `Task not found: ${cleanTaskId}`);
+  }
+
+  const oldDueAt = existingTask.due_at;
+
+  const { error: updateErr } = await supabase
+    .from('tasks')
+    .update({
+      due_at: newDueAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', cleanTaskId);
+
+  if (updateErr) {
+    throw new Error(updateErr.message);
+  }
+
+  // Record audit log activity using canonical fields only (no actor_id column)
+  const { data: authData } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+  const userId = authData?.user?.id || null;
+
+  try {
+    await supabase
+      .from('lead_activities')
+      .insert({
+        lead_id: existingTask.lead_id,
+        activity_type: 'task_rescheduled',
+        actor_type: 'user',
+        summary: `Task rescheduled: "${existingTask.title}" to ${newDueAt || 'no due date'}`,
+        metadata: {
+          task_id: cleanTaskId,
+          old_due_at: oldDueAt,
+          new_due_at: newDueAt,
+          reason: reason || null,
+          user_id: userId,
+          actor_id: userId,
+        },
+      });
+  } catch (actErr) {
+    console.warn('Could not record task_rescheduled activity:', actErr);
+  }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('tasks-updated'));
     window.dispatchEvent(new CustomEvent('lead-updated'));
   }
 
-  return data;
+  return {
+    success: true,
+    task_id: cleanTaskId,
+    old_due_at: oldDueAt,
+    new_due_at: newDueAt || '',
+  };
 }
 
 /**

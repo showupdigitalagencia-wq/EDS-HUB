@@ -42,6 +42,12 @@
           "objectType": "contact",
           "propertyName": "mobilephone",
           "active": true
+        },
+        {
+          "subscriptionType": "object.propertyChange",
+          "objectType": "contact",
+          "propertyName": "recent_conversion_date",
+          "active": true
         }
       ],
       "legacyCrmObjects": [

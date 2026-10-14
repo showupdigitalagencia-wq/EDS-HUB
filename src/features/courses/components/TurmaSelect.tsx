@@ -1,16 +1,17 @@
-import React, { useState, useEffect, useId } from 'react';
+import React, { useState, useEffect, useId, useMemo } from 'react';
 import {
   fetchGlobalTurmaOptions,
   saveCustomTurmaOption,
   STANDARD_TURMA_OPTIONS,
   OUTRAS_LABEL,
+  isUuid,
 } from '../services/turma-catalog-service';
 import type { CourseSession } from '../../../types/database';
 
 export interface TurmaSelectProps {
   label?: string;
   value?: string | null;
-  onChange: (selectedLabelOrId: string) => void;
+  onChange: (selectedLabel: string) => void;
   courseSessions?: CourseSession[];
   disabled?: boolean;
   required?: boolean;
@@ -35,12 +36,12 @@ export const TurmaSelect: React.FC<TurmaSelectProps> = ({
   const [isOutrasSelected, setIsOutrasSelected] = useState(false);
   const [customInputValue, setCustomInputValue] = useState('');
 
-  // Load global options on mount
+  // Load global options on mount (filtering any UUID junk)
   useEffect(() => {
     let isMounted = true;
     void fetchGlobalTurmaOptions().then((opts) => {
       if (isMounted && opts.length > 0) {
-        setGlobalOptions(opts);
+        setGlobalOptions(opts.filter((o) => !isUuid(o)));
       }
     });
     return () => {
@@ -48,23 +49,33 @@ export const TurmaSelect: React.FC<TurmaSelectProps> = ({
     };
   }, []);
 
+  // Filter valid course sessions: omit any whose title is a UUID or missing
+  const validSessions = useMemo(() => {
+    return courseSessions.filter((s) => s.title && s.title.trim() && !isUuid(s.title.trim()));
+  }, [courseSessions]);
+
   // Determine current display value & match against sessions or global options
   const matchedSession = courseSessions.find((s) => s.id === value || s.title === value);
-  const effectiveValue = value || '';
+  const resolvedHumanLabel =
+    matchedSession && matchedSession.title && !isUuid(matchedSession.title)
+      ? matchedSession.title.trim()
+      : value && !isUuid(value)
+      ? value.trim()
+      : '';
 
   // Check if current value matches one of the known options
   const isKnownOption =
-    effectiveValue === '' ||
-    matchedSession !== undefined ||
-    globalOptions.includes(effectiveValue);
+    resolvedHumanLabel === '' ||
+    validSessions.some((s) => s.title.trim() === resolvedHumanLabel) ||
+    globalOptions.includes(resolvedHumanLabel);
 
   useEffect(() => {
-    if (effectiveValue && !isKnownOption && !isOutrasSelected) {
+    if (resolvedHumanLabel && !isKnownOption && !isOutrasSelected) {
       // It's a custom label not in initial list
       setIsOutrasSelected(true);
-      setCustomInputValue(effectiveValue);
+      setCustomInputValue(resolvedHumanLabel);
     }
-  }, [effectiveValue, isKnownOption, isOutrasSelected]);
+  }, [resolvedHumanLabel, isKnownOption, isOutrasSelected]);
 
   const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selected = e.target.value;
@@ -81,23 +92,27 @@ export const TurmaSelect: React.FC<TurmaSelectProps> = ({
 
   const handleCustomInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
+    if (isUuid(val)) return; // Never accept raw UUIDs
     setCustomInputValue(val);
     onChange(val);
   };
 
   const handleCustomInputBlur = () => {
-    if (customInputValue.trim()) {
-      void saveCustomTurmaOption(customInputValue.trim()).then((updated) => {
-        setGlobalOptions(updated);
+    const trimmed = customInputValue.trim();
+    if (trimmed && !isUuid(trimmed)) {
+      void saveCustomTurmaOption(trimmed).then((updated) => {
+        setGlobalOptions(updated.filter((o) => !isUuid(o)));
       });
     }
   };
 
   // Build the complete options list:
-  // 1. Any existing courseSessions (rendered with value=id and label=title)
-  // 2. Global options (excluding any that match existing session titles)
-  const existingSessionTitles = new Set(courseSessions.map((s) => s.title));
-  const remainingGlobalOptions = globalOptions.filter((opt) => !existingSessionTitles.has(opt));
+  // 1. Any existing valid courseSessions (rendered with value=title and label=title)
+  // 2. Global options (excluding any that match existing session titles or are UUIDs)
+  const existingSessionTitles = new Set(validSessions.map((s) => s.title.trim()));
+  const remainingGlobalOptions = globalOptions.filter(
+    (opt) => !existingSessionTitles.has(opt) && !isUuid(opt)
+  );
 
   // Determine what value to set on the select element
   let selectValue = '';
@@ -105,8 +120,10 @@ export const TurmaSelect: React.FC<TurmaSelectProps> = ({
     selectValue = OUTRAS_LABEL;
   } else if (matchedSession) {
     selectValue = matchedSession.id;
-  } else if (globalOptions.includes(effectiveValue)) {
-    selectValue = effectiveValue;
+  } else if (resolvedHumanLabel) {
+    if (existingSessionTitles.has(resolvedHumanLabel) || remainingGlobalOptions.includes(resolvedHumanLabel)) {
+      selectValue = resolvedHumanLabel;
+    }
   }
 
   return (
@@ -132,7 +149,7 @@ export const TurmaSelect: React.FC<TurmaSelectProps> = ({
         >
           <option value="">{placeholder}</option>
 
-          {courseSessions.map((s) => (
+          {validSessions.map((s) => (
             <option key={s.id} value={s.id}>
               {s.title}
             </option>
@@ -170,4 +187,3 @@ export const TurmaSelect: React.FC<TurmaSelectProps> = ({
     </div>
   );
 };
-

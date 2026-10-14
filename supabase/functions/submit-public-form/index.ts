@@ -199,8 +199,9 @@ Deno.serve(async (req) => {
     }
 
     // 2.5 Conservative single-name splitting (first token = first_name, remainder = last_name)
-    if (fields.name && typeof fields.name === 'string') {
-      const trimmedName = fields.name.trim();
+    const rawFullName = (fields.full_name || fields.name) as string | undefined;
+    if (rawFullName && typeof rawFullName === 'string') {
+      const trimmedName = rawFullName.trim();
       if (trimmedName && !fields.first_name) {
         const spaceIndex = trimmedName.indexOf(' ');
         if (spaceIndex > 0) {
@@ -213,11 +214,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Bidirectional course field mapping fallback
+    // Bidirectional course field mapping fallback & course_code resolution
     if (!fields.course && fields.course_interest) {
       fields.course = fields.course_interest;
     } else if (!fields.course_interest && fields.course) {
       fields.course_interest = fields.course;
+    } else if (!fields.course && !fields.course_interest && fields.course_code) {
+      fields.course = fields.course_code;
+      fields.course_interest = fields.course_code;
     }
 
     const db = createAdminClient();
@@ -425,15 +429,18 @@ Deno.serve(async (req) => {
         const supabaseUrl = Deno.env.get('SUPABASE_URL');
         const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-        const isWebsite = slug === 'website-contact' || slug === 'website-register' || (form.slug && form.slug.startsWith('website-')) || form.source === 'website';
+        const isWebsite = slug === 'website-contact' || slug === 'website-register' || slug === 'website-course-info' || (form.slug && form.slug.startsWith('website-')) || form.source === 'website';
         const isWebsiteContact = slug === 'website-contact' || form.source_detail === 'contact_form';
         const isWebsiteRegister = slug === 'website-register' || form.source_detail === 'website_registration_form';
+        const isWebsiteCourseInfo = slug === 'website-course-info' || form.source_detail === 'course_information_request';
         const intakePayload: LeadIntakePayload = {
           source: isWebsite ? 'website' : 'form',
           source_detail: isWebsiteContact
             ? 'contact_form'
             : isWebsiteRegister
             ? 'website_registration_form'
+            : isWebsiteCourseInfo
+            ? 'course_information_request'
             : (form.source_detail || 'website'),
           intake_event_id: intakeEventId,
           lead_id: leadId,

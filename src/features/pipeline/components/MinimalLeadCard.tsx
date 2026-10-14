@@ -11,6 +11,7 @@ import {
   Mail,
   GraduationCap,
   Globe,
+  Check,
 } from 'lucide-react';
 
 export interface FormattedCourseInterest {
@@ -40,6 +41,7 @@ export interface MinimalLeadCardProps {
   onDragStart?: (e: React.DragEvent) => void;
   onClick?: () => void;
   onDeliverabilityClick?: (e: React.MouseEvent) => void;
+  onAcknowledge?: (leadId: string) => void;
 }
 
 /**
@@ -113,6 +115,7 @@ export function isWebsiteLead(
   // Canonical website forms / slugs / details
   if (
     detail === 'contact_form' ||
+    detail === 'course_information_request' ||
     detail === 'website' ||
     detail === 'website-contact' ||
     detail === 'website_contact' ||
@@ -266,6 +269,7 @@ export function resolveAttentionState(
     lead.source === 'website' ||
     lead.source_detail === 'website' ||
     lead.source_detail === 'contact_form' ||
+    lead.source_detail === 'course_information_request' ||
     lead.source_detail === 'website-form'
   ) {
     return {
@@ -345,6 +349,7 @@ export function MinimalLeadCard({
   onDragStart,
   onClick,
   onDeliverabilityClick,
+  onAcknowledge,
 }: MinimalLeadCardProps) {
   const fullName =
     [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Lead sem nome';
@@ -356,6 +361,27 @@ export function MinimalLeadCard({
   );
 
   const isWebsite = isWebsiteLead(lead);
+
+  // Determine inbound / returning attention state
+  const newInboundCount = lead.new_inbound_count || 1;
+  const isMultipleInbound = newInboundCount >= 2;
+  const isReturningLead = (() => {
+    const code = (stageCode || '').toLowerCase();
+    const name = (stageName || '').toLowerCase();
+    if (code && code !== 'capture') return true;
+    if (name && !name.includes('novo') && !name.includes('captura')) return true;
+    if (lead.created_at && lead.new_submission_at) {
+      const diffMs = new Date(lead.new_submission_at).getTime() - new Date(lead.created_at).getTime();
+      if (diffMs > 60000) return true;
+    }
+    return false;
+  })();
+
+  const inboundBadgeLabel = isMultipleInbound
+    ? `${newInboundCount} novas entradas`
+    : isReturningLead
+    ? 'Retorno'
+    : 'Nova entrada • Novo formulário';
 
   // Resolve deduplicated canonical course interests (canonical short names only, no session/date/#)
   const canonicalInterests = resolveLeadCanonicalCourseInterests(lead, interests).slice(0, 3);
@@ -454,14 +480,45 @@ export function MinimalLeadCard({
         </div>
         <div className="flex items-center gap-1 shrink-0 mt-0.5">
           {lead.has_new_submission && (
-            <span
-              data-testid="lead-card-new-submission-badge"
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-2xs select-none"
-              title="Novo formulário recebido"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span>Novo formulário</span>
-            </span>
+            <div className="flex items-center gap-1">
+              <span
+                data-testid="lead-card-new-submission-badge"
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold rounded-md shadow-2xs select-none ${
+                  isReturningLead
+                    ? 'bg-amber-50 text-amber-800 border border-amber-300'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-300'
+                }`}
+                title={
+                  isMultipleInbound
+                    ? `${newInboundCount} novas entradas recebidas`
+                    : isReturningLead
+                    ? 'Lead retornou com nova entrada'
+                    : 'Nova entrada recebida'
+                }
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${
+                    isReturningLead ? 'bg-amber-500' : 'bg-emerald-500'
+                  }`}
+                />
+                <span>{inboundBadgeLabel}</span>
+              </span>
+              {onAcknowledge && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAcknowledge(lead.id);
+                  }}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-semibold text-slate-600 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded transition-colors cursor-pointer"
+                  title="Marcar como visto"
+                  data-testid={`lead-card-ack-button-${lead.id}`}
+                >
+                  <Check className="h-2.5 w-2.5 text-emerald-600" />
+                  <span className="hidden sm:inline">Visto</span>
+                </button>
+              )}
+            </div>
           )}
           <GripVertical className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500" />
         </div>

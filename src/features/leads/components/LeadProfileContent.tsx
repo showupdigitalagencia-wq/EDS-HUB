@@ -35,6 +35,21 @@ import { LeadTaskModal } from './LeadTaskModal';
 import { MatriculaCourseTurmaModal } from './MatriculaCourseTurmaModal';
 import { formatCohortDateRange } from '../../../utils/format';
 import { resolveLeadCanonicalCourseInterests } from '../../../utils/course-resolver';
+import { isUuid } from '../../courses/services/turma-catalog-service';
+
+export function formatSafeTurmaLabel(
+  title?: string | null,
+  startDate?: string | null,
+  endDate?: string | null
+): string | null {
+  if (title && title.trim() && !isUuid(title.trim())) {
+    return title.trim();
+  }
+  if (startDate) {
+    return formatCohortDateRange(startDate, endDate);
+  }
+  return null;
+}
 import { fetchActiveIncompleteEnrollment, dismissIncompleteEnrollment } from '../services/incomplete-enrollment-service';
 import { ManualEmailComposerModal } from './ManualEmailComposerModal';
 import { ManualSmsComposerModal } from './ManualSmsComposerModal';
@@ -566,9 +581,11 @@ export function LeadProfileContent({
         const primaryCourseInterest = courseInterests.length > 0 ? courseInterests[0] : null;
         const enrolledCourseName = primaryCourseInterest?.course?.name || lead.course_interest || null;
         const enrolledTurmaLabel = primaryCourseInterest?.session
-          ? (primaryCourseInterest.session.title
-              ? primaryCourseInterest.session.title
-              : formatCohortDateRange(primaryCourseInterest.session.start_date, primaryCourseInterest.session.end_date))
+          ? formatSafeTurmaLabel(
+              primaryCourseInterest.session.title,
+              primaryCourseInterest.session.start_date,
+              primaryCourseInterest.session.end_date
+            )
           : null;
 
         return (
@@ -634,7 +651,7 @@ export function LeadProfileContent({
                   >
                     <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
                     <span>
-                      Turma: {enrolledTurmaLabel || 'Não definida'}
+                      Turma: {enrolledTurmaLabel || 'Turma não definida'}
                     </span>
                   </div>
                 </div>
@@ -687,9 +704,14 @@ export function LeadProfileContent({
                   </div>
                   <p className="text-[11px] text-amber-800/90 mt-0.5">
                     <span className="font-semibold">{incompleteEnrollment.course?.name || 'Curso'}</span>
-                    {incompleteEnrollment.course_session?.title && (
-                      <span> • Turma: {incompleteEnrollment.course_session.title}</span>
-                    )}
+                    {(() => {
+                      const incTurma = formatSafeTurmaLabel(
+                        incompleteEnrollment.course_session?.title,
+                        incompleteEnrollment.course_session?.start_date,
+                        (incompleteEnrollment.course_session as any)?.end_date
+                      );
+                      return incTurma ? <span> • Turma: {incTurma}</span> : null;
+                    })()}
                     <span>
                       {' '}•{' '}
                       {new Date(incompleteEnrollment.created_at).toLocaleString('pt-BR', {
@@ -1138,12 +1160,11 @@ export function LeadProfileContent({
               return (
                 <div className="space-y-2">
                   {canonicalInterests.map((interest, idx) => {
-                    const turmaDateStr = interest.sessionDate
-                      ? formatCohortDateRange(interest.sessionDate, interest.sessionEndDate)
-                      : null;
-                    const turmaLabel = interest.sessionTitle
-                      ? interest.sessionTitle
-                      : turmaDateStr;
+                    const turmaLabel = formatSafeTurmaLabel(
+                      interest.sessionTitle,
+                      interest.sessionDate,
+                      interest.sessionEndDate
+                    );
 
                     return (
                       <div

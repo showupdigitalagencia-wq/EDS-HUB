@@ -283,7 +283,75 @@ export function evaluateFirstContactEligibility(
   const hasValidEmailAddr = isValidEmail(lead.email);
   const hasValidPhoneNum = isValidPhone(lead.phone_e164 || lead.phone_raw);
 
-  // 1. Website leads: manual client response required
+  // 1. Request Course Information Form:
+  // - NOT an ad lead (never eligible for SMS, only email).
+  // - High-confidence factual course -> eligible for course-specific email with required attachment.
+  // - Unknown, conflicting, unresolved, or generic course -> ZERO automated email (manual review).
+  if (lead.source_detail === 'course_information_request') {
+    if (!lead.course_interest || !lead.course_interest.trim()) {
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        suppressedReason: 'Course information request without identified course prevents automated outreach.',
+        hasValidEmail: hasValidEmailAddr,
+        hasValidPhone: hasValidPhoneNum,
+      };
+    }
+
+    const tpl = resolveFirstContactTemplateForCourse(lead.course_interest);
+    if (!tpl || tpl.courseCode === 'GENERIC') {
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        suppressedReason: `Unknown or unmapped course "${lead.course_interest}" prevents automated email for course information request.`,
+        hasValidEmail: hasValidEmailAddr,
+        hasValidPhone: hasValidPhoneNum,
+      };
+    }
+
+    const norm = lead.course_interest.toLowerCase();
+    const isConflicting = (
+      (norm.includes('wisdom') && norm.includes('zygoma')) ||
+      (norm.includes('endo') && norm.includes('perio')) ||
+      (norm.includes('rehab') && norm.includes('wisdom')) ||
+      (norm.includes('wisdom') && norm.includes('implant'))
+    );
+    if (isConflicting) {
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        suppressedReason: `Conflicting course interests detected in "${lead.course_interest}". Automated email suppressed for manual review.`,
+        hasValidEmail: hasValidEmailAddr,
+        hasValidPhone: hasValidPhoneNum,
+      };
+    }
+
+    if (!hasValidEmailAddr) {
+      return {
+        isEligible: false,
+        eligibleChannels: [],
+        preservedPreference,
+        suppressedReason: 'Course information request has no valid email address.',
+        hasValidEmail: false,
+        hasValidPhone: hasValidPhoneNum,
+        resolvedTemplate: tpl,
+      };
+    }
+
+    return {
+      isEligible: true,
+      eligibleChannels: ['email'],
+      preservedPreference,
+      hasValidEmail: true,
+      hasValidPhone: hasValidPhoneNum,
+      resolvedTemplate: tpl,
+    };
+  }
+
+  // 2. Generic website leads (Contact Us, Website Register): manual client response required
   const isWebsite =
     lead.source === 'form' ||
     lead.source === 'website' ||
