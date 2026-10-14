@@ -375,7 +375,7 @@ Deno.serve(async (req) => {
     if (txError) {
       console.error('[submit-public-form] Transaction RPC error:', txError);
       return new Response(
-        JSON.stringify({ error: 'Submission transaction failed' }),
+        JSON.stringify({ error: 'Submission transaction failed', details: txError.message || txError }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
