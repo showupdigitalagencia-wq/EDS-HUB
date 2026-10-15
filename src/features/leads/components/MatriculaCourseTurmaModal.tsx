@@ -3,9 +3,8 @@ import { X, GraduationCap, Loader2, AlertCircle, Check } from 'lucide-react';
 import type { Course, CourseSession } from '../../../types/database';
 import { fetchCourses } from '../../revenue/services/revenue-service';
 import { fetchAvailableSessionsForCourse } from '../../courses/services/course-operations-service';
-import { ensureCourseSessionForLabel } from '../../courses/services/turma-catalog-service';
+import { saveLeadMatriculaCourseTurma } from '../../courses/services/turma-catalog-service';
 import { TurmaSelect } from '../../courses/components/TurmaSelect';
-import { supabase } from '../../../lib/supabase';
 
 interface MatriculaCourseTurmaModalProps {
   isOpen: boolean;
@@ -101,88 +100,8 @@ export const MatriculaCourseTurmaModal: React.FC<MatriculaCourseTurmaModalProps>
     setError(null);
 
     try {
-      // Resolve session ID safely from catalog label or existing session ID
-      let resolvedSessionId: string | null = null;
-      if (selectedSessionId && selectedSessionId.trim()) {
-        const trimmed = selectedSessionId.trim();
-        const existing = sessions.find((s) => s.id === trimmed);
-        if (existing) {
-          resolvedSessionId = existing.id;
-        } else {
-          try {
-            const sess = await ensureCourseSessionForLabel(selectedCourseId, trimmed);
-            resolvedSessionId = sess.id;
-          } catch (sessErr) {
-            console.warn('Could not ensure course session row, using raw session ID:', sessErr);
-            resolvedSessionId = trimmed;
-          }
-        }
-      }
-
-      // 1. Update or create lead_course_interests
-      const { data: existingInterests, error: fetchErr } = await supabase
-        .from('lead_course_interests')
-        .select('id')
-        .eq('lead_id', leadId)
-        .order('priority', { ascending: true })
-        .limit(1);
-
-      if (fetchErr) {
-        console.warn('Error checking existing course interests:', fetchErr);
-      }
-
-      if (existingInterests && existingInterests.length > 0) {
-        const { error: updateErr } = await supabase
-          .from('lead_course_interests')
-          .update({
-            course_id: selectedCourseId,
-            course_session_id: resolvedSessionId,
-          })
-          .eq('id', existingInterests[0].id);
-
-        if (updateErr) throw updateErr;
-      } else {
-        const { error: insertErr } = await supabase
-          .from('lead_course_interests')
-          .insert({
-            lead_id: leadId,
-            course_id: selectedCourseId,
-            course_session_id: resolvedSessionId,
-            priority: 1,
-          });
-
-        if (insertErr) throw insertErr;
-      }
-
-      // 2. Update lead course_interest label
       const chosenCourse = courses.find((c) => c.id === selectedCourseId);
-      if (chosenCourse) {
-        await supabase
-          .from('leads')
-          .update({
-            course_interest: chosenCourse.name,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', leadId);
-      }
-
-      // 3. Keep existing enrollments row synchronized if present
-      const { data: enrollments } = await supabase
-        .from('enrollments')
-        .select('id')
-        .eq('lead_id', leadId)
-        .limit(1);
-
-      if (enrollments && enrollments.length > 0) {
-        await supabase
-          .from('enrollments')
-          .update({
-            course_id: selectedCourseId,
-            course_session_id: resolvedSessionId,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', enrollments[0].id);
-      }
+      await saveLeadMatriculaCourseTurma(leadId, selectedCourseId, selectedSessionId, chosenCourse?.name);
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('lead-updated', { detail: { leadId } }));
@@ -191,7 +110,8 @@ export const MatriculaCourseTurmaModal: React.FC<MatriculaCourseTurmaModalProps>
       onSuccess();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao salvar curso e turma da matrícula.');
+      console.error('Failed to save matricula course and turma:', err);
+      setError('Erro ao salvar curso e turma da matrícula.');
     } finally {
       setIsSubmitting(false);
     }

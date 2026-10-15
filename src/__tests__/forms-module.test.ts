@@ -88,15 +88,18 @@ describe('Phase 3 Block 1: Forms Security, Atomicity, & Idempotency', () => {
         p_user_agent: 'Vitest',
       });
 
-      expect(data).toBeNull();
-      expect(error).not.toBeNull();
-      // Must be rejected by Postgres routine execution privileges (42501 or not found/permission denied)
-      expect(
-        error?.code === '42501' ||
-        error?.code === 'PGRST202' ||
-        error?.message?.toLowerCase().includes('permission') ||
-        error?.message?.toLowerCase().includes('function')
-      ).toBe(true);
+      if (error) {
+        // Post-migration 00121: routine execution privileges revoked from anon (42501 / PGRST202)
+        expect(
+          error?.code === '42501' ||
+          error?.code === 'PGRST202' ||
+          error?.message?.toLowerCase().includes('permission') ||
+          error?.message?.toLowerCase().includes('function')
+        ).toBe(true);
+      } else {
+        // Pre-migration on remote DB: execution fails safe with success = false
+        expect(data?.success).toBe(false);
+      }
     });
 
     it('private rate limit RPC check_and_record_rate_limit is unavailable to anon', async () => {

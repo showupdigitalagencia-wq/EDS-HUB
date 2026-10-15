@@ -137,7 +137,7 @@
       debounceTimer = setTimeout(captureIncompleteAttempt, 1500);
     }
 
-    form.querySelectorAll('input, select').forEach(function (el) {
+    form.querySelectorAll('input:not([type="file"]), select').forEach(function (el) {
       el.addEventListener('input', onFieldChange);
       el.addEventListener('change', onFieldChange);
     });
@@ -148,6 +148,16 @@
       var phoneEl = form.querySelector('input[name="phone"]');
       var courseEl = form.querySelector('select[name="course"]');
       var nameEl = form.querySelector('input[name="name"]');
+      var emergencyPhoneEl = form.querySelector('input[name="emergency_phone"]');
+      var certNameEl = form.querySelector('input[name="certificate_name"]');
+      var agdEl = form.querySelector('input[name="agd_number"]');
+      var specialtyEl = form.querySelector('select[name="specialty"]');
+      var yearsEl = form.querySelector('select[name="years_in_practice"]');
+      var surgicalEl = form.querySelector('select[name="surgical_experience"]');
+      var coatEl = form.querySelector('input[name="coat_size"]');
+      var heardEl = form.querySelector('select[name="heard_from"]');
+      var referralEl = form.querySelector('input[name="referral_name"]');
+      var promoEl = form.querySelector('input[name="promo_code"]');
 
       var email = emailEl ? emailEl.value.trim().toLowerCase() : '';
       var phone = phoneEl ? sanitizePhone(phoneEl.value) : '';
@@ -158,7 +168,25 @@
       if ((!email && !phone) || !rawCourse) return;
 
       var courseCode = resolveCourseCode(rawCourse);
-      var signature = (email || '') + '|' + (phone || '') + '|' + rawCourse;
+
+      // Signature encompasses all filled progressive fields so typing any field pushes inactivity timer
+      var signature = [
+        email,
+        phone,
+        rawCourse,
+        name,
+        emergencyPhoneEl ? emergencyPhoneEl.value.trim() : '',
+        specialtyEl ? specialtyEl.value : '',
+        yearsEl ? yearsEl.value : '',
+        surgicalEl ? surgicalEl.value : '',
+        agdEl ? agdEl.value.trim() : '',
+        referralEl ? referralEl.value.trim() : '',
+        promoEl ? promoEl.value.trim() : '',
+        coatEl ? coatEl.value.trim() : '',
+        heardEl ? heardEl.value : '',
+        certNameEl ? certNameEl.value.trim() : ''
+      ].join('|');
+
       if (signature === lastCapturedSignature) return; // avoid duplicate requests
       lastCapturedSignature = signature;
 
@@ -170,9 +198,21 @@
         external_attempt_id: attemptId,
         first_name: names.first,
         last_name: names.last,
+        name: name || undefined,
         email: email || null,
         phone: phone || null,
+        emergency_phone: emergencyPhoneEl ? sanitizePhone(emergencyPhoneEl.value) : undefined,
+        course: rawCourse || undefined,
         course_code: courseCode || null,
+        certificate_name: certNameEl ? certNameEl.value.trim() : undefined,
+        agd_number: agdEl ? agdEl.value.trim() : undefined,
+        specialty: specialtyEl ? specialtyEl.value : undefined,
+        years_in_practice: yearsEl ? yearsEl.value : undefined,
+        surgical_experience: surgicalEl ? surgicalEl.value : undefined,
+        coat_size: coatEl ? coatEl.value.trim() : undefined,
+        heard_from: heardEl ? heardEl.value : undefined,
+        referral_name: referralEl ? referralEl.value.trim() : undefined,
+        promo_code: promoEl ? promoEl.value.trim() : undefined,
         status: 'needs_followup',
         source_page: window.location.origin + window.location.pathname,
         utm_source: utm.utm_source || null,
@@ -194,7 +234,14 @@
       });
     }
 
-    // 4. Report Failed Submission to EDS HUB (for proactive alerts)
+    // 4. Reset Attempt ID — strictly called only upon factual successful completion
+    window.resetEdsHubAttempt = function () {
+      try {
+        sessionStorage.removeItem('eds_form_attempt_id');
+      } catch (_e) {}
+    };
+
+    // 5. Report Failed Submission to EDS HUB (for proactive alerts)
     window.reportEdsHubSubmissionFailure = function (errorCode, errorMessage) {
       var emailEl = form.querySelector('input[name="email"]');
       var phoneEl = form.querySelector('input[name="phone"]');
@@ -232,7 +279,7 @@
       }).catch(function () {});
     };
 
-    // 5. Send Completed Form to EDS HUB (Used in Option A)
+    // 6. Send Completed Form to EDS HUB (Used in Option A)
     window.sendEdsHubCompletedForm = function () {
       var emailEl = form.querySelector('input[name="email"]');
       var phoneEl = form.querySelector('input[name="phone"]');
@@ -298,16 +345,12 @@
       .then(function (res) {
         return res.json();
       })
-      .then(function (data) {
-        try { sessionStorage.removeItem('eds_form_attempt_id'); } catch (_e) {}
-        return data;
-      })
       .catch(function (err) {
         console.warn('[EDS HUB] Notice: Completed form sync skipped', err);
       });
     };
 
-    // 6. Autonomous capture-phase submit listener: guarantees direct intake to EDS HUB
+    // 7. Autonomous capture-phase submit listener: guarantees direct intake to EDS HUB
     // without requiring manual template calls or waiting for third-party scripts.
     var intakeDispatched = false;
     form.addEventListener('submit', function (_e) {

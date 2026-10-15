@@ -345,18 +345,17 @@ describe('PRODUCTION FOUR ISSUES VERIFICATION SUITE', () => {
         error: null,
       });
 
+      const sessionData = {
+        id: 'session-feb-26-existing',
+        course_id: mockCourseId,
+        title: 'Feb/26',
+        status: 'open',
+      };
       const fromMock = vi.fn().mockReturnValue({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({
-              data: {
-                id: 'session-feb-26-existing',
-                course_id: mockCourseId,
-                title: 'Feb/26',
-                status: 'open',
-              },
-              error: null,
-            }),
+            single: vi.fn().mockResolvedValue({ data: sessionData, error: null }),
+            maybeSingle: vi.fn().mockResolvedValue({ data: sessionData, error: null }),
           }),
         }),
       });

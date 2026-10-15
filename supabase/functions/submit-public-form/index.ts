@@ -12,6 +12,7 @@
 import { corsHeaders, corsResponse } from '../_shared/cors.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { resolveCanonicalEmails } from '../_shared/canonical-email-resolver.ts';
+import { sendInternalContactNotification } from '../_shared/internal-enrollment-notifier.ts';
 import type { LeadIntakePayload } from '../_shared/types.ts';
 
 const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB limit
@@ -185,6 +186,8 @@ Deno.serve(async (req) => {
     delete fields.coat_size;
     delete fields.signature;
     delete fields.date;
+    delete fields['g-recaptcha-response'];
+    delete fields._token;
     delete fields.formData;
     delete fields.raw_form_data;
     delete fields.form_data;
@@ -500,6 +503,68 @@ Deno.serve(async (req) => {
             processing_error: intakeErr instanceof Error ? intakeErr.message : 'Intake invocation error',
           })
           .eq('id', submissionId);
+      }
+    }
+
+    // Note: Canonical completed registration notification with physical document attachments
+    // is dispatched directly by the production Laravel website (RegistrationReceivedAdminMail).
+    // EDS HUB intentionally does not duplicate this notification to prevent double-emailing.
+    try {
+      if (effectiveAttemptId) {
+        await db
+          .from('internal_notification_logs')
+          .update({
+            status: 'skipped',
+            error_message: 'Registration completed prior to inactivity threshold',
+          })
+          .eq('idempotency_key', `internal_email:attempt:${effectiveAttemptId}`)
+          .eq('status', 'pending');
+      }
+      if (leadId) {
+        await db
+          .from('internal_notification_logs')
+          .update({
+            status: 'skipped',
+            error_message: 'Registration completed prior to inactivity threshold',
+          })
+          .eq('lead_id', leadId)
+          .eq('status', 'pending');
+      }
+    } catch (_skipErr) {
+      // non-blocking
+    }
+
+    // Dispatch internal notification email for successfully submitted Contact Us forms (Part B)
+    const isWebsiteContact =
+      slug === 'website-contact' ||
+      (form.source === 'website' && form.source_detail === 'contact_form');
+    if (isWebsiteContact) {
+      try {
+        const leadFullName =
+          `${fields.first_name || ''} ${fields.last_name || ''}`.trim() ||
+          (fields.name as string) ||
+          'Lead';
+
+        await sendInternalContactNotification(db, {
+          submission_id: submissionId,
+          lead_id: leadId,
+          idempotency_key: `internal_email:contact:${submissionId}`,
+          lead_name: leadFullName,
+          first_name: fields.first_name as string | undefined,
+          last_name: fields.last_name as string | undefined,
+          email: rawEmail || (fields.email as string | undefined),
+          phone: phoneE164 || (fields.phone as string | undefined),
+          message: fields.message as string | undefined,
+          raw_payload: fields,
+          source_page: (fields.source_page || fields.page_url || req.headers.get('referer')) as string | undefined,
+          utm_source: fields.utm_source as string | undefined,
+          utm_medium: fields.utm_medium as string | undefined,
+          utm_campaign: fields.utm_campaign as string | undefined,
+          utm_term: fields.utm_term as string | undefined,
+          utm_content: fields.utm_content as string | undefined,
+        });
+      } catch (contactErr) {
+        console.warn('[submit-public-form] Internal contact notification notice:', contactErr);
       }
     }
 

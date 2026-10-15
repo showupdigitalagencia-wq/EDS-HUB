@@ -94,7 +94,9 @@ export type ActivityType =
   | 'call_logged'
   | 'meeting_logged'
   | 'sms_logged'
-  | 'hubspot_activity_synced';
+  | 'hubspot_activity_synced'
+  | 'internal_notification_sent'
+  | 'contact_us_internal_email';
 
 export type IncompleteEnrollmentProcessingStatus = 'processed' | 'conflict';
 export type IncompleteEnrollmentStatus = 'needs_followup' | 'form_completed' | 'recovered' | 'dismissed';

@@ -13,6 +13,7 @@
 // =============================================================================
 
 import { createAdminClient } from '../_shared/supabase-client.ts';
+import { sendInternalEnrollmentNotification } from '../_shared/internal-enrollment-notifier.ts';
 
 const MAX_PAYLOAD_BYTES = 16 * 1024; // 16 KB limit
 const RATE_LIMIT_MAX_REQUESTS = 10;
@@ -305,6 +306,39 @@ Deno.serve(async (req) => {
       });
     } catch (pushErr) {
       console.warn('[capture-incomplete-enrollment] Push notification notice:', pushErr);
+    }
+
+    // Internal email notification for incomplete registration attempt
+    try {
+      const attemptIdKey = `internal_email:attempt:${sanitized.external_attempt_id || txResult.attempt_id || txResult.lead_id}`;
+      const leadFullName = `${sanitized.first_name || ''} ${sanitized.last_name || ''}`.trim() || 'Lead';
+      let courseDisplayName = sanitized.course_code || 'Curso de Especialização';
+      if (sanitized.course_id) {
+        const { data: cData } = await db.from('courses').select('name').eq('id', sanitized.course_id).maybeSingle();
+        if (cData?.name) courseDisplayName = cData.name;
+      }
+
+      await sendInternalEnrollmentNotification(db, {
+        event_type: 'incomplete_registration',
+        idempotency_key: attemptIdKey,
+        lead_id: txResult.lead_id,
+        attempt_id: txResult.attempt_id,
+        external_attempt_id: sanitized.external_attempt_id,
+        lead_name: leadFullName,
+        first_name: sanitized.first_name,
+        last_name: sanitized.last_name,
+        email: email,
+        phone: phone,
+        course_code: sanitized.course_code,
+        course_name: courseDisplayName,
+        turma_name: sanitized.session_code,
+        source_page: sanitized.source_page,
+        status: sanitized.status || 'needs_followup',
+        error_code: sanitized.error_code,
+        raw_payload: payload,
+      });
+    } catch (emailErr) {
+      console.warn('[capture-incomplete-enrollment] Internal email notification notice:', emailErr);
     }
   }
 
