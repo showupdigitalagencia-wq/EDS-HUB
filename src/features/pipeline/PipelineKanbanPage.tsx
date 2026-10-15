@@ -163,7 +163,7 @@ export function PipelineKanbanPage() {
           try {
             let q: any = supabase.from('leads');
             if (typeof q?.select === 'function') {
-              q = q.select('*, lead_course_interests(course_id, priority, notes, course:courses(name), session:course_sessions(title, start_date))');
+              q = q.select('*, lead_course_interests(course_id, priority, notes, course:courses(name), session:course_sessions(title, start_date)), form_submissions(source_detail, submitted_at)');
             }
             if (typeof q?.eq === 'function') {
               q = q.eq('pipeline_stage_id', stg.id);
@@ -338,7 +338,7 @@ export function PipelineKanbanPage() {
 
       let qMore: any = supabase
         .from('leads')
-        .select('*, lead_course_interests(course_id, priority, notes, course:courses(name), session:course_sessions(title, start_date))');
+        .select('*, lead_course_interests(course_id, priority, notes, course:courses(name), session:course_sessions(title, start_date)), form_submissions(source_detail, submitted_at)');
       if (typeof qMore?.eq === 'function') {
         qMore = qMore.eq('pipeline_stage_id', stageId);
       }
@@ -1134,6 +1134,7 @@ export function PipelineKanbanPage() {
                             stageName={leadStage?.name}
                             onClick={() => handleCardClick(lead)}
                             onAcknowledge={handleAcknowledgeLead}
+                            activitiesSummary={leadActivitiesMap[lead.id] || []}
                           />
                         </div>
                       );
@@ -1215,6 +1216,7 @@ export function PipelineKanbanPage() {
                                   onDragStart={(e) => handleDragStart(e, lead.id)}
                                   onClick={() => handleCardClick(lead)}
                                   onAcknowledge={handleAcknowledgeLead}
+                                  activitiesSummary={activities}
                                 />
                               );
                             })}

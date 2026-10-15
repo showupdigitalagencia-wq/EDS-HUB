@@ -312,31 +312,106 @@ Deno.serve(async (req) => {
     try {
       const attemptIdKey = `internal_email:attempt:${sanitized.external_attempt_id || txResult.attempt_id || txResult.lead_id}`;
       const leadFullName = `${sanitized.first_name || ''} ${sanitized.last_name || ''}`.trim() || 'Lead';
-      let courseDisplayName = sanitized.course_code || 'Curso de Especialização';
+
+      const CANONICAL_COURSE_MAP: Record<string, string> = {
+        'IDIT-01': 'Intensive Dental Implant Training',
+        'ET-01': 'Endodontics Training',
+        'WTT-01': 'Wisdom Teeth Training',
+        'ZIT-01': 'Zygomatic Implant Training',
+        'ADIE-01': 'Advanced Dental Implant Experience',
+        'PST-01': 'Periodontal Surgery Training',
+        'AIRE-01': 'Advanced Implant Rehabilitation Experience',
+      };
+
+      let courseDisplayName = (payload.course as string) || (payload.course_name as string) || (sanitized.course_code ? CANONICAL_COURSE_MAP[sanitized.course_code.toUpperCase()] : null) || sanitized.course_code || 'Curso de Especialização';
       if (sanitized.course_id) {
         const { data: cData } = await db.from('courses').select('name').eq('id', sanitized.course_id).maybeSingle();
         if (cData?.name) courseDisplayName = cData.name;
+      } else if (sanitized.course_code && !courseDisplayName) {
+        const { data: cData } = await db.from('courses').select('name').eq('code', sanitized.course_code).maybeSingle();
+        if (cData?.name) courseDisplayName = cData.name;
       }
 
-      await sendInternalEnrollmentNotification(db, {
-        event_type: 'incomplete_registration',
-        idempotency_key: attemptIdKey,
-        lead_id: txResult.lead_id,
-        attempt_id: txResult.attempt_id,
-        external_attempt_id: sanitized.external_attempt_id,
-        lead_name: leadFullName,
-        first_name: sanitized.first_name,
-        last_name: sanitized.last_name,
-        email: email,
-        phone: phone,
-        course_code: sanitized.course_code,
-        course_name: courseDisplayName,
-        turma_name: sanitized.session_code,
-        source_page: sanitized.source_page,
-        status: sanitized.status || 'needs_followup',
-        error_code: sanitized.error_code,
-        raw_payload: payload,
-      });
+      // Pre-queue check: Has a completed registration already occurred for this attempt, lead, or email?
+      let alreadyCompleted = false;
+      const cleanEmail = email ? email.trim().toLowerCase() : '';
+      const extAttId = sanitized.external_attempt_id;
+
+      if (extAttId) {
+        const { data: compByAtt } = await db
+          .from('form_submissions')
+          .select('id')
+          .or(`idempotency_key.eq.comp_${extAttId},submitted_data->>external_attempt_id.eq.${extAttId}`)
+          .eq('form_name', 'website-register')
+          .eq('processing_status', 'processed')
+          .limit(1);
+        if (compByAtt && compByAtt.length > 0) alreadyCompleted = true;
+      }
+
+      if (!alreadyCompleted && txResult.lead_id) {
+        const { data: compByLead } = await db
+          .from('form_submissions')
+          .select('id')
+          .eq('lead_id', txResult.lead_id)
+          .eq('form_name', 'website-register')
+          .eq('processing_status', 'processed')
+          .limit(1);
+        if (compByLead && compByLead.length > 0) alreadyCompleted = true;
+      }
+
+      if (!alreadyCompleted && cleanEmail) {
+        const { data: compByEmail } = await db
+          .from('form_submissions')
+          .select('id')
+          .eq('email', cleanEmail)
+          .eq('form_name', 'website-register')
+          .eq('processing_status', 'processed')
+          .limit(1);
+        if (compByEmail && compByEmail.length > 0) alreadyCompleted = true;
+      }
+
+      if (alreadyCompleted) {
+        // Registration already completed! Mark attempt resolved and log skipped audit entry
+        if (txResult.attempt_id) {
+          await db
+            .from('incomplete_enrollments')
+            .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+            .eq('id', txResult.attempt_id);
+        }
+        await db.from('internal_notification_logs').upsert({
+          idempotency_key: attemptIdKey,
+          event_type: 'incomplete_registration',
+          lead_id: txResult.lead_id,
+          attempt_id: txResult.attempt_id,
+          recipient_emails: ['info@expdentalsolutions.com'],
+          subject: `Tentativa de matrícula — ${leadFullName} — ${courseDisplayName}`,
+          status: 'skipped',
+          error_message: 'Registration completed prior to incomplete capture',
+          payload_snapshot: payload,
+          last_activity_at: new Date().toISOString(),
+          scheduled_for: new Date().toISOString(),
+        }, { onConflict: 'idempotency_key' });
+      } else {
+        await sendInternalEnrollmentNotification(db, {
+          event_type: 'incomplete_registration',
+          idempotency_key: attemptIdKey,
+          lead_id: txResult.lead_id,
+          attempt_id: txResult.attempt_id,
+          external_attempt_id: sanitized.external_attempt_id,
+          lead_name: leadFullName,
+          first_name: sanitized.first_name,
+          last_name: sanitized.last_name,
+          email: email,
+          phone: phone,
+          course_code: sanitized.course_code,
+          course_name: courseDisplayName,
+          turma_name: sanitized.session_code,
+          source_page: sanitized.source_page,
+          status: sanitized.status || 'needs_followup',
+          error_code: sanitized.error_code,
+          raw_payload: payload,
+        });
+      }
     } catch (emailErr) {
       console.warn('[capture-incomplete-enrollment] Internal email notification notice:', emailErr);
     }

@@ -517,9 +517,18 @@ Deno.serve(async (req) => {
             status: 'skipped',
             error_message: 'Registration completed prior to inactivity threshold',
           })
-          .eq('idempotency_key', `internal_email:attempt:${effectiveAttemptId}`)
+          .or(`idempotency_key.eq.internal_email:attempt:${effectiveAttemptId},payload_snapshot->>external_attempt_id.eq.${effectiveAttemptId}`)
           .eq('status', 'pending');
+
+        await db
+          .from('incomplete_enrollments')
+          .update({
+            status: 'resolved',
+            resolved_at: new Date().toISOString(),
+          })
+          .eq('external_attempt_id', effectiveAttemptId);
       }
+
       if (leadId) {
         await db
           .from('internal_notification_logs')
@@ -528,6 +537,26 @@ Deno.serve(async (req) => {
             error_message: 'Registration completed prior to inactivity threshold',
           })
           .eq('lead_id', leadId)
+          .eq('status', 'pending');
+
+        await db
+          .from('incomplete_enrollments')
+          .update({
+            status: 'resolved',
+            resolved_at: new Date().toISOString(),
+          })
+          .eq('lead_id', leadId);
+      }
+
+      const cleanSubEmail = rawEmail ? rawEmail.trim().toLowerCase() : '';
+      if (cleanSubEmail) {
+        await db
+          .from('internal_notification_logs')
+          .update({
+            status: 'skipped',
+            error_message: 'Registration completed prior to inactivity threshold',
+          })
+          .eq('payload_snapshot->>email', cleanSubEmail)
           .eq('status', 'pending');
       }
     } catch (_skipErr) {

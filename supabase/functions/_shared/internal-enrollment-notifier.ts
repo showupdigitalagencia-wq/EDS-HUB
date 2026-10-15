@@ -128,6 +128,41 @@ export async function resolveInternalRecipients(db: any): Promise<string[]> {
   return ['info@expdentalsolutions.com'];
 }
 
+const CANONICAL_COURSE_NAMES: Record<string, string> = {
+  'IDIT-01': 'Intensive Dental Implant Training',
+  'ET-01': 'Endodontics Training',
+  'WTT-01': 'Wisdom Teeth Training',
+  'ZIT-01': 'Zygomatic Implant Training',
+  'ADIE-01': 'Advanced Dental Implant Experience',
+  'PST-01': 'Periodontal Surgery Training',
+  'AIRE-01': 'Advanced Implant Rehabilitation Experience',
+};
+
+export function resolveCanonicalCourseName(rawCourseOrCode?: string | null): string {
+  if (!rawCourseOrCode || !rawCourseOrCode.trim()) return 'Curso não especificado';
+  const trimmed = rawCourseOrCode.trim();
+  const upper = trimmed.toUpperCase();
+  if (CANONICAL_COURSE_NAMES[upper]) return CANONICAL_COURSE_NAMES[upper];
+
+  const lower = trimmed.toLowerCase();
+  if (trimmed.length <= 15) {
+    if (lower === 'intensive' || lower.includes('idit')) return 'Intensive Dental Implant Training';
+    if (lower === 'wisdom' || lower.includes('wtt')) return 'Wisdom Teeth Training';
+    if (lower === 'zygomatic' || lower.includes('zit') || lower.includes('zygoma')) return 'Zygomatic Implant Training';
+    if (lower === 'endodontics' || lower.includes('endo') || lower.includes('et-01')) return 'Endodontics Training';
+    if (lower.includes('adie')) return 'Advanced Dental Implant Experience';
+    if (lower.includes('pst')) return 'Periodontal Surgery Training';
+  } else {
+    if (lower === 'idit-01') return 'Intensive Dental Implant Training';
+    if (lower === 'adie-01') return 'Advanced Dental Implant Experience';
+    if (lower === 'wtt-01') return 'Wisdom Teeth Training';
+    if (lower === 'zit-01') return 'Zygomatic Implant Training';
+    if (lower === 'et-01') return 'Endodontics Training';
+    if (lower === 'pst-01') return 'Periodontal Surgery Training';
+  }
+  return trimmed;
+}
+
 /**
  * Builds HTML and plain-text body for Incomplete Registration attempt.
  */
@@ -142,7 +177,15 @@ export function buildIncompleteAttemptEmail(
     [payload.first_name || raw.first_name, payload.last_name || raw.last_name].filter(Boolean).join(' ') ||
     'Candidato sem nome';
 
-  const courseTitle = payload.course_name || payload.course_code || raw.course || raw.course_interest || 'Curso não especificado';
+  const rawCourseSignal =
+    (payload.course_name as string | undefined) ||
+    (payload.course_code as string | undefined) ||
+    (typeof raw.course === 'string' ? raw.course : undefined) ||
+    (typeof raw.course_name === 'string' ? raw.course_name : undefined) ||
+    (typeof raw.course_code === 'string' ? raw.course_code : undefined) ||
+    (typeof raw.course_interest === 'string' ? raw.course_interest : undefined) ||
+    null;
+  const courseTitle = resolveCanonicalCourseName(rawCourseSignal);
   const email = payload.email || raw.email || 'Não informado';
   const phone = payload.phone || raw.phone || 'Não informado';
   const turma = payload.turma_name || raw.turma || raw.session_title || raw.course_session || 'Não informada / automática';
@@ -727,39 +770,143 @@ export async function processPendingAbandonedEnrollments(
   for (const row of pendingRows) {
     processed++;
 
-    // Safety check: has the enrollment or lead been completed/resolved?
+    // FINAL PRE-SEND SAFETY CHECK:
+    // Determine whether a successful website registration already completed
+    // via attempt ID, lead ID, email, or enrollment join.
+    let isCompleted = false;
+
+    // 1. Check attempt record status
     if (row.attempt_id) {
       const { data: attempt } = await db
         .from('incomplete_enrollments')
-        .select('status, resolved_at')
+        .select('status, resolved_at, external_attempt_id')
         .eq('id', row.attempt_id)
         .maybeSingle();
 
       if (attempt && (attempt.status === 'completed' || attempt.status === 'recovered' || attempt.resolved_at)) {
-        await db
-          .from('internal_notification_logs')
-          .update({
-            status: 'skipped',
-            error_message: 'Registration completed prior to abandonment dispatch',
-          })
-          .eq('id', row.id);
-        skipped++;
-        continue;
+        isCompleted = true;
       }
+    }
+
+    const extAttemptId =
+      row.payload_snapshot?.external_attempt_id ||
+      (row.idempotency_key?.startsWith('internal_email:attempt:')
+        ? row.idempotency_key.replace('internal_email:attempt:', '')
+        : null);
+
+    // 2. Check form_submissions by attempt ID
+    if (!isCompleted && extAttemptId) {
+      try {
+        let qSub = db.from('form_submissions').select('id');
+        if (typeof qSub?.or === 'function') {
+          qSub = qSub.or(`idempotency_key.eq.comp_${extAttemptId},submitted_data->>external_attempt_id.eq.${extAttemptId}`);
+        } else if (typeof qSub?.eq === 'function') {
+          qSub = qSub.eq('idempotency_key', `comp_${extAttemptId}`);
+        }
+        if (typeof qSub?.eq === 'function') {
+          qSub = qSub.eq('form_name', 'website-register').eq('processing_status', 'processed');
+        }
+        if (typeof qSub?.limit === 'function') {
+          qSub = qSub.limit(1);
+        }
+        const { data: subAttempt } = await qSub;
+        if (subAttempt && subAttempt.length > 0) {
+          isCompleted = true;
+        }
+      } catch (_subErr) {
+        // mock DB fallback
+      }
+    }
+
+    // 3. Check form_submissions by lead ID
+    if (!isCompleted && row.lead_id) {
+      try {
+        let qLead = db.from('form_submissions').select('id');
+        if (typeof qLead?.eq === 'function') qLead = qLead.eq('lead_id', row.lead_id);
+        if (typeof qLead?.eq === 'function') qLead = qLead.eq('form_name', 'website-register');
+        if (typeof qLead?.eq === 'function') qLead = qLead.eq('processing_status', 'processed');
+        if (typeof qLead?.limit === 'function') qLead = qLead.limit(1);
+        const { data: subLead } = await qLead;
+        if (subLead && subLead.length > 0) {
+          isCompleted = true;
+        }
+      } catch (_leadErr) {
+        // mock DB fallback
+      }
+    }
+
+    // 4. Check form_submissions by email
+    const candidateEmail = (row.payload_snapshot?.email || '').trim().toLowerCase();
+    if (!isCompleted && candidateEmail) {
+      try {
+        let qEmail = db.from('form_submissions').select('id');
+        if (typeof qEmail?.eq === 'function') qEmail = qEmail.eq('email', candidateEmail);
+        if (typeof qEmail?.eq === 'function') qEmail = qEmail.eq('form_name', 'website-register');
+        if (typeof qEmail?.eq === 'function') qEmail = qEmail.eq('processing_status', 'processed');
+        if (typeof qEmail?.limit === 'function') qEmail = qEmail.limit(1);
+        const { data: subEmail } = await qEmail;
+        if (subEmail && subEmail.length > 0) {
+          isCompleted = true;
+        }
+      } catch (_emailErr) {
+        // mock DB fallback
+      }
+    }
+
+    // 5. Check enrollments table for active/confirmed enrollment
+    if (!isCompleted && row.lead_id) {
+      try {
+        let qEnr = db.from('enrollments').select('id');
+        if (typeof qEnr?.eq === 'function') qEnr = qEnr.eq('lead_id', row.lead_id);
+        if (typeof qEnr?.limit === 'function') qEnr = qEnr.limit(1);
+        const { data: enrLead } = await qEnr;
+        if (enrLead && enrLead.length > 0) {
+          isCompleted = true;
+        }
+      } catch (_enrErr) {
+        // mock DB fallback
+      }
+    }
+
+    if (isCompleted) {
+      await db
+        .from('internal_notification_logs')
+        .update({
+          status: 'skipped',
+          error_message: 'Registration completed prior to abandonment dispatch (verified by final pre-send check)',
+        })
+        .eq('id', row.id);
+
+      if (row.attempt_id) {
+        await db
+          .from('incomplete_enrollments')
+          .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+          .eq('id', row.attempt_id);
+      }
+      skipped++;
+      continue;
     }
 
     // Build the dynamic email using the LATEST captured snapshot
     const leadUrl = row.lead_id ? `${appBaseUrl}/leads/${row.lead_id}` : appBaseUrl;
+    const courseCodeVal = (row.payload_snapshot?.course_code || row.payload_snapshot?.code) as string;
+    const resolvedCourse = resolveCanonicalCourseName(
+      (row.payload_snapshot?.course || row.payload_snapshot?.course_interest || row.payload_snapshot?.course_name || courseCodeVal) as string
+    );
+
     const latestPayload: InternalNotificationPayload = {
       event_type: 'incomplete_registration',
       idempotency_key: row.idempotency_key,
       lead_id: row.lead_id,
       attempt_id: row.attempt_id,
       raw_payload: row.payload_snapshot || {},
-      lead_name: (row.payload_snapshot?.name || row.payload_snapshot?.full_name) as string,
+      lead_name: (row.payload_snapshot?.name || row.payload_snapshot?.full_name || `${row.payload_snapshot?.first_name || ''} ${row.payload_snapshot?.last_name || ''}`.trim()) as string,
+      first_name: row.payload_snapshot?.first_name as string,
+      last_name: row.payload_snapshot?.last_name as string,
       email: (row.payload_snapshot?.email) as string,
       phone: (row.payload_snapshot?.phone) as string,
-      course_name: (row.payload_snapshot?.course || row.payload_snapshot?.course_interest) as string,
+      course_code: courseCodeVal,
+      course_name: resolvedCourse,
       source_page: (row.payload_snapshot?.source_page) as string,
       status: 'needs_followup',
     };

@@ -42,6 +42,7 @@ export interface MinimalLeadCardProps {
   onClick?: () => void;
   onDeliverabilityClick?: (e: React.MouseEvent) => void;
   onAcknowledge?: (leadId: string) => void;
+  activitiesSummary?: string[] | null;
 }
 
 /**
@@ -85,24 +86,24 @@ import {
 export { formatContactPreferenceLabel, getContactPreferenceBadgeClasses };
 
 /**
- * Factual evaluation of whether a lead originated from the website.
- * Inspects existing canonical lead fields (source and source_detail).
- * Never infers from course, email, timestamps, or manual activity.
+ * Factual evaluation of whether a lead originated or re-engaged from the website.
+ * Inspects canonical lead fields, embedded form submissions, and verified intake activities.
+ * Never infers from course, email, or timestamps alone.
  */
 export function isWebsiteLead(
-  lead?: { source?: string | null; source_detail?: string | null } | null
+  lead?: {
+    source?: string | null;
+    source_detail?: string | null;
+    form_submissions?: Array<{ source_detail?: string | null }> | null;
+  } | null,
+  activitiesSummary?: string[] | null
 ): boolean {
   if (!lead) return false;
 
   const source = (lead.source || '').toLowerCase().trim();
   const detail = (lead.source_detail || '').toLowerCase().trim();
 
-  // Explicit non-website sources (e.g. Meta ads, manual CRM entry, automated tests)
-  if (source === 'meta' || source === 'manual' || source === 'test') {
-    return false;
-  }
-
-  // Explicit canonical website source
+  // 1. Explicit canonical website source on lead
   if (
     source === 'website' ||
     source.startsWith('website/') ||
@@ -112,7 +113,7 @@ export function isWebsiteLead(
     return true;
   }
 
-  // Canonical website forms / slugs / details
+  // 2. Canonical website forms / slugs / details on lead
   if (
     detail === 'contact_form' ||
     detail === 'course_information_request' ||
@@ -123,10 +124,52 @@ export function isWebsiteLead(
     detail === 'website_register' ||
     detail === 'website_registration_form' ||
     detail === 'website-form' ||
+    detail === 'registration' ||
     detail === 'register' ||
     detail.startsWith('website')
   ) {
     return true;
+  }
+
+  // 3. Returning acquisition evidence: check embedded form submissions
+  if (Array.isArray((lead as any).form_submissions) && (lead as any).form_submissions.length > 0) {
+    const hasWebsiteSub = (lead as any).form_submissions.some((fs: any) => {
+      const d = (fs?.source_detail || '').toLowerCase().trim();
+      return (
+        d === 'contact_form' ||
+        d === 'course_information_request' ||
+        d === 'website' ||
+        d === 'website-contact' ||
+        d === 'website_contact' ||
+        d === 'website-register' ||
+        d === 'website_register' ||
+        d === 'website_registration_form' ||
+        d === 'website-form' ||
+        d === 'registration' ||
+        d === 'register' ||
+        d.startsWith('website')
+      );
+    });
+    if (hasWebsiteSub) return true;
+  }
+
+  // 4. Returning acquisition evidence: check activity summaries
+  if (Array.isArray(activitiesSummary) && activitiesSummary.length > 0) {
+    const hasWebsiteAct = activitiesSummary.some((act) => {
+      const l = (act || '').toLowerCase();
+      return (
+        l.includes('via site') ||
+        l.includes('inscrição via site') ||
+        l.includes('fale conosco') ||
+        l.includes('do site preenchido')
+      );
+    });
+    if (hasWebsiteAct) return true;
+  }
+
+  // 5. Explicit non-website sources without any website acquisition
+  if (source === 'meta' || source === 'manual' || source === 'test') {
+    return false;
   }
 
   return false;
@@ -350,9 +393,18 @@ export function MinimalLeadCard({
   onClick,
   onDeliverabilityClick,
   onAcknowledge,
+  activitiesSummary,
 }: MinimalLeadCardProps) {
+  const rawFullName = [lead.first_name, lead.last_name]
+    .map((s) => (typeof s === 'string' ? s.trim() : ''))
+    .filter(Boolean)
+    .join(' ');
+
   const fullName =
-    [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Lead sem nome';
+    rawFullName ||
+    (typeof (lead as any).name === 'string' && (lead as any).name.trim()) ||
+    (typeof (lead as any).full_name === 'string' && (lead as any).full_name.trim()) ||
+    'Lead sem nome';
 
   const isClosedLead = isLeadClosed(
     lead,
@@ -360,7 +412,7 @@ export function MinimalLeadCard({
     isClosed
   );
 
-  const isWebsite = isWebsiteLead(lead);
+  const isWebsite = isWebsiteLead(lead, activitiesSummary);
 
   // Determine inbound / returning attention state
   const hasNewSubmission = Boolean(lead.has_new_submission);
@@ -461,7 +513,7 @@ export function MinimalLeadCard({
       {/* 1. Lead Name + Source Badge + Drag Grip (Strongest visual emphasis) */}
       <div className="flex items-start justify-between gap-1.5">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <h4 className="text-xs font-bold font-heading text-[#08254f] leading-snug truncate group-hover:text-[#449bd5] transition-colors">
+          <h4 className="text-xs font-bold font-heading text-[#08254f] leading-snug truncate group-hover:text-[#449bd5] transition-colors min-w-0 flex-1">
             {fullName}
           </h4>
           {isWebsite && (

@@ -220,6 +220,31 @@ describe('Pipeline Lead Card — Source Visibility & Badge Specification', () =>
       expect(screen.queryByText('Site')).toBeNull();
     });
 
+    it('7b. returning lead: historical Meta origin preserved, website registration shows Site badge', () => {
+      // Historical Meta lead returns via website registration
+      const returningLead = createMockLead({
+        source: 'meta',
+        source_detail: 'hubspot_historical',
+        form_submissions: [
+          { source_detail: 'website_registration_form' }
+        ] as any,
+      });
+
+      render(
+        <MinimalLeadCard
+          lead={returningLead}
+          activitiesSummary={['Inscrição via site']}
+        />
+      );
+
+      const siteBadge = screen.getByTestId('lead-card-source-badge');
+      expect(siteBadge).toBeDefined();
+      expect(siteBadge.textContent).toBe('Site');
+      // Lead's canonical historical source is preserved as 'meta'
+      expect(returningLead.source).toBe('meta');
+      expect(returningLead.source_detail).toBe('hubspot_historical');
+    });
+
     // =======================================================================
     // 3. Factual Dr Frias Validation Case
     // =======================================================================

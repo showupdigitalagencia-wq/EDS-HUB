@@ -263,6 +263,7 @@
         last_name: names.last,
         email: email || null,
         phone: phone || null,
+        course: rawCourse || undefined,
         course_code: courseCode || null,
         status: 'submission_failed',
         error_code: String(errorCode || 'SUBMISSION_FAILED').slice(0, 50),
