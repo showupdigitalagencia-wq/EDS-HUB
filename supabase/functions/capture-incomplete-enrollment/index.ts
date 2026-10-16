@@ -30,17 +30,41 @@ const SENSITIVE_KEY_PATTERNS = [
   'ssn', 'cpf', 'rg', 'passport', 'bank_account', 'routing_number', 'iban'
 ];
 
+const CANONICAL_COURSE_MAP: Record<string, string> = {
+  'IDIT-01': 'Intensive Dental Implant Training',
+  'ET-01': 'Endodontics Training',
+  'WTT-01': 'Wisdom Teeth Training',
+  'ZIT-01': 'Zygomatic Implant Training',
+  'ADIE-01': 'Advanced Dental Implant Experience',
+  'PST-01': 'Periodontal Surgery Training',
+  'AIRE-01': 'Advanced Implant Rehabilitation Experience',
+};
+
 const ALLOWED_KEYS = new Set([
   'idempotency_key',
   'external_attempt_id',
+  'name',
+  'full_name',
   'first_name',
   'last_name',
   'email',
   'phone',
+  'emergency_phone',
+  'course',
+  'course_name',
   'course_id',
   'course_code',
   'course_session_id',
   'session_code',
+  'certificate_name',
+  'agd_number',
+  'specialty',
+  'years_in_practice',
+  'surgical_experience',
+  'coat_size',
+  'heard_from',
+  'referral_name',
+  'promo_code',
   'source_page',
   'utm_source',
   'utm_medium',
@@ -49,6 +73,10 @@ const ALLOWED_KEYS = new Set([
   'utm_content',
   'status',
   'error_code',
+  'failure_category',
+  'submit_attempt_count',
+  'missing_reason',
+  'missing_fields',
 ]);
 
 function isOriginAllowed(origin: string | null): boolean {
@@ -181,12 +209,28 @@ Deno.serve(async (req) => {
   }
 
   const courseId = sanitized.course_id;
-  const courseCode = sanitized.course_code;
-  if (!courseId && !courseCode) {
-    return new Response(JSON.stringify({ error: 'Course identifier (course_id or course_code) is required' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+  let courseCode = sanitized.course_code;
+  if (!courseCode && sanitized.course) {
+    const rawCourseStr = sanitized.course.toLowerCase();
+    for (const [code, name] of Object.entries(CANONICAL_COURSE_MAP)) {
+      if (rawCourseStr.includes(code.toLowerCase()) || rawCourseStr.includes(name.toLowerCase())) {
+        courseCode = code;
+        break;
+      }
+    }
+  }
+
+  let firstName = sanitized.first_name;
+  let lastName = sanitized.last_name;
+  if ((!firstName || firstName === 'Lead') && (sanitized.name || sanitized.full_name)) {
+    const rawFullName = (sanitized.name || sanitized.full_name || '').trim();
+    const spaceIdx = rawFullName.indexOf(' ');
+    if (spaceIdx !== -1) {
+      firstName = rawFullName.substring(0, spaceIdx).trim();
+      lastName = rawFullName.substring(spaceIdx + 1).trim() || null;
+    } else if (rawFullName) {
+      firstName = rawFullName;
+    }
   }
 
   // 6.1 Guard against contact / course info requests:
@@ -244,14 +288,20 @@ Deno.serve(async (req) => {
     );
   }
 
+  const statusParam = sanitized.status || 'needs_followup';
+  const failureCategoryParam = sanitized.failure_category || (payload.failure_category as string) || (sanitized.error_code ? String(sanitized.error_code) : null);
+  const attemptCountParam = typeof payload.submit_attempt_count === 'number'
+    ? payload.submit_attempt_count
+    : (sanitized.submit_attempt_count ? parseInt(sanitized.submit_attempt_count, 10) : 1);
+
   // 8. Execute Private Atomic PostgreSQL Transaction
   const { data: txResult, error: txError } = await db.rpc(
     'capture_incomplete_enrollment_transaction',
     {
       p_idempotency_key: idempotencyKey,
       p_external_attempt_id: sanitized.external_attempt_id || null,
-      p_first_name: sanitized.first_name || 'Lead',
-      p_last_name: sanitized.last_name || null,
+      p_first_name: firstName || 'Lead',
+      p_last_name: lastName || null,
       p_email: email || null,
       p_phone: phone || null,
       p_course_id: courseId || null,
@@ -264,6 +314,9 @@ Deno.serve(async (req) => {
       p_utm_campaign: sanitized.utm_campaign || null,
       p_utm_term: sanitized.utm_term || null,
       p_utm_content: sanitized.utm_content || null,
+      p_status: statusParam,
+      p_failure_category: failureCategoryParam,
+      p_submit_attempt_count: attemptCountParam,
     }
   );
 
@@ -282,56 +335,46 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Supplementary push notification for incomplete enrollment
   if (txResult && txResult.success && txResult.lead_id) {
-    try {
-      const leadName = `${sanitized.first_name || ''} ${sanitized.last_name || ''}`.trim() || 'Lead';
-      let courseDisplay = sanitized.course_code || 'um curso';
-      if (sanitized.course_id) {
-        const { data: cData } = await db.from('courses').select('name').eq('id', sanitized.course_id).maybeSingle();
-        if (cData?.name) courseDisplay = cData.name;
-      }
-      const pushTitle = 'Inscrição não concluída';
-      const pushBody = `${leadName} tentou se inscrever em ${courseDisplay}. Verifique o formulário e faça o acompanhamento.`;
+    const isFailedSubmit = (statusParam === 'submission_failed');
+    const effectiveAttemptCount = txResult.submit_attempt_count || attemptCountParam || 1;
+    const leadFullName = [firstName, lastName].filter(Boolean).join(' ').trim() || (sanitized.name || sanitized.full_name) || 'Lead';
 
-      await db.functions.invoke('send-push-notification', {
-        body: {
-          event_type: 'incomplete_registration',
-          event_id: txResult.lead_id,
-          idempotency_key: `incomplete_reg_${txResult.attempt_id || txResult.lead_id}`,
-          title: pushTitle,
-          body: pushBody,
-          deep_link: `/leads/${txResult.lead_id}`,
-        },
-      });
-    } catch (pushErr) {
-      console.warn('[capture-incomplete-enrollment] Push notification notice:', pushErr);
+    let courseDisplayName = (payload.course as string) || (payload.course_name as string) || (courseCode ? CANONICAL_COURSE_MAP[courseCode.toUpperCase()] : null) || courseCode || 'Curso de Especialização';
+    if (sanitized.course_id) {
+      const { data: cData } = await db.from('courses').select('name').eq('id', sanitized.course_id).maybeSingle();
+      if (cData?.name) courseDisplayName = cData.name;
+    } else if (courseCode && !courseDisplayName) {
+      const { data: cData } = await db.from('courses').select('name').eq('code', courseCode).maybeSingle();
+      if (cData?.name) courseDisplayName = cData.name;
     }
 
-    // Internal email notification for incomplete registration attempt
-    try {
-      const attemptIdKey = `internal_email:attempt:${sanitized.external_attempt_id || txResult.attempt_id || txResult.lead_id}`;
-      const leadFullName = `${sanitized.first_name || ''} ${sanitized.last_name || ''}`.trim() || 'Lead';
+    // Supplementary push notification for failed submission
+    if (isFailedSubmit) {
+      try {
+        const pushTitle = 'Tentativa de matrícula';
+        let pushBody = `${leadFullName} tentou concluir a matrícula para ${courseDisplayName}, mas o envio não foi concluído.`;
+        if (failureCategoryParam) {
+          pushBody += ` (${failureCategoryParam})`;
+        }
 
-      const CANONICAL_COURSE_MAP: Record<string, string> = {
-        'IDIT-01': 'Intensive Dental Implant Training',
-        'ET-01': 'Endodontics Training',
-        'WTT-01': 'Wisdom Teeth Training',
-        'ZIT-01': 'Zygomatic Implant Training',
-        'ADIE-01': 'Advanced Dental Implant Experience',
-        'PST-01': 'Periodontal Surgery Training',
-        'AIRE-01': 'Advanced Implant Rehabilitation Experience',
-      };
-
-      let courseDisplayName = (payload.course as string) || (payload.course_name as string) || (sanitized.course_code ? CANONICAL_COURSE_MAP[sanitized.course_code.toUpperCase()] : null) || sanitized.course_code || 'Curso de Especialização';
-      if (sanitized.course_id) {
-        const { data: cData } = await db.from('courses').select('name').eq('id', sanitized.course_id).maybeSingle();
-        if (cData?.name) courseDisplayName = cData.name;
-      } else if (sanitized.course_code && !courseDisplayName) {
-        const { data: cData } = await db.from('courses').select('name').eq('code', sanitized.course_code).maybeSingle();
-        if (cData?.name) courseDisplayName = cData.name;
+        await db.functions.invoke('send-push-notification', {
+          body: {
+            event_type: 'submission_failed',
+            event_id: txResult.lead_id,
+            idempotency_key: `submission_failed_push_${sanitized.external_attempt_id || txResult.attempt_id}_${effectiveAttemptCount}`,
+            title: pushTitle,
+            body: pushBody,
+            deep_link: `/leads/${txResult.lead_id}`,
+          },
+        });
+      } catch (pushErr) {
+        console.warn('[capture-incomplete-enrollment] Push notification notice:', pushErr);
       }
+    }
 
+    // Internal email notification
+    try {
       // Pre-queue check: Has a completed registration already occurred for this attempt, lead, or email?
       let alreadyCompleted = false;
       const cleanEmail = email ? email.trim().toLowerCase() : '';
@@ -379,7 +422,7 @@ Deno.serve(async (req) => {
             .eq('id', txResult.attempt_id);
         }
         await db.from('internal_notification_logs').upsert({
-          idempotency_key: attemptIdKey,
+          idempotency_key: `internal_email:attempt:${sanitized.external_attempt_id || txResult.attempt_id || txResult.lead_id}`,
           event_type: 'incomplete_registration',
           lead_id: txResult.lead_id,
           attempt_id: txResult.attempt_id,
@@ -391,7 +434,39 @@ Deno.serve(async (req) => {
           last_activity_at: new Date().toISOString(),
           scheduled_for: new Date().toISOString(),
         }, { onConflict: 'idempotency_key' });
+      } else if (isFailedSubmit) {
+        // EXPLICIT FAILED SUBMIT: IMMEDIATE DISPATCH
+        const failKey = `internal_email:attempt:fail_${sanitized.external_attempt_id || txResult.attempt_id}_${effectiveAttemptCount}`;
+        await sendInternalEnrollmentNotification(db, {
+          event_type: 'incomplete_registration',
+          idempotency_key: failKey,
+          lead_id: txResult.lead_id,
+          attempt_id: txResult.attempt_id,
+          external_attempt_id: sanitized.external_attempt_id,
+          lead_name: leadFullName,
+          first_name: firstName,
+          last_name: lastName,
+          email: email,
+          phone: phone,
+          course_code: courseCode,
+          course_name: courseDisplayName,
+          turma_name: sanitized.session_code,
+          source_page: sanitized.source_page,
+          status: 'submission_failed',
+          failure_category: failureCategoryParam,
+          submit_attempt_count: effectiveAttemptCount,
+          error_code: sanitized.error_code,
+          missing_reason: failureCategoryParam,
+          raw_payload: {
+            ...payload,
+            name: leadFullName,
+            failure_category: failureCategoryParam,
+            submit_attempt_count: effectiveAttemptCount,
+          },
+        }, { immediate: true });
       } else {
+        // INACTIVITY ABANDONMENT: Queue ~10 minutes
+        const attemptIdKey = `internal_email:attempt:${sanitized.external_attempt_id || txResult.attempt_id || txResult.lead_id}`;
         await sendInternalEnrollmentNotification(db, {
           event_type: 'incomplete_registration',
           idempotency_key: attemptIdKey,
@@ -399,18 +474,21 @@ Deno.serve(async (req) => {
           attempt_id: txResult.attempt_id,
           external_attempt_id: sanitized.external_attempt_id,
           lead_name: leadFullName,
-          first_name: sanitized.first_name,
-          last_name: sanitized.last_name,
+          first_name: firstName,
+          last_name: lastName,
           email: email,
           phone: phone,
-          course_code: sanitized.course_code,
+          course_code: courseCode,
           course_name: courseDisplayName,
           turma_name: sanitized.session_code,
           source_page: sanitized.source_page,
           status: sanitized.status || 'needs_followup',
           error_code: sanitized.error_code,
-          raw_payload: payload,
-        });
+          raw_payload: {
+            ...payload,
+            name: leadFullName,
+          },
+        }, { immediate: false, inactivityMinutes: 10 });
       }
     } catch (emailErr) {
       console.warn('[capture-incomplete-enrollment] Internal email notification notice:', emailErr);

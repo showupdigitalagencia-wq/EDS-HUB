@@ -31,6 +31,8 @@ export interface InternalNotificationPayload {
   status?: string | null;
   missing_reason?: string | null;
   error_code?: string | null;
+  failure_category?: string | null;
+  submit_attempt_count?: number | null;
   documents?: Array<{
     document_type: string;
     original_filename: string;
@@ -163,6 +165,268 @@ export function resolveCanonicalCourseName(rawCourseOrCode?: string | null): str
   return trimmed;
 }
 
+export const EDS_OFFICIAL_LOGO_URL = 'https://www.expdentalsolutions.com/storage/site/fJOJt2KVIZpwj4mHb7QQ.png';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Normalizes subject parameters, discarding empty, undefined, null, or UUID values.
+ */
+export function cleanSubjectParam(val?: string | null): string | null {
+  if (!val) return null;
+  const trimmed = String(val).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (
+    lower === 'undefined' ||
+    lower === 'null' ||
+    lower === 'nil' ||
+    lower === 'n/a' ||
+    lower === 'na' ||
+    lower === 'não informada' ||
+    lower === 'não informado' ||
+    lower === 'curso não especificado' ||
+    lower === 'curso' ||
+    lower === 'turma não informada' ||
+    UUID_REGEX.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Standardizes email subjects under the "[EDS]" operational prefix.
+ * Omits empty, undefined, null, or UUID parameters without leaving hanging separators.
+ */
+export function formatEdsSubject(
+  prefix: string,
+  name?: string | null,
+  course?: string | null,
+  turma?: string | null
+): string {
+  const parts: string[] = [prefix];
+  const cleanName = cleanSubjectParam(name);
+  const cleanCourse = cleanSubjectParam(course);
+  const cleanTurma = cleanSubjectParam(turma);
+
+  if (cleanName) parts.push(cleanName);
+  if (cleanCourse) parts.push(cleanCourse);
+  if (cleanTurma) parts.push(cleanTurma);
+
+  return parts.join(' — ');
+}
+
+export interface EdsEmailSectionRow {
+  label: string;
+  value: string;
+  isLink?: boolean;
+  href?: string;
+}
+
+export interface EdsEmailSection {
+  title: string;
+  rows?: EdsEmailSectionRow[];
+  calloutHtml?: string;
+}
+
+export interface EdsEmailTemplateOptions {
+  subject: string;
+  eventTitle: string;
+  eventBadgeText?: string;
+  badgeStyle?: { bg: string; text: string; border: string };
+  accentColor?: string;
+  leadName: string;
+  leadSubheading?: string;
+  courseTitle?: string | null;
+  turmaTitle?: string | null;
+  sections: EdsEmailSection[];
+  ctaButton?: { label: string; url: string };
+  footerNotice?: string;
+}
+
+/**
+ * Renders the standardized, premium Expert Dental Solutions email layout.
+ * Highly responsive, inline-styled, compatible with Gmail, Outlook, Apple Mail.
+ */
+export function renderEdsEmailHtml(options: EdsEmailTemplateOptions): string {
+  const {
+    eventTitle,
+    eventBadgeText,
+    badgeStyle = { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd' },
+    accentColor = '#08254f',
+    leadName,
+    leadSubheading,
+    courseTitle,
+    turmaTitle,
+    sections,
+    ctaButton,
+    footerNotice = 'Notificação operacional automática do CRM EDS HUB.',
+  } = options;
+
+  const sectionsHtml = sections
+    .map((sec) => {
+      let contentHtml = '';
+      if (sec.calloutHtml) {
+        contentHtml += sec.calloutHtml;
+      }
+      if (sec.rows && sec.rows.length > 0) {
+        const rowsHtml = sec.rows
+          .map((row) => {
+            const valDisplay = row.isLink && row.href
+              ? `<a href="${escapeHtml(row.href)}" style="color: #08254f; text-decoration: underline; word-break: break-all;">${escapeHtml(row.value)}</a>`
+              : `<span style="word-break: break-word;">${escapeHtml(row.value)}</span>`;
+
+            return `<tr>
+              <td style="padding: 8px 12px; font-size: 13px; color: #64748b; width: 36%; vertical-align: top; border-bottom: 1px solid #f1f5f9; font-weight: 500;">
+                ${escapeHtml(row.label)}
+              </td>
+              <td style="padding: 8px 12px; font-size: 13px; color: #0f172a; width: 64%; vertical-align: top; border-bottom: 1px solid #f1f5f9; font-weight: 600;">
+                ${valDisplay}
+              </td>
+            </tr>`;
+          })
+          .join('');
+
+        contentHtml += `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; margin-top: 4px;">
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>`;
+      }
+
+      return `<div style="margin-top: 22px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: #08254f; padding-bottom: 6px; border-bottom: 2px solid #e2e8f0; margin-bottom: 8px;">
+          ${escapeHtml(sec.title)}
+        </div>
+        ${contentHtml}
+      </div>`;
+    })
+    .join('');
+
+  const leadCourseInfo = courseTitle
+    ? `<div style="margin-top: 8px; font-size: 13px; font-weight: 600; color: #08254f;">
+        <span style="display: inline-block; padding: 2px 8px; background-color: #e0e7ff; color: #3730a3; border-radius: 4px; font-size: 11px; margin-right: 6px; text-transform: uppercase;">Curso</span>
+        ${escapeHtml(courseTitle)}
+      </div>`
+    : '';
+
+  const leadTurmaInfo = turmaTitle
+    ? `<div style="margin-top: 4px; font-size: 12px; color: #475569;">
+        <span style="display: inline-block; padding: 2px 8px; background-color: #f1f5f9; color: #475569; border-radius: 4px; font-size: 11px; margin-right: 6px; text-transform: uppercase;">Turma</span>
+        ${escapeHtml(turmaTitle)}
+      </div>`
+    : '';
+
+  const ctaHtml = ctaButton
+    ? `<div style="margin: 28px 0 12px 0; text-align: center;">
+        <a href="${escapeHtml(ctaButton.url)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #08254f; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 12px 28px; border-radius: 6px; letter-spacing: 0.3px; box-shadow: 0 2px 4px rgba(8, 37, 79, 0.15);">
+          ${escapeHtml(ctaButton.label)} &rarr;
+        </a>
+      </div>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>${escapeHtml(options.subject)}</title>
+  <style type="text/css">
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    @media only screen and (max-width: 620px) {
+      .eds-container { width: 100% !important; max-width: 100% !important; }
+      .eds-content-padding { padding: 16px !important; }
+      .eds-lead-name { font-size: 18px !important; }
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; line-height: 1.5;">
+  <!-- Preheader text for email preview -->
+  <div style="display: none; max-height: 0px; overflow: hidden; font-size: 1px; line-height: 1px; color: #f8fafc;">
+    ${escapeHtml(eventTitle)} — ${escapeHtml(leadName)}
+  </div>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #f8fafc; padding: 24px 8px;">
+    <tr>
+      <td align="center">
+        <!-- Main Card Container -->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="eds-container" style="max-width: 600px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05);">
+          
+          <!-- Brand Header -->
+          <tr>
+            <td style="padding: 24px 28px 18px 28px; background-color: #ffffff; border-bottom: 1px solid #e2e8f0; text-align: left;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="vertical-align: middle;">
+                    <a href="https://www.expdentalsolutions.com" target="_blank" style="text-decoration: none; display: inline-block;">
+                      <img src="${EDS_OFFICIAL_LOGO_URL}" alt="Expert Dental Solutions" width="150" style="display: block; width: 150px; max-width: 150px; height: auto; border: 0;" />
+                    </a>
+                    <div style="font-size: 12px; font-weight: 700; color: #08254f; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 6px;">
+                      Expert Dental Solutions
+                    </div>
+                  </td>
+                  <td align="right" style="vertical-align: middle;">
+                    ${eventBadgeText ? `<span style="display: inline-block; padding: 4px 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; background-color: ${badgeStyle.bg}; color: ${badgeStyle.text}; border: 1px solid ${badgeStyle.border}; border-radius: 12px;">${escapeHtml(eventBadgeText)}</span>` : ''}
+                  </td>
+                </tr>
+              </table>
+              <div style="margin-top: 14px; font-size: 18px; font-weight: 700; color: #08254f; line-height: 1.3;">
+                ${escapeHtml(eventTitle)}
+              </div>
+            </td>
+          </tr>
+
+          <!-- Lead Summary Highlight Card -->
+          <tr>
+            <td style="padding: 20px 28px 0 28px;" class="eds-content-padding">
+              <div style="background-color: #f8fafc; border-left: 4px solid ${accentColor}; border-radius: 6px; padding: 14px 18px;">
+                <div class="eds-lead-name" style="font-size: 19px; font-weight: 700; color: #0f172a; line-height: 1.2;">
+                  ${escapeHtml(leadName)}
+                </div>
+                ${leadSubheading ? `<div style="font-size: 12px; color: #64748b; margin-top: 4px;">${escapeHtml(leadSubheading)}</div>` : ''}
+                ${leadCourseInfo}
+                ${leadTurmaInfo}
+              </div>
+            </td>
+          </tr>
+
+          <!-- Structured Sections -->
+          <tr>
+            <td style="padding: 0 28px 24px 28px;" class="eds-content-padding">
+              ${sectionsHtml}
+              ${ctaHtml}
+            </td>
+          </tr>
+
+          <!-- Operational Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 18px 28px; text-align: center;">
+              <div style="font-size: 12px; font-weight: 700; color: #08254f;">
+                Expert Dental Solutions
+              </div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 4px; line-height: 1.4;">
+                ${escapeHtml(footerNotice)}
+              </div>
+              <div style="font-size: 10px; color: #94a3b8; margin-top: 6px;">
+                3730 S Federal Hwy, Boynton Beach, FL 33435 &bull; info@expdentalsolutions.com
+              </div>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+
+
 /**
  * Builds HTML and plain-text body for Incomplete Registration attempt.
  */
@@ -171,11 +435,13 @@ export function buildIncompleteAttemptEmail(
   leadUrl: string
 ): { subject: string; html: string; text: string } {
   const raw = payload.raw_payload || {};
-  const fullName = payload.lead_name ||
-    raw.name ||
-    raw.full_name ||
-    [payload.first_name || raw.first_name, payload.last_name || raw.last_name].filter(Boolean).join(' ') ||
-    'Candidato sem nome';
+  const rawName = (typeof raw.name === 'string' ? raw.name : undefined) ||
+    (typeof raw.full_name === 'string' ? raw.full_name : undefined);
+  const rawFirst = payload.first_name || (typeof raw.first_name === 'string' ? raw.first_name : undefined);
+  const rawLast = payload.last_name || (typeof raw.last_name === 'string' ? raw.last_name : undefined);
+  const combinedName = [rawFirst, rawLast].filter(Boolean).join(' ');
+
+  const fullName: string = payload.lead_name || rawName || combinedName || 'Candidato sem nome';
 
   const rawCourseSignal =
     (payload.course_name as string | undefined) ||
@@ -186,220 +452,201 @@ export function buildIncompleteAttemptEmail(
     (typeof raw.course_interest === 'string' ? raw.course_interest : undefined) ||
     null;
   const courseTitle = resolveCanonicalCourseName(rawCourseSignal);
-  const email = payload.email || raw.email || 'Não informado';
-  const phone = payload.phone || raw.phone || 'Não informado';
-  const turma = payload.turma_name || raw.turma || raw.session_title || raw.course_session || 'Não informada / automática';
-  const specialty = raw.specialty || raw.especialidade || 'Não informada';
-  const experience = raw.years_in_practice || raw.anos_experiencia || 'Não informado';
-  const surgicalExp = raw.surgical_experience || raw.experiencia_cirurgica || 'Não informada';
-  const agd = raw.agd_number || raw.agd || 'Não informado';
-  const heardFrom = raw.heard_from || raw.onde_ouviu || 'Não informado';
-  const referral = raw.referral_name || raw.indicacao || 'Nenhuma';
-  const promo = raw.promo_code || raw.cupom || 'Nenhum';
-  const country = raw.country || raw.pais || 'Não informado';
-  const cityState = [raw.city || raw.cidade, raw.state || raw.estado].filter(Boolean).join(', ') || 'Não informado';
-  const sourcePage = payload.source_page || raw.source_page || 'https://www.expdentalsolutions.com/register';
-  const attemptTimestamp = formatDatePtBr(raw.submitted_at as string || new Date().toISOString());
-  const statusDisplay = payload.status === 'submission_failed' ? 'Falha no envio do site' : 'Inscrição iniciada (Não concluída)';
+  const email: string = payload.email || (typeof raw.email === 'string' ? raw.email : undefined) || 'Não informado';
+  const phone: string = payload.phone || (typeof raw.phone === 'string' ? raw.phone : undefined) || 'Não informado';
+  const rawTurma = (payload.turma_name ||
+    (typeof raw.turma === 'string' ? raw.turma : undefined) ||
+    (typeof raw.session_title === 'string' ? raw.session_title : undefined) ||
+    (typeof raw.course_session === 'string' ? raw.course_session : undefined)) as string | undefined;
+  const cleanTurma = cleanSubjectParam(rawTurma);
+  const turmaDisplay = cleanTurma || 'Não informada / automática';
 
-  // Factual missing reasons (do not invent)
+  const emergencyPhone = raw.emergency_phone ? String(raw.emergency_phone) : undefined;
+  const country = raw.country || raw.pais;
+  const cityState = [raw.city || raw.cidade, raw.state || raw.estado].filter(Boolean).join(', ');
+
+  const specialty = raw.specialty || raw.especialidade;
+  const experience = raw.years_in_practice || raw.anos_experiencia;
+  const surgicalExp = raw.surgical_experience || raw.experiencia_cirurgica;
+  const agd = raw.agd_number || raw.agd;
+  const heardFrom = raw.heard_from || raw.onde_ouviu;
+  const referral = raw.referral_name || raw.indicacao;
+  const promo = raw.promo_code || raw.cupom;
+  const certName = raw.certificate_name ? String(raw.certificate_name) : undefined;
+  const coatSize = raw.coat_size ? String(raw.coat_size) : undefined;
+  const sourcePage: string = payload.source_page || (typeof raw.source_page === 'string' ? raw.source_page : undefined) || 'https://www.expdentalsolutions.com/register';
+  const attemptTimestamp = formatDatePtBr((typeof raw.submitted_at === 'string' ? raw.submitted_at : undefined) || new Date().toISOString());
+
+  const isFailedSubmit = payload.status === 'submission_failed';
+  const attemptCount = (typeof payload.submit_attempt_count === 'number' && payload.submit_attempt_count > 1)
+    ? payload.submit_attempt_count
+    : (typeof raw.submit_attempt_count === 'number' && raw.submit_attempt_count > 1 ? raw.submit_attempt_count : 1);
+
+  const statusDisplay = isFailedSubmit
+    ? `Falha no envio do site (${attemptCount}ª tentativa)`
+    : 'Inscrição iniciada (Não concluída)';
+
+  // Factual missing reasons and diagnostic categories
+  const factualCategory = payload.failure_category || (typeof raw.failure_category === 'string' ? raw.failure_category : null);
   const factualReasons: string[] = [];
-  if (payload.missing_reason) factualReasons.push(String(payload.missing_reason));
-  if (payload.error_code) factualReasons.push(`Código de erro reportado: ${payload.error_code}`);
+  if (factualCategory) {
+    factualReasons.push(`Motivo da falha: ${factualCategory}`);
+  }
+  if (payload.missing_reason && payload.missing_reason !== factualCategory) {
+    factualReasons.push(String(payload.missing_reason));
+  }
+  if (payload.error_code) {
+    factualReasons.push(`Código de erro reportado: ${payload.error_code}`);
+  }
   if (raw.missing_fields && Array.isArray(raw.missing_fields)) {
     factualReasons.push(`Campos pendentes: ${raw.missing_fields.join(', ')}`);
   }
-  const missingReasonText = factualReasons.length > 0 ? factualReasons.join(' | ') : 'Formulário abandonado antes da finalização';
+  if (attemptCount > 1) {
+    factualReasons.push(`Tentativas realizadas: ${attemptCount}`);
+  }
+  const missingReasonText = factualReasons.length > 0
+    ? factualReasons.join(' | ')
+    : (isFailedSubmit ? 'O envio foi rejeitado pelo servidor' : 'Formulário abandonado antes da finalização');
 
   const utms = [
-    raw.utm_source ? `Source: ${raw.utm_source}` : null,
-    raw.utm_medium ? `Medium: ${raw.utm_medium}` : null,
-    raw.utm_campaign ? `Campaign: ${raw.utm_campaign}` : null,
-    raw.utm_term ? `Term: ${raw.utm_term}` : null,
-    raw.utm_content ? `Content: ${raw.utm_content}` : null,
+    raw.utm_source ? `Source: ${String(raw.utm_source)}` : null,
+    raw.utm_medium ? `Medium: ${String(raw.utm_medium)}` : null,
+    raw.utm_campaign ? `Campaign: ${String(raw.utm_campaign)}` : null,
+    raw.utm_term ? `Term: ${String(raw.utm_term)}` : null,
+    raw.utm_content ? `Content: ${String(raw.utm_content)}` : null,
   ].filter(Boolean).join(' | ') || 'Nenhum UTM registrado';
 
-  const subject = `Tentativa de matrícula — ${fullName} — ${courseTitle}`;
+  let subjectPrefix = '[EDS] Matrícula não concluída';
+  let eventTitle = 'Tentativa de matrícula não concluída';
+  let eventBadgeText = 'Tentativa Incompleta';
+  let badgeStyle = { bg: '#fef3c7', text: '#92400e', border: '#fde68a' };
+  let accentColor = '#f59e0b';
+  let leadSubheading = 'Tentativa de matrícula pendente de finalização';
 
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(subject)}</title>
-</head>
-<body style="margin: 0; padding: 24px; background-color: #F3F4F6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1F2937;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 640px; margin: 0 auto; background-color: #FFFFFF; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-    <!-- Header -->
-    <tr>
-      <td style="background-color: #0B132B; padding: 24px 32px; border-bottom: 3px solid #F59E0B;">
-        <table width="100%" cellpadding="0" cellspacing="0">
-          <tr>
-            <td>
-              <h1 style="margin: 0; font-size: 20px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.02em;">Expert Dental Solutions</h1>
-              <p style="margin: 4px 0 0 0; font-size: 13px; color: #9CA3AF; text-transform: uppercase; letter-spacing: 0.05em;">Notificação Interna de Admissões</p>
-            </td>
-            <td align="right">
-              <span style="display: inline-block; padding: 6px 12px; background-color: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 700; border-radius: 9999px; border: 1px solid #FCD34D;">Não concluída</span>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
+  if (isFailedSubmit) {
+    subjectPrefix = attemptCount > 1
+      ? `[EDS] ${attemptCount} tentativas de matrícula`
+      : '[EDS] Tentativa de matrícula';
+    eventTitle = attemptCount > 1
+      ? `${attemptCount} tentativas de matrícula com falha`
+      : 'Tentativa de matrícula';
+    eventBadgeText = attemptCount > 1
+      ? `Falha no Envio (${attemptCount}ª tentativa)`
+      : 'Falha no Envio';
+    badgeStyle = { bg: '#fee2e2', text: '#991b1b', border: '#fecaca' };
+    accentColor = '#ef4444';
+    leadSubheading = 'O visitante tentou concluir a matrícula, mas o envio não foi concluído.';
+  }
 
-    <!-- Alert Box -->
-    <tr>
-      <td style="padding: 24px 32px 16px 32px;">
-        <div style="background-color: #FFFBEB; border-left: 4px solid #F59E0B; padding: 16px; border-radius: 4px;">
-          <h2 style="margin: 0 0 6px 0; font-size: 16px; font-weight: 700; color: #92400E;">Nova tentativa de matrícula detectada</h2>
-          <p style="margin: 0; font-size: 14px; color: #78350F; line-height: 1.5;">
-            Um visitante iniciou o preenchimento da inscrição no site mas não concluiu o processo. Verifique os dados abaixo para contato proativo.
-          </p>
-        </div>
-      </td>
-    </tr>
+  const subject = formatEdsSubject(subjectPrefix, fullName, courseTitle);
 
-    <!-- Lead Info Cards -->
-    <tr>
-      <td style="padding: 0 32px 24px 32px;">
-        <!-- Seção: Dados Pessoais & Contato -->
-        <div style="margin-bottom: 20px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">Dados Pessoais & Contato</h3>
-          <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 14px; border-collapse: collapse;">
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td width="35%" style="color: #6B7280; font-weight: 500;">Nome Completo:</td>
-              <td style="color: #111827; font-weight: 600;">${escapeHtml(String(fullName))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Email:</td>
-              <td style="color: #111827;">${escapeHtml(String(email))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Telefone:</td>
-              <td style="color: #111827;">${escapeHtml(String(phone))}</td>
-            </tr>
-            ${raw.emergency_phone ? `
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Tel. Emergência:</td>
-              <td style="color: #111827;">${escapeHtml(String(raw.emergency_phone))}</td>
-            </tr>
-            ` : ''}
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">País / Localização:</td>
-              <td style="color: #111827;">${escapeHtml(String(country))} ${cityState !== 'Não informado' ? `(${escapeHtml(cityState)})` : ''}</td>
-            </tr>
-          </table>
-        </div>
+  const contactRows: EdsEmailSectionRow[] = [
+    { label: 'Nome Completo', value: fullName },
+    { label: 'E-mail', value: email, isLink: email !== 'Não informado', href: email !== 'Não informado' ? `mailto:${email}` : undefined },
+    { label: 'Telefone', value: phone },
+  ];
+  if (emergencyPhone) {
+    contactRows.push({ label: 'Tel. Emergência', value: emergencyPhone });
+  }
+  if (certName) {
+    contactRows.push({ label: 'Nome no Certificado', value: certName });
+  }
+  if (country || cityState) {
+    const loc = [country, cityState ? `(${cityState})` : null].filter(Boolean).join(' ');
+    contactRows.push({ label: 'País / Localização', value: loc });
+  }
+  contactRows.push({ label: 'Data da Tentativa', value: attemptTimestamp });
 
-        <!-- Seção: Curso de Interesse -->
-        <div style="margin-bottom: 20px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">Curso Selecionado</h3>
-          <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 14px; border-collapse: collapse;">
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td width="35%" style="color: #6B7280; font-weight: 500;">Curso:</td>
-              <td style="color: #1D4ED8; font-weight: 700;">${escapeHtml(String(courseTitle))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Turma / Sessão:</td>
-              <td style="color: #111827;">${escapeHtml(String(turma))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Status da Tentativa:</td>
-              <td style="color: #D97706; font-weight: 600;">${escapeHtml(statusDisplay)}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Motivo Factual:</td>
-              <td style="color: #4B5563;">${escapeHtml(missingReasonText)}</td>
-            </tr>
-          </table>
-        </div>
+  const sections: EdsEmailSection[] = [];
 
-        <!-- Seção: Informações Profissionais (quando disponíveis) -->
-        <div style="margin-bottom: 20px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">Perfil Profissional</h3>
-          <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 14px; border-collapse: collapse;">
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td width="35%" style="color: #6B7280; font-weight: 500;">Especialidade:</td>
-              <td style="color: #111827;">${escapeHtml(String(specialty))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Tempo de Formado:</td>
-              <td style="color: #111827;">${escapeHtml(String(experience))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Exp. Cirúrgica:</td>
-              <td style="color: #111827;">${escapeHtml(String(surgicalExp))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Registro AGD/PACE:</td>
-              <td style="color: #111827;">${escapeHtml(String(agd))}</td>
-            </tr>
-          </table>
-        </div>
+  if (isFailedSubmit) {
+    sections.push({
+      title: 'Diagnóstico da Falha no Envio',
+      rows: [
+        { label: 'Motivo Factual', value: factualCategory || 'Erro de validação ou envio rejeitado' },
+        { label: 'Tentativas de Envio', value: `${attemptCount} tentativa${attemptCount > 1 ? 's' : ''}` },
+        { label: 'Última Tentativa', value: attemptTimestamp },
+      ],
+    });
+  }
 
-        <!-- Seção: Rastreamento & Marketing -->
-        <div style="margin-bottom: 24px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">Rastreamento & Origem</h3>
-          <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 13px; border-collapse: collapse; background-color: #F9FAFB; border-radius: 6px;">
-            <tr>
-              <td width="35%" style="color: #6B7280;">Horário da Tentativa:</td>
-              <td style="color: #111827;">${escapeHtml(attemptTimestamp)}</td>
-            </tr>
-            <tr>
-              <td style="color: #6B7280;">Página do Site:</td>
-              <td style="color: #111827; word-break: break-all;">${escapeHtml(String(sourcePage))}</td>
-            </tr>
-            <tr>
-              <td style="color: #6B7280;">Onde nos conheceu:</td>
-              <td style="color: #111827;">${escapeHtml(String(heardFrom))} ${referral !== 'Nenhuma' ? `(Indicação: ${escapeHtml(String(referral))})` : ''}</td>
-            </tr>
-            <tr>
-              <td style="color: #6B7280;">Cupom de Desconto:</td>
-              <td style="color: #111827;">${escapeHtml(String(promo))}</td>
-            </tr>
-            <tr>
-              <td style="color: #6B7280;">Parâmetros UTM:</td>
-              <td style="color: #4B5563;">${escapeHtml(utms)}</td>
-            </tr>
-          </table>
-        </div>
+  sections.push({
+    title: 'Dados do Contato',
+    rows: contactRows,
+  });
 
-        <!-- CTA Principal -->
-        <div style="text-align: center; margin-top: 28px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
-          <a href="${escapeHtml(leadUrl)}" target="_blank" style="display: inline-block; padding: 14px 28px; background-color: #0B132B; color: #FFFFFF; text-decoration: none; font-size: 15px; font-weight: 700; border-radius: 6px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">Abrir lead no EDS HUB &rarr;</a>
-          <p style="margin: 10px 0 0 0; font-size: 12px; color: #9CA3AF;">Link seguro para administradores autenticados do EDS HUB.</p>
-        </div>
-      </td>
-    </tr>
+  sections.push({
+    title: 'Curso & Turma',
+    rows: [
+      { label: 'Curso Selecionado', value: courseTitle || 'Não identificado' },
+      { label: 'Turma / Datas', value: turmaDisplay },
+      { label: 'Status da Inscrição', value: statusDisplay },
+      { label: 'Diagnóstico', value: missingReasonText },
+    ],
+  });
 
-    <!-- Footer -->
-    <tr>
-      <td style="background-color: #F9FAFB; padding: 16px 32px; text-align: center; font-size: 12px; color: #9CA3AF; border-top: 1px solid #E5E7EB;">
-        Esta é uma notificação interna automática do sistema EDS HUB. Não responda a este e-mail.
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+  const profRows: EdsEmailSectionRow[] = [];
+  if (specialty) profRows.push({ label: 'Especialidade', value: String(specialty) });
+  if (experience) profRows.push({ label: 'Tempo de Prática', value: String(experience) });
+  if (surgicalExp) profRows.push({ label: 'Experiência Cirúrgica', value: String(surgicalExp) });
+  if (coatSize) profRows.push({ label: 'Tamanho do Jaleco', value: coatSize });
+  if (agd) profRows.push({ label: 'Número AGD/PACE', value: String(agd) });
 
-  const text = `TENTATIVA DE MATRÍCULA — NÃO CONCLUÍDA
+  if (profRows.length > 0) {
+    sections.push({
+      title: 'Informações Profissionais',
+      rows: profRows,
+    });
+  }
+
+  const originRows: EdsEmailSectionRow[] = [
+    { label: 'Origem', value: 'Website (Formulário de Matrícula)' },
+    { label: 'Página', value: sourcePage },
+  ];
+  if (raw.utm_source) originRows.push({ label: 'UTM Source', value: String(raw.utm_source) });
+  if (raw.utm_medium) originRows.push({ label: 'UTM Medium', value: String(raw.utm_medium) });
+  if (raw.utm_campaign) originRows.push({ label: 'UTM Campaign', value: String(raw.utm_campaign) });
+  if (heardFrom) originRows.push({ label: 'Onde Conheceu', value: String(heardFrom) });
+  if (referral) originRows.push({ label: 'Indicação', value: String(referral) });
+  if (promo) originRows.push({ label: 'Cupom de Desconto', value: String(promo) });
+
+  sections.push({
+    title: 'Origem e Atribuição',
+    rows: originRows,
+  });
+
+  const html = renderEdsEmailHtml({
+    subject,
+    eventTitle,
+    eventBadgeText,
+    badgeStyle,
+    accentColor,
+    leadName: fullName,
+    leadSubheading,
+    courseTitle,
+    turmaTitle: cleanTurma,
+    sections,
+    ctaButton: {
+      label: 'Acompanhar tentativa no EDS HUB',
+      url: leadUrl,
+    },
+    footerNotice: isFailedSubmit
+      ? 'Alerta operacional imediato de tentativa de matrícula com falha no site.'
+      : 'Notificação operacional automática do CRM EDS HUB.',
+  });
+
+  const textHeader = isFailedSubmit ? 'TENTATIVA DE MATRÍCULA COM FALHA NO ENVIO' : 'TENTATIVA DE MATRÍCULA NÃO CONCLUÍDA';
+  const text = `${textHeader} - EDS HUB
 ========================================
 Lead: ${fullName}
-Curso: ${courseTitle}
-Turma: ${turma}
+Curso: ${courseTitle || 'Não identificado'}
+Turma: ${turmaDisplay}
 Status: ${statusDisplay}
 Motivo factual: ${missingReasonText}
-
+${isFailedSubmit ? `Tentativas: ${attemptCount}\n` : ''}
 CONTATO:
 Email: ${email}
 Telefone: ${phone}
-Localização: ${country} (${cityState})
-
-PERFIL:
-Especialidade: ${specialty}
-Experiência: ${experience}
-Cirúrgica: ${surgicalExp}
-AGD/PACE: ${agd}
 
 MARKETING:
 Data/Hora: ${attemptTimestamp}
@@ -412,6 +659,7 @@ Abrir lead no EDS HUB: ${leadUrl}
   return { subject, html, text };
 }
 
+
 /**
  * Builds HTML and plain-text body for Completed Registration.
  */
@@ -421,16 +669,33 @@ export function buildCompletedRegistrationEmail(
   documentsUrl: string
 ): { subject: string; html: string; text: string } {
   const raw = payload.raw_payload || {};
-  const fullName = payload.lead_name ||
-    raw.name ||
-    raw.full_name ||
-    [payload.first_name || raw.first_name, payload.last_name || raw.last_name].filter(Boolean).join(' ') ||
-    'Aluno';
+  const rawName = (typeof raw.name === 'string' ? raw.name : undefined) ||
+    (typeof raw.full_name === 'string' ? raw.full_name : undefined);
+  const rawFirst = payload.first_name || (typeof raw.first_name === 'string' ? raw.first_name : undefined);
+  const rawLast = payload.last_name || (typeof raw.last_name === 'string' ? raw.last_name : undefined);
+  const combinedName = [rawFirst, rawLast].filter(Boolean).join(' ');
 
-  const courseTitle = payload.course_name || payload.course_code || raw.course || raw.course_interest || 'Curso Confirmado';
-  const email = payload.email || raw.email || 'Não informado';
-  const phone = payload.phone || raw.phone || 'Não informado';
-  const turma = payload.turma_name || raw.turma || raw.session_title || raw.course_session || 'Turma selecionada no formulário';
+  const fullName: string = payload.lead_name || rawName || combinedName || 'Aluno';
+
+  const rawCourse = (payload.course_name ||
+    payload.course_code ||
+    (typeof raw.course === 'string' ? raw.course : undefined) ||
+    (typeof raw.course_interest === 'string' ? raw.course_interest : undefined) ||
+    'Curso Confirmado') as string;
+  const courseTitle = resolveCanonicalCourseName(rawCourse) || rawCourse;
+  const email: string = payload.email || (typeof raw.email === 'string' ? raw.email : undefined) || 'Não informado';
+  const phone: string = payload.phone || (typeof raw.phone === 'string' ? raw.phone : undefined) || 'Não informado';
+  const rawTurma = (payload.turma_name ||
+    (typeof raw.turma === 'string' ? raw.turma : undefined) ||
+    (typeof raw.session_title === 'string' ? raw.session_title : undefined) ||
+    (typeof raw.course_session === 'string' ? raw.course_session : undefined)) as string | undefined;
+  const cleanTurma = cleanSubjectParam(rawTurma);
+  const turmaDisplay = cleanTurma || 'Turma selecionada no formulário';
+
+  const emergencyPhone = raw.emergency_phone ? String(raw.emergency_phone) : undefined;
+  const country = raw.country || raw.pais;
+  const cityState = [raw.city || raw.cidade, raw.state || raw.estado].filter(Boolean).join(', ');
+
   const specialty = raw.specialty || raw.especialidade || 'Não informada';
   const experience = raw.years_in_practice || raw.anos_experiencia || 'Não informado';
   const surgicalExp = raw.surgical_experience || raw.experiencia_cirurgica || 'Não informada';
@@ -439,204 +704,107 @@ export function buildCompletedRegistrationEmail(
   const referral = raw.referral_name || raw.indicacao || 'Nenhuma';
   const promo = raw.promo_code || raw.cupom || 'Nenhum';
   const termsAccepted = raw.terms_accepted ? 'Sim (Aceite confirmado no envio)' : 'Sim';
-  const completionTimestamp = formatDatePtBr(raw.submitted_at as string || new Date().toISOString());
+  const completionTimestamp = formatDatePtBr((typeof raw.submitted_at === 'string' ? raw.submitted_at : undefined) || new Date().toISOString());
 
   const docs = payload.documents || [];
   let docsHtml = '';
   if (docs.length > 0) {
-    docsHtml = `<ul style="margin: 8px 0; padding-left: 20px; color: #111827;">` +
+    docsHtml = `<ul style="margin: 8px 0; padding-left: 20px; color: #111827; font-size: 13px;">` +
       docs.map((d) => `<li><strong>${escapeHtml(d.document_type)}:</strong> ${escapeHtml(d.original_filename)}</li>`).join('') +
       `</ul>`;
   } else {
-    docsHtml = `<p style="margin: 8px 0; font-size: 14px; color: #4B5563;">Documentos enviados via formulário (Passaporte / Licença Odontológica). Acesse a área segura de documentos no EDS HUB.</p>`;
+    docsHtml = `<p style="margin: 6px 0; font-size: 13px; color: #475569;">Documentos enviados via formulário (Passaporte / Licença Odontológica). Acesse a área segura de documentos no EDS HUB.</p>`;
   }
 
-  const utms = [
-    raw.utm_source ? `Source: ${raw.utm_source}` : null,
-    raw.utm_medium ? `Medium: ${raw.utm_medium}` : null,
-    raw.utm_campaign ? `Campaign: ${raw.utm_campaign}` : null,
-    raw.utm_term ? `Term: ${raw.utm_term}` : null,
-    raw.utm_content ? `Content: ${raw.utm_content}` : null,
-  ].filter(Boolean).join(' | ') || 'Nenhum UTM registrado';
+  const subject = formatEdsSubject('[EDS] Nova matrícula concluída', fullName, courseTitle, cleanTurma);
 
-  const subject = `Matrícula concluída — ${fullName} — ${courseTitle}`;
+  const studentRows: EdsEmailSectionRow[] = [
+    { label: 'Nome Completo', value: fullName },
+    { label: 'E-mail', value: email, isLink: email !== 'Não informado', href: email !== 'Não informado' ? `mailto:${email}` : undefined },
+    { label: 'Telefone', value: phone },
+  ];
+  if (emergencyPhone) {
+    studentRows.push({ label: 'Tel. Emergência', value: emergencyPhone });
+  }
+  if (country || cityState) {
+    const loc = [country, cityState ? `(${cityState})` : null].filter(Boolean).join(' ');
+    studentRows.push({ label: 'País / Localização', value: loc });
+  }
+  studentRows.push({ label: 'Data de Conclusão', value: completionTimestamp });
 
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(subject)}</title>
-</head>
-<body style="margin: 0; padding: 24px; background-color: #F3F4F6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1F2937;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 640px; margin: 0 auto; background-color: #FFFFFF; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-    <!-- Header -->
-    <tr>
-      <td style="background-color: #0B132B; padding: 24px 32px; border-bottom: 3px solid #10B981;">
-        <table width="100%" cellpadding="0" cellspacing="0">
-          <tr>
-            <td>
-              <h1 style="margin: 0; font-size: 20px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.02em;">Expert Dental Solutions</h1>
-              <p style="margin: 4px 0 0 0; font-size: 13px; color: #9CA3AF; text-transform: uppercase; letter-spacing: 0.05em;">Notificação Oficial de Matrícula</p>
-            </td>
-            <td align="right">
-              <span style="display: inline-block; padding: 6px 14px; background-color: #D1FAE5; color: #065F46; font-size: 12px; font-weight: 700; border-radius: 9999px; border: 1px solid #6EE7B7;">Concluída</span>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-
-    <!-- Success Confirmation Box -->
-    <tr>
-      <td style="padding: 24px 32px 16px 32px;">
-        <div style="background-color: #ECFDF5; border-left: 4px solid #10B981; padding: 16px; border-radius: 4px;">
-          <h2 style="margin: 0 0 6px 0; font-size: 16px; font-weight: 700; color: #065F46;">Ficha de Matrícula Finalizada com Sucesso</h2>
-          <p style="margin: 0; font-size: 14px; color: #047857; line-height: 1.5;">
-            O aluno completou todas as etapas obrigatórias do formulário de inscrição no site oficial. Registro consolidado no CRM.
-          </p>
+  const sections: EdsEmailSection[] = [
+    {
+      title: 'Dados do Aluno',
+      rows: studentRows,
+    },
+    {
+      title: 'Curso & Turma',
+      rows: [
+        { label: 'Curso Selecionado', value: courseTitle },
+        { label: 'Turma / Datas', value: turmaDisplay },
+        { label: 'Termos e Condições', value: termsAccepted },
+      ],
+    },
+    {
+      title: 'Informações Profissionais',
+      rows: [
+        { label: 'Especialidade', value: String(specialty) },
+        { label: 'Anos de Prática', value: String(experience) },
+        { label: 'Exp. Cirúrgica', value: String(surgicalExp) },
+        { label: 'Número AGD/PACE', value: String(agd) },
+      ],
+    },
+    {
+      title: 'Documentos & Anexos de Matrícula',
+      calloutHtml: `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px;">
+        ${docsHtml}
+        <div style="margin-top: 10px;">
+          <a href="${escapeHtml(documentsUrl)}" target="_blank" style="display: inline-block; padding: 7px 14px; background-color: #08254f; color: #ffffff; text-decoration: none; font-size: 12px; font-weight: 700; border-radius: 6px;">
+            Acessar Documentos Seguros &rarr;
+          </a>
         </div>
-      </td>
-    </tr>
+        <p style="margin: 8px 0 0 0; font-size: 11px; color: #64748b;">
+          Documentos de identificação e licenças profissionais são protegidos por acesso autenticado no EDS HUB.
+        </p>
+      </div>`,
+    },
+    {
+      title: 'Origem & Atribuição',
+      rows: [
+        { label: 'Origem', value: 'Website (Formulário Oficial de Registro)' },
+        { label: 'Onde conheceu', value: referral !== 'Nenhuma' ? `${heardFrom} (Indicação: ${referral})` : String(heardFrom) },
+        { label: 'Cupom Aplicado', value: String(promo) },
+        { label: 'Página', value: payload.source_page || 'https://www.expdentalsolutions.com/register' },
+      ],
+    },
+  ];
 
-    <!-- Completed Application Details -->
-    <tr>
-      <td style="padding: 0 32px 24px 32px;">
-        <!-- Seção: Dados Pessoais & Contato -->
-        <div style="margin-bottom: 20px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">Dados do Aluno</h3>
-          <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 14px; border-collapse: collapse;">
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td width="35%" style="color: #6B7280; font-weight: 500;">Nome Completo:</td>
-              <td style="color: #111827; font-weight: 700;">${escapeHtml(String(fullName))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Email:</td>
-              <td style="color: #111827;">${escapeHtml(String(email))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Telefone:</td>
-              <td style="color: #111827;">${escapeHtml(String(phone))}</td>
-            </tr>
-          </table>
-        </div>
+  const html = renderEdsEmailHtml({
+    subject,
+    eventTitle: 'Nova matrícula concluída',
+    eventBadgeText: 'Matrícula Confirmada',
+    badgeStyle: { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' },
+    accentColor: '#10b981',
+    leadName: fullName,
+    leadSubheading: 'Inscrição finalizada com sucesso no site oficial',
+    courseTitle,
+    turmaTitle: cleanTurma,
+    sections,
+    ctaButton: {
+      label: 'Abrir matrícula no EDS HUB',
+      url: leadUrl,
+    },
+    footerNotice: 'Notificação operacional oficial de matrícula.',
+  });
 
-        <!-- Seção: Curso e Turma -->
-        <div style="margin-bottom: 20px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">Curso & Turma</h3>
-          <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 14px; border-collapse: collapse;">
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td width="35%" style="color: #6B7280; font-weight: 500;">Curso Selecionado:</td>
-              <td style="color: #065F46; font-weight: 700;">${escapeHtml(String(courseTitle))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Turma / Datas:</td>
-              <td style="color: #111827;">${escapeHtml(String(turma))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Termos Aceitos:</td>
-              <td style="color: #10B981; font-weight: 600;">${escapeHtml(termsAccepted)}</td>
-            </tr>
-          </table>
-        </div>
-
-        <!-- Seção: Perfil Profissional -->
-        <div style="margin-bottom: 20px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">Informações Profissionais</h3>
-          <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 14px; border-collapse: collapse;">
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td width="35%" style="color: #6B7280; font-weight: 500;">Especialidade:</td>
-              <td style="color: #111827;">${escapeHtml(String(specialty))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Anos de Prática:</td>
-              <td style="color: #111827;">${escapeHtml(String(experience))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Exp. Cirúrgica:</td>
-              <td style="color: #111827;">${escapeHtml(String(surgicalExp))}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #F3F4F6;">
-              <td style="color: #6B7280; font-weight: 500;">Número AGD/PACE:</td>
-              <td style="color: #111827;">${escapeHtml(String(agd))}</td>
-            </tr>
-          </table>
-        </div>
-
-        <!-- Seção: Documentos Anexados (Segurança) -->
-        <div style="margin-bottom: 20px; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 16px;">
-          <h3 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: 0.05em;">Documentos & Anexos de Matrícula</h3>
-          ${docsHtml}
-          <div style="margin-top: 12px;">
-            <a href="${escapeHtml(documentsUrl)}" target="_blank" style="display: inline-block; padding: 8px 16px; background-color: #1E293B; color: #FFFFFF; text-decoration: none; font-size: 13px; font-weight: 600; border-radius: 4px;">Acessar Documentos Seguros &rarr;</a>
-          </div>
-          <p style="margin: 8px 0 0 0; font-size: 11px; color: #64748B;">Documentos de identificação e licenças profissionais são protegidos por acesso autenticado no EDS HUB.</p>
-        </div>
-
-        <!-- Seção: Origem e Marketing -->
-        <div style="margin-bottom: 24px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">Origem & Atribuição</h3>
-          <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 13px; border-collapse: collapse; background-color: #F9FAFB; border-radius: 6px;">
-            <tr>
-              <td width="35%" style="color: #6B7280;">Data de Conclusão:</td>
-              <td style="color: #111827;">${escapeHtml(completionTimestamp)}</td>
-            </tr>
-            <tr>
-              <td style="color: #6B7280;">Onde conheceu:</td>
-              <td style="color: #111827;">${escapeHtml(String(heardFrom))} ${referral !== 'Nenhuma' ? `(Indicação: ${escapeHtml(String(referral))})` : ''}</td>
-            </tr>
-            <tr>
-              <td style="color: #6B7280;">Cupom Aplicado:</td>
-              <td style="color: #111827;">${escapeHtml(String(promo))}</td>
-            </tr>
-            <tr>
-              <td style="color: #6B7280;">Campanha / UTMs:</td>
-              <td style="color: #4B5563;">${escapeHtml(utms)}</td>
-            </tr>
-          </table>
-        </div>
-
-        <!-- CTA Principal -->
-        <div style="text-align: center; margin-top: 28px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
-          <a href="${escapeHtml(leadUrl)}" target="_blank" style="display: inline-block; padding: 14px 28px; background-color: #065F46; color: #FFFFFF; text-decoration: none; font-size: 15px; font-weight: 700; border-radius: 6px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">Abrir Matrícula no EDS HUB &rarr;</a>
-          <p style="margin: 10px 0 0 0; font-size: 12px; color: #9CA3AF;">Acesso restrito para administradores autenticados.</p>
-        </div>
-      </td>
-    </tr>
-
-    <!-- Footer -->
-    <tr>
-      <td style="background-color: #F9FAFB; padding: 16px 32px; text-align: center; font-size: 12px; color: #9CA3AF; border-top: 1px solid #E5E7EB;">
-        Esta é uma notificação interna oficial do sistema EDS HUB. Não envie este e-mail ao aluno.
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-
-  const text = `MATRÍCULA CONCLUÍDA — EXPERT DENTAL SOLUTIONS
-=============================================
+  const text = `NOVA MATRÍCULA CONCLUÍDA - EDS HUB
+========================================
 Aluno: ${fullName}
 Curso: ${courseTitle}
-Turma: ${turma}
-Status: Concluída
-Termos Aceitos: ${termsAccepted}
-Concluído em: ${completionTimestamp}
-
-CONTATO:
+Turma: ${turmaDisplay}
 Email: ${email}
 Telefone: ${phone}
-
-PERFIL PROFISSIONAL:
-Especialidade: ${specialty}
-Anos de Prática: ${experience}
-Cirúrgica: ${surgicalExp}
-AGD/PACE: ${agd}
-
-MARKETING & ORIGEM:
-Onde conheceu: ${heardFrom} (Indicação: ${referral})
-Cupom: ${promo}
-UTMs: ${utms}
+Data: ${completionTimestamp}
 
 Acessar Documentos Seguros: ${documentsUrl}
 Abrir Registro Completo no EDS HUB: ${leadUrl}
@@ -644,6 +812,7 @@ Abrir Registro Completo no EDS HUB: ${leadUrl}
 
   return { subject, html, text };
 }
+
 
 /**
  * Queues or updates an incomplete registration attempt in internal_notification_logs.
@@ -793,6 +962,40 @@ export async function processPendingAbandonedEnrollments(
       (row.idempotency_key?.startsWith('internal_email:attempt:')
         ? row.idempotency_key.replace('internal_email:attempt:', '')
         : null);
+
+    // 1.1 Check if an immediate alert (e.g. failed submission) was already sent for this attempt
+    let alertAlreadySent = false;
+    if (extAttemptId) {
+      try {
+        let qSent = db
+          .from('internal_notification_logs')
+          .select('id')
+          .eq('event_type', 'incomplete_registration')
+          .eq('status', 'sent');
+        if (typeof qSent?.or === 'function') {
+          qSent = qSent.or(`idempotency_key.ilike.%fail_${extAttemptId}%,payload_snapshot->>external_attempt_id.eq.${extAttemptId}`);
+        } else if (typeof qSent?.eq === 'function') {
+          qSent = qSent.eq('idempotency_key', `internal_email:attempt:fail_${extAttemptId}_1`);
+        }
+        if (typeof qSent?.limit === 'function') qSent = qSent.limit(1);
+        const { data: sentFails } = await qSent;
+        if (sentFails && sentFails.length > 0) {
+          alertAlreadySent = true;
+        }
+      } catch (_sentErr) {}
+    }
+
+    if (alertAlreadySent) {
+      await db
+        .from('internal_notification_logs')
+        .update({
+          status: 'skipped',
+          error_message: 'Skipped duplicate: immediate alert already sent for this attempt',
+        })
+        .eq('id', row.id);
+      skipped++;
+      continue;
+    }
 
     // 2. Check form_submissions by attempt ID
     if (!isCompleted && extAttemptId) {
@@ -1013,34 +1216,89 @@ export async function sendInternalEnrollmentNotification(
     };
   }
 
+  const isFailedSubmit = payload.status === 'submission_failed';
+  const isImmediate = options?.immediate === true || isFailedSubmit;
+
   // If immediate mode is not requested, use the inactivity lifecycle queue
-  if (!options?.immediate) {
-    const queueRes = await queueOrUpdateIncompleteEnrollmentNotification(db, payload, options?.inactivityMinutes ?? 15);
+  if (!isImmediate) {
+    const queueRes = await queueOrUpdateIncompleteEnrollmentNotification(db, payload, options?.inactivityMinutes ?? 10);
     const recipients = await resolveInternalRecipients(db);
     return {
       success: queueRes.success,
       duplicate: queueRes.duplicate,
       recipients: queueRes.status === 'pending' ? recipients : [],
-      subject: `Tentativa de matrícula — ${payload.lead_name || 'Lead'} — ${payload.course_name || 'Curso'}`,
+      subject: formatEdsSubject('[EDS] Matrícula não concluída', payload.lead_name, payload.course_name),
     };
   }
 
   // IMMEDIATE DISPATCH MODE:
-  // 1. Idempotency Check in public.internal_notification_logs
+  // 1. Idempotency & Throttling Check in public.internal_notification_logs
   const { data: existingLog } = await db
     .from('internal_notification_logs')
-    .select('id, status, provider_message_id, recipient_emails, subject')
+    .select('id, status, provider_message_id, recipient_emails, subject, sent_at, payload_snapshot')
     .eq('idempotency_key', idempotency_key)
     .maybeSingle();
 
   if (existingLog && (existingLog.status === 'sent' || existingLog.status === 'pending')) {
-    return {
-      success: true,
-      duplicate: true,
-      message_id: existingLog.provider_message_id,
-      recipients: existingLog.recipient_emails || [],
-      subject: existingLog.subject || '',
-    };
+    const sentTime = existingLog.sent_at ? new Date(existingLog.sent_at).getTime() : 0;
+    const nowTime = Date.now();
+    const isThrottled = (nowTime - sentTime) < 5 * 60 * 1000;
+
+    if (existingLog.status === 'sent' && isThrottled) {
+      try {
+        await db.from('internal_notification_logs').update({
+          payload_snapshot: {
+            ...(existingLog.payload_snapshot || {}),
+            ...(payload.raw_payload || {}),
+            submit_attempt_count: payload.submit_attempt_count || existingLog.payload_snapshot?.submit_attempt_count,
+            last_failed_submission_at: new Date().toISOString(),
+          },
+          last_activity_at: new Date().toISOString(),
+        }).eq('id', existingLog.id);
+      } catch (_snapErr) {}
+
+      return {
+        success: true,
+        duplicate: true,
+        skipped: true,
+        message_id: existingLog.provider_message_id,
+        recipients: existingLog.recipient_emails || [],
+        subject: existingLog.subject || '',
+      };
+    }
+
+    if (existingLog.status === 'pending') {
+      return {
+        success: true,
+        duplicate: true,
+        message_id: existingLog.provider_message_id,
+        recipients: existingLog.recipient_emails || [],
+        subject: existingLog.subject || '',
+      };
+    }
+  }
+
+  // 1.1 When an immediate failed submission notification is sent:
+  // Cancel any pending abandonment record for the same attempt to prevent double notification
+  const extAttemptId = payload.external_attempt_id || (payload.raw_payload?.external_attempt_id as string);
+  if (isFailedSubmit && (extAttemptId || attempt_id)) {
+    try {
+      let cancelQ = db
+        .from('internal_notification_logs')
+        .update({
+          status: 'skipped',
+          error_message: 'Subsumed by immediate failed submission notification',
+        })
+        .eq('event_type', 'incomplete_registration')
+        .eq('status', 'pending');
+
+      if (extAttemptId) {
+        cancelQ = cancelQ.or(`idempotency_key.eq.internal_email:attempt:${extAttemptId},idempotency_key.eq.internal_email:attempt:inact_${extAttemptId}`);
+      } else if (attempt_id) {
+        cancelQ = cancelQ.eq('attempt_id', attempt_id);
+      }
+      await cancelQ;
+    } catch (_cErr) {}
   }
 
   // 2. Resolve internal recipients
@@ -1132,16 +1390,22 @@ export async function sendInternalEnrollmentNotification(
   // 8. Log internal activity on lead if available
   if (lead_id && hasSuccess) {
     try {
+      const summaryMsg = isFailedSubmit
+        ? `Alerta imediato de falha no envio de matrícula enviado para: ${recipients.join(', ')}`
+        : `Alerta interno de tentativa de matrícula enviado para: ${recipients.join(', ')}`;
       await db.from('lead_activities').insert({
         lead_id,
         activity_type: 'internal_notification_sent',
         actor_type: 'system',
-        summary: `Alerta interno de tentativa de matrícula enviado para: ${recipients.join(', ')}`,
+        summary: summaryMsg,
         metadata: {
           event_type,
           idempotency_key,
           recipients,
           provider_message_id: primaryMessageId,
+          status: payload.status,
+          failure_category: payload.failure_category,
+          attempt_count: payload.submit_attempt_count,
         },
       });
     } catch (_actErr) {
@@ -1192,7 +1456,7 @@ export function buildContactUsEmail(
     (payload.raw_payload?.name as string) ||
     'Lead';
 
-  const subject = `Novo Contact Us — ${fullName}`;
+  const subject = formatEdsSubject('[EDS] Novo contato pelo site', fullName);
   const nowPtBr = formatDatePtBr(new Date().toISOString());
 
   // Dynamic rendering of all safe submitted fields
@@ -1211,17 +1475,16 @@ export function buildContactUsEmail(
     'idempotency_key',
     'external_attempt_id',
     '_hp_company',
-    'message', // Rendered prominently in its dedicated callout
+    'message',
   ]);
 
   const raw = payload.raw_payload || {};
-  const dynamicFieldRows: Array<{ label: string; value: string }> = [];
+  const dynamicFieldRows: EdsEmailSectionRow[] = [];
 
   for (const [key, rawVal] of Object.entries(raw)) {
     if (EXCLUDED_KEYS.has(key)) continue;
     if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') continue;
 
-    // Format label: replace underscores with spaces and capitalize
     const formattedLabel = key
       .replace(/_/g, ' ')
       .replace(/\b\w/g, (char) => char.toUpperCase());
@@ -1234,152 +1497,61 @@ export function buildContactUsEmail(
 
   const visitorMessage = payload.message || (raw.message as string) || '';
 
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(subject)}</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 24px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); max-width: 600px; width: 100%;">
-          <!-- Header -->
-          <tr>
-            <td style="background-color: #08254f; padding: 24px 32px; text-align: left;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td>
-                    <h1 style="color: #ffffff; font-size: 20px; font-weight: 700; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                      Expert Dental Solutions
-                    </h1>
-                    <p style="color: #449bd5; font-size: 13px; font-weight: 600; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">
-                      Novo Formulário Fale Conosco (Contact Us)
-                    </p>
-                  </td>
-                  <td align="right">
-                    <span style="background-color: rgba(68, 155, 213, 0.2); color: #ffffff; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 9999px; border: 1px solid rgba(68, 155, 213, 0.4);">
-                      Website Contact
-                    </span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+  const sections: EdsEmailSection[] = [
+    {
+      title: 'Dados do Contato',
+      rows: [
+        { label: 'Nome Completo', value: fullName },
+        { label: 'E-mail', value: payload.email || 'Não informado', isLink: Boolean(payload.email), href: payload.email ? `mailto:${payload.email}` : undefined },
+        { label: 'Telefone', value: payload.phone || 'Não informado' },
+        { label: 'Data do Envio', value: nowPtBr },
+      ],
+    },
+    {
+      title: 'Mensagem do Visitante',
+      calloutHtml: `<div style="background-color: #f8fafc; border-left: 4px solid #08254f; padding: 14px 16px; border-radius: 6px; font-size: 14px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; word-break: break-word;">${escapeHtml(visitorMessage || 'Nenhuma mensagem escrita.')}</div>`,
+    },
+  ];
 
-          <!-- Notice Banner -->
-          <tr>
-            <td style="background-color: #f8fafc; padding: 16px 32px; border-bottom: 1px solid #e2e8f0;">
-              <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.5;">
-                Um visitante enviou uma mensagem através do formulário de contato no site oficial.
-              </p>
-            </td>
-          </tr>
+  if (dynamicFieldRows.length > 0) {
+    sections.push({
+      title: 'Formulário Enviado (Campos Adicionais)',
+      rows: dynamicFieldRows,
+    });
+  }
 
-          <!-- Content Body -->
-          <tr>
-            <td style="padding: 24px 32px;">
-              <!-- 1. Dados do Contato -->
-              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 0 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
-                1. Dados do Contato
-              </h2>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="6" style="margin-bottom: 20px; font-size: 13px;">
-                <tr>
-                  <td width="35%" style="color: #64748b; font-weight: 600;">Nome Completo:</td>
-                  <td width="65%" style="color: #0f172a; font-weight: 700;">${escapeHtml(fullName)}</td>
-                </tr>
-                <tr>
-                  <td style="color: #64748b; font-weight: 600;">Email:</td>
-                  <td style="color: #0f172a;"><a href="mailto:${escapeHtml(payload.email || '')}" style="color: #0284c7; text-decoration: none;">${escapeHtml(payload.email || 'Não informado')}</a></td>
-                </tr>
-                <tr>
-                  <td style="color: #64748b; font-weight: 600;">Telefone:</td>
-                  <td style="color: #0f172a;">${escapeHtml(payload.phone || 'Não informado')}</td>
-                </tr>
-                <tr>
-                  <td style="color: #64748b; font-weight: 600;">Data do Envio:</td>
-                  <td style="color: #0f172a;">${escapeHtml(nowPtBr)}</td>
-                </tr>
-              </table>
+  const utmRows: EdsEmailSectionRow[] = [
+    { label: 'Origem', value: 'Website (Formulário Fale Conosco / Contact Us)' },
+    { label: 'Página', value: payload.source_page || 'https://www.expdentalsolutions.com/contact' },
+  ];
+  if (payload.utm_source) utmRows.push({ label: 'UTM Source', value: payload.utm_source });
+  if (payload.utm_medium) utmRows.push({ label: 'UTM Medium', value: payload.utm_medium });
+  if (payload.utm_campaign) utmRows.push({ label: 'UTM Campaign', value: payload.utm_campaign });
+  if (payload.utm_term) utmRows.push({ label: 'UTM Term', value: payload.utm_term });
+  if (payload.utm_content) utmRows.push({ label: 'UTM Content', value: payload.utm_content });
 
-              <!-- 2. Mensagem do Visitante -->
-              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 20px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
-                2. Mensagem
-              </h2>
-              <div style="background-color: #f8fafc; border-left: 4px solid #08254f; padding: 16px; border-radius: 6px; font-size: 14px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; word-break: break-word; margin-bottom: 20px;">${escapeHtml(visitorMessage || 'Nenhuma mensagem escrita.')}</div>
+  sections.push({
+    title: 'Origem e Rastreamento',
+    rows: utmRows,
+  });
 
-              <!-- 3. Formulário Enviado (Campos Adicionais) -->
-              ${
-                dynamicFieldRows.length > 0
-                  ? `
-              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 20px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
-                3. Formulário Enviado (Campos Adicionais)
-              </h2>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="6" style="margin-bottom: 20px; font-size: 13px; background-color: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
-                ${dynamicFieldRows
-                  .map(
-                    (row) => `<tr>
-                  <td width="40%" style="color: #64748b; font-weight: 600; border-bottom: 1px solid #e2e8f0;">${escapeHtml(row.label)}:</td>
-                  <td width="60%" style="color: #0f172a; border-bottom: 1px solid #e2e8f0;">${escapeHtml(row.value)}</td>
-                </tr>`
-                  )
-                  .join('')}
-              </table>`
-                  : ''
-              }
+  const html = renderEdsEmailHtml({
+    subject,
+    eventTitle: 'Novo contato pelo site',
+    eventBadgeText: 'Website Contact',
+    badgeStyle: { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd' },
+    accentColor: '#08254f',
+    leadName: fullName,
+    leadSubheading: 'Novo formulário de contato recebido',
+    sections,
+    ctaButton: {
+      label: 'Abrir lead no EDS HUB',
+      url: leadUrl,
+    },
+    footerNotice: 'Notificação operacional automática do CRM EDS HUB.',
+  });
 
-              <!-- 4. Origem e Rastreamento UTM -->
-              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 20px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
-                4. Origem / UTMs
-              </h2>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="6" style="margin-bottom: 24px; font-size: 13px;">
-                <tr>
-                  <td width="35%" style="color: #64748b; font-weight: 600;">Canal:</td>
-                  <td width="65%" style="color: #0f172a;">Website (Formulário Fale Conosco / Contact Us)</td>
-                </tr>
-                <tr>
-                  <td style="color: #64748b; font-weight: 600;">Página:</td>
-                  <td style="color: #0f172a; word-break: break-all;">${escapeHtml(payload.source_page || 'https://www.expdentalsolutions.com/contact')}</td>
-                </tr>
-                ${payload.utm_source ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Source:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_source)}</td></tr>` : ''}
-                ${payload.utm_medium ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Medium:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_medium)}</td></tr>` : ''}
-                ${payload.utm_campaign ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Campaign:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_campaign)}</td></tr>` : ''}
-                ${payload.utm_term ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Term:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_term)}</td></tr>` : ''}
-                ${payload.utm_content ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Content:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_content)}</td></tr>` : ''}
-              </table>
-
-              <!-- 5. CTA Button -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 28px 0 12px 0;">
-                <tr>
-                  <td align="center">
-                    <a href="${escapeHtml(leadUrl)}" target="_blank" style="background-color: #08254f; color: #ffffff; padding: 14px 32px; border-radius: 8px; font-size: 14px; font-weight: 700; text-decoration: none; display: inline-block; box-shadow: 0 2px 4px rgba(8, 37, 79, 0.2);">
-                      Abrir lead no EDS HUB &rarr;
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f8fafc; padding: 16px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
-              <p style="margin: 0; font-size: 11px; color: #94a3b8; line-height: 1.4;">
-                Este é um alerta operacional interno do EDS HUB gerado automaticamente.<br>
-                Não responda diretamente a este e-mail. Utilize os canais oficiais do CRM.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-
-  const text = `NOVO CONTACT US RECEBIDO - EDS HUB
+  const text = `NOVO CONTATO PELO SITE - EDS HUB
 -----------------------------------------
 Nome: ${fullName}
 Email: ${payload.email || 'Não informado'}
@@ -1400,6 +1572,7 @@ ${leadUrl}
 
   return { subject, html, text };
 }
+
 
 export async function sendInternalContactNotification(
   db: any,
@@ -1423,7 +1596,7 @@ export async function sendInternalContactNotification(
       sent: 0,
       message_id: existingLog.provider_message_id,
       recipients: existingLog.recipient_emails || [],
-      subject: existingLog.subject || 'Novo Contact Us',
+      subject: existingLog.subject || formatEdsSubject('[EDS] Novo contato pelo site', payload.lead_name),
     };
   }
 
@@ -1433,7 +1606,7 @@ export async function sendInternalContactNotification(
     return {
       success: false,
       recipients: [],
-      subject: 'Novo Contact Us',
+      subject: formatEdsSubject('[EDS] Novo contato pelo site', payload.lead_name),
       error: 'No active internal administrative recipients resolved',
     };
   }
@@ -1582,16 +1755,16 @@ export function buildCourseInfoEmail(
     (payload.raw_payload?.name as string) ||
     'Lead';
 
-  const courseTitle =
+  const rawCourse =
     payload.course ||
     (payload.raw_payload?.course_interest as string) ||
     (payload.raw_payload?.course as string) ||
-    'Curso';
+    '';
+  const courseTitle = resolveCanonicalCourseName(rawCourse);
 
-  const subject = `Request Course Information — ${fullName} — ${courseTitle}`;
+  const subject = formatEdsSubject('[EDS] Pedido de informações', fullName, courseTitle);
   const nowPtBr = formatDatePtBr(new Date().toISOString());
 
-  // Dynamic rendering of all safe submitted fields
   const EXCLUDED_KEYS = new Set([
     '_token',
     'csrf',
@@ -1607,17 +1780,16 @@ export function buildCourseInfoEmail(
     'idempotency_key',
     'external_attempt_id',
     '_hp_company',
-    'message', // Rendered in dedicated callout
+    'message',
   ]);
 
   const raw = payload.raw_payload || {};
-  const dynamicFieldRows: Array<{ label: string; value: string }> = [];
+  const dynamicFieldRows: EdsEmailSectionRow[] = [];
 
   for (const [key, rawVal] of Object.entries(raw)) {
     if (EXCLUDED_KEYS.has(key)) continue;
     if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') continue;
 
-    // Format label: replace underscores with spaces and capitalize
     const formattedLabel = key
       .replace(/_/g, ' ')
       .replace(/\b\w/g, (char) => char.toUpperCase());
@@ -1630,165 +1802,75 @@ export function buildCourseInfoEmail(
 
   const visitorMessage = payload.message || (raw.message as string) || '';
 
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(subject)}</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 24px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); max-width: 600px; width: 100%;">
-          <!-- Header -->
-          <tr>
-            <td style="background-color: #08254f; padding: 24px 32px; text-align: left;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td>
-                    <h1 style="color: #ffffff; font-size: 20px; font-weight: 700; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                      Expert Dental Solutions
-                    </h1>
-                    <p style="color: #449bd5; font-size: 13px; font-weight: 600; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">
-                      Solicitação de Informações de Curso (Course Information)
-                    </p>
-                  </td>
-                  <td align="right">
-                    <span style="background-color: rgba(68, 155, 213, 0.2); color: #ffffff; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 9999px; border: 1px solid rgba(68, 155, 213, 0.4);">
-                      Course Info
-                    </span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+  const sections: EdsEmailSection[] = [
+    {
+      title: 'Dados do Contato',
+      rows: [
+        { label: 'Nome Completo', value: fullName },
+        { label: 'E-mail', value: payload.email || 'Não informado', isLink: Boolean(payload.email), href: payload.email ? `mailto:${payload.email}` : undefined },
+        { label: 'Telefone', value: payload.phone || 'Não informado' },
+        { label: 'Data da Solicitação', value: nowPtBr },
+      ],
+    },
+    {
+      title: 'Curso de Interesse',
+      rows: [
+        { label: 'Curso', value: courseTitle || 'Não especificado' },
+        { label: 'Status do Lead', value: 'Novo Lead / Aguardando Atendimento' },
+      ],
+    },
+  ];
 
-          <!-- Notice Banner -->
-          <tr>
-            <td style="background-color: #f8fafc; padding: 16px 32px; border-bottom: 1px solid #e2e8f0;">
-              <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.5;">
-                Um visitante solicitou informações sobre o curso <strong>${escapeHtml(courseTitle)}</strong> através do site oficial.
-              </p>
-            </td>
-          </tr>
+  if (visitorMessage) {
+    sections.push({
+      title: 'Mensagem do Interessado',
+      calloutHtml: `<div style="background-color: #f8fafc; border-left: 4px solid #08254f; padding: 14px 16px; border-radius: 6px; font-size: 14px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; word-break: break-word;">${escapeHtml(visitorMessage)}</div>`,
+    });
+  }
 
-          <!-- Content Body -->
-          <tr>
-            <td style="padding: 24px 32px;">
-              <!-- 1. Dados do Contato & Curso -->
-              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 0 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
-                1. Dados do Contato &amp; Curso
-              </h2>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="6" style="margin-bottom: 20px; font-size: 13px;">
-                <tr>
-                  <td width="35%" style="color: #64748b; font-weight: 600;">Nome Completo:</td>
-                  <td width="65%" style="color: #0f172a; font-weight: 700;">${escapeHtml(fullName)}</td>
-                </tr>
-                <tr>
-                  <td style="color: #64748b; font-weight: 600;">Curso Solicitado:</td>
-                  <td style="color: #0284c7; font-weight: 700;">${escapeHtml(courseTitle)}</td>
-                </tr>
-                <tr>
-                  <td style="color: #64748b; font-weight: 600;">Email:</td>
-                  <td style="color: #0f172a;"><a href="mailto:${escapeHtml(payload.email || '')}" style="color: #0284c7; text-decoration: none;">${escapeHtml(payload.email || 'Não informado')}</a></td>
-                </tr>
-                <tr>
-                  <td style="color: #64748b; font-weight: 600;">Telefone:</td>
-                  <td style="color: #0f172a;">${escapeHtml(payload.phone || 'Não informado')}</td>
-                </tr>
-                <tr>
-                  <td style="color: #64748b; font-weight: 600;">Data do Envio:</td>
-                  <td style="color: #0f172a;">${escapeHtml(nowPtBr)}</td>
-                </tr>
-              </table>
+  if (dynamicFieldRows.length > 0) {
+    sections.push({
+      title: 'Formulário Enviado (Campos Adicionais)',
+      rows: dynamicFieldRows,
+    });
+  }
 
-              <!-- 2. Mensagem do Visitante (se houver) -->
-              ${
-                visitorMessage
-                  ? `
-              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 20px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
-                2. Mensagem
-              </h2>
-              <div style="background-color: #f8fafc; border-left: 4px solid #08254f; padding: 16px; border-radius: 6px; font-size: 14px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; word-break: break-word; margin-bottom: 20px;">${escapeHtml(visitorMessage)}</div>
-              `
-                  : ''
-              }
+  const utmRows: EdsEmailSectionRow[] = [
+    { label: 'Origem', value: 'Website (Request Course Information)' },
+    { label: 'Página', value: payload.source_page || 'https://www.expdentalsolutions.com/request-course-information' },
+  ];
+  if (payload.utm_source) utmRows.push({ label: 'UTM Source', value: payload.utm_source });
+  if (payload.utm_medium) utmRows.push({ label: 'UTM Medium', value: payload.utm_medium });
+  if (payload.utm_campaign) utmRows.push({ label: 'UTM Campaign', value: payload.utm_campaign });
+  if (payload.utm_term) utmRows.push({ label: 'UTM Term', value: payload.utm_term });
+  if (payload.utm_content) utmRows.push({ label: 'UTM Content', value: payload.utm_content });
 
-              <!-- 3. Formulário Enviado (Campos Adicionais) -->
-              ${
-                dynamicFieldRows.length > 0
-                  ? `
-              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 20px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
-                3. Formulário Enviado (Campos Adicionais)
-              </h2>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="6" style="margin-bottom: 20px; font-size: 13px; background-color: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
-                ${dynamicFieldRows
-                  .map(
-                    (row) => `<tr>
-                  <td width="40%" style="color: #64748b; font-weight: 600; border-bottom: 1px solid #e2e8f0;">${escapeHtml(row.label)}:</td>
-                  <td width="60%" style="color: #0f172a; border-bottom: 1px solid #e2e8f0;">${escapeHtml(row.value)}</td>
-                </tr>`
-                  )
-                  .join('')}
-              </table>`
-                  : ''
-              }
+  sections.push({
+    title: 'Origem e Atribuição',
+    rows: utmRows,
+  });
 
-              <!-- 4. Origem e Rastreamento UTM -->
-              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 20px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
-                4. Origem / UTMs
-              </h2>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="6" style="margin-bottom: 24px; font-size: 13px;">
-                <tr>
-                  <td width="35%" style="color: #64748b; font-weight: 600;">Canal:</td>
-                  <td width="65%" style="color: #0f172a;">Website (Request Course Information)</td>
-                </tr>
-                <tr>
-                  <td style="color: #64748b; font-weight: 600;">Página:</td>
-                  <td style="color: #0f172a; word-break: break-all;">${escapeHtml(payload.source_page || 'https://www.expdentalsolutions.com/request-course-information')}</td>
-                </tr>
-                ${payload.utm_source ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Source:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_source)}</td></tr>` : ''}
-                ${payload.utm_medium ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Medium:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_medium)}</td></tr>` : ''}
-                ${payload.utm_campaign ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Campaign:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_campaign)}</td></tr>` : ''}
-                ${payload.utm_term ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Term:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_term)}</td></tr>` : ''}
-                ${payload.utm_content ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Content:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_content)}</td></tr>` : ''}
-              </table>
+  const html = renderEdsEmailHtml({
+    subject,
+    eventTitle: 'Novo pedido de informações sobre curso',
+    eventBadgeText: 'Informações de Curso',
+    badgeStyle: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
+    accentColor: '#08254f',
+    leadName: fullName,
+    leadSubheading: 'Solicitação de informações de curso recebida',
+    courseTitle,
+    sections,
+    ctaButton: {
+      label: 'Abrir lead no EDS HUB',
+      url: leadUrl,
+    },
+    footerNotice: 'Notificação operacional automática do CRM EDS HUB.',
+  });
 
-              <!-- 5. CTA Button -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 28px 0 12px 0;">
-                <tr>
-                  <td align="center">
-                    <a href="${escapeHtml(leadUrl)}" target="_blank" style="background-color: #08254f; color: #ffffff; padding: 14px 32px; border-radius: 8px; font-size: 14px; font-weight: 700; text-decoration: none; display: inline-block; box-shadow: 0 2px 4px rgba(8, 37, 79, 0.2);">
-                      Abrir lead no EDS HUB &rarr;
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f8fafc; padding: 16px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
-              <p style="margin: 0; font-size: 11px; color: #94a3b8; line-height: 1.4;">
-                Este é um alerta operacional interno do EDS HUB gerado automaticamente.<br>
-                Não responda diretamente a este e-mail. Utilize os canais oficiais do CRM.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-
-  const text = `REQUEST COURSE INFORMATION - EDS HUB
+  const text = `PEDIDO DE INFORMAÇÕES SOBRE CURSO - EDS HUB
 -----------------------------------------
 Nome: ${fullName}
-Curso: ${courseTitle}
+Curso: ${courseTitle || 'Não especificado'}
 Email: ${payload.email || 'Não informado'}
 Telefone: ${payload.phone || 'Não informado'}
 Data: ${nowPtBr}
@@ -1804,6 +1886,7 @@ ${leadUrl}
 
   return { subject, html, text };
 }
+
 
 export async function sendInternalCourseInfoNotification(
   db: any,
@@ -1827,7 +1910,7 @@ export async function sendInternalCourseInfoNotification(
       sent: 0,
       message_id: existingLog.provider_message_id,
       recipients: existingLog.recipient_emails || [],
-      subject: existingLog.subject || 'Request Course Information',
+      subject: existingLog.subject || formatEdsSubject('[EDS] Pedido de informações', payload.lead_name, payload.course),
     };
   }
 
@@ -1837,7 +1920,7 @@ export async function sendInternalCourseInfoNotification(
     return {
       success: false,
       recipients: [],
-      subject: 'Request Course Information',
+      subject: formatEdsSubject('[EDS] Pedido de informações', payload.lead_name, payload.course),
       error: 'No active internal administrative recipients resolved',
     };
   }

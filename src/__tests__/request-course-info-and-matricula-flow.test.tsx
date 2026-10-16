@@ -260,7 +260,7 @@ describe('Consolidated Task: Request Course Info & Completed Registration Matrí
       const email = buildCourseInfoEmail(payload, 'https://hub.expdentalsolutions.com/leads/lead_99999');
 
       // 1. Subject format
-      expect(email.subject).toBe('Request Course Information — Dr. Bruce Wayne <script>alert(1)</script> — Advanced Dental Implant Experience');
+      expect(email.subject).toBe('[EDS] Pedido de informações — Dr. Bruce Wayne <script>alert(1)</script> — Advanced Dental Implant Experience');
 
       // 2. Safe HTML escaping
       expect(email.html).not.toContain('<script>alert(1)</script>');

@@ -530,7 +530,7 @@ describe('Hardened Internal Enrollment Notification Architecture', () => {
       },
     }, 'https://hub.expdentalsolutions.com/leads/lead-123');
 
-    expect(emailData.subject).toBe('Tentativa de matrícula — Dr. Visual Check — Advanced Implant Training');
+    expect(emailData.subject).toBe('[EDS] Matrícula não concluída — Dr. Visual Check — Advanced Implant Training');
     expect(emailData.html).toContain('Dr. Visual Check');
     expect(emailData.html).toContain('Periodontist');
     expect(emailData.html).toContain('5-9 years');
@@ -700,7 +700,7 @@ describe('Hardened Internal Enrollment Notification Architecture', () => {
       const result = await sendInternalContactNotification(mockDb, contactPayload);
       expect(result.success).toBe(true);
       expect(result.sent).toBe(2); // 2 active admins
-      expect(result.subject).toBe('Novo Contact Us — Dr. Contact Tester');
+      expect(result.subject).toBe('[EDS] Novo contato pelo site — Dr. Contact Tester');
 
       // Verify email was logged to internal_notification_logs
       const savedLog = mockLogs.get('internal_email:contact:sub-contact-uuid-001');

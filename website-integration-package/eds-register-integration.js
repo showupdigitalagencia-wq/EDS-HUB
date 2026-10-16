@@ -241,12 +241,79 @@
       } catch (_e) {}
     };
 
-    // 5. Report Failed Submission to EDS HUB (for proactive alerts)
-    window.reportEdsHubSubmissionFailure = function (errorCode, errorMessage) {
+    // Track factual submission attempt count across the session
+    function getSubmitAttemptCount() {
+      var key = 'eds_submit_attempt_count_' + attemptId;
+      var count = 0;
+      try {
+        count = parseInt(sessionStorage.getItem(key) || '0', 10);
+      } catch (_e) {
+        count = 0;
+      }
+      count += 1;
+      try {
+        sessionStorage.setItem(key, String(count));
+      } catch (_e) {}
+      return count;
+    }
+
+    // Categorize failure reason without exposing technical stack traces
+    function resolveFailureCategory(errorCode, errorDetails) {
+      var code = String(errorCode || '').toUpperCase();
+      if (code.includes('413') || code.includes('UPLOAD_TOO_LARGE')) {
+        return 'Upload error';
+      }
+      if (code.includes('NETWORK')) {
+        return 'Network/server error';
+      }
+      if (code.includes('CAPTCHA')) {
+        return 'Captcha inválido';
+      }
+
+      // Check missing attachments on form DOM
+      var passportInput = form.querySelector('input[name="passport"]');
+      var licenseInput = form.querySelector('input[name="dental_license"]');
+      var hasPassport = passportInput && passportInput.files && passportInput.files.length > 0;
+      var hasLicense = licenseInput && licenseInput.files && licenseInput.files.length > 0;
+
+      // Check details object if passed from Laravel response
+      if (errorDetails && typeof errorDetails === 'object') {
+        var errKeys = Object.keys(errorDetails);
+        if (errKeys.indexOf('passport') !== -1 && !hasPassport) return 'Passport ausente';
+        if (errKeys.indexOf('dental_license') !== -1 && !hasLicense) return 'Dental License ausente';
+        if (errKeys.indexOf('g-recaptcha-response') !== -1) return 'Captcha inválido';
+        if (errKeys.length > 0) return 'Campos obrigatórios ausentes';
+      }
+
+      if (!hasPassport && !hasLicense) return 'Campos obrigatórios ausentes';
+      if (!hasPassport) return 'Passport ausente';
+      if (!hasLicense) return 'Dental License ausente';
+
+      if (code.includes('422') || code.includes('VALIDATION')) {
+        return 'Validation error';
+      }
+      if (code.includes('SERVER')) {
+        return 'Network/server error';
+      }
+      return 'Validation error';
+    }
+
+    // 5. Report Failed Submission to EDS HUB (for immediate alerts)
+    window.reportEdsHubSubmissionFailure = function (errorCode, errorDetails) {
       var emailEl = form.querySelector('input[name="email"]');
       var phoneEl = form.querySelector('input[name="phone"]');
       var courseEl = form.querySelector('select[name="course"]');
       var nameEl = form.querySelector('input[name="name"]');
+      var emergencyPhoneEl = form.querySelector('input[name="emergency_phone"]');
+      var certNameEl = form.querySelector('input[name="certificate_name"]');
+      var agdEl = form.querySelector('input[name="agd_number"]');
+      var specialtyEl = form.querySelector('select[name="specialty"]');
+      var yearsEl = form.querySelector('select[name="years_in_practice"]');
+      var surgicalEl = form.querySelector('select[name="surgical_experience"]');
+      var coatEl = form.querySelector('input[name="coat_size"]');
+      var heardEl = form.querySelector('select[name="heard_from"]');
+      var referralEl = form.querySelector('input[name="referral_name"]');
+      var promoEl = form.querySelector('input[name="promo_code"]');
 
       var email = emailEl ? emailEl.value.trim().toLowerCase() : '';
       var phone = phoneEl ? sanitizePhone(phoneEl.value) : '';
@@ -255,19 +322,40 @@
       var rawCourse = courseEl ? courseEl.value : '';
       var courseCode = resolveCourseCode(rawCourse);
       var names = parseName(nameEl ? nameEl.value : '');
+      var utm = getUtmParams();
+      var attemptCount = getSubmitAttemptCount();
+      var category = resolveFailureCategory(errorCode, errorDetails);
 
       var payload = {
-        idempotency_key: 'fail_' + attemptId + '_' + Date.now(),
+        idempotency_key: 'fail_' + attemptId + '_' + attemptCount,
         external_attempt_id: attemptId,
         first_name: names.first,
         last_name: names.last,
+        name: nameEl ? nameEl.value.trim() : undefined,
         email: email || null,
         phone: phone || null,
+        emergency_phone: emergencyPhoneEl ? sanitizePhone(emergencyPhoneEl.value) : undefined,
         course: rawCourse || undefined,
         course_code: courseCode || null,
+        certificate_name: certNameEl ? certNameEl.value.trim() : undefined,
+        agd_number: agdEl ? agdEl.value.trim() : undefined,
+        specialty: specialtyEl ? specialtyEl.value : undefined,
+        years_in_practice: yearsEl ? yearsEl.value : undefined,
+        surgical_experience: surgicalEl ? surgicalEl.value : undefined,
+        coat_size: coatEl ? coatEl.value.trim() : undefined,
+        heard_from: heardEl ? heardEl.value : undefined,
+        referral_name: referralEl ? referralEl.value.trim() : undefined,
+        promo_code: promoEl ? promoEl.value.trim() : undefined,
         status: 'submission_failed',
+        failure_category: category,
+        submit_attempt_count: attemptCount,
         error_code: String(errorCode || 'SUBMISSION_FAILED').slice(0, 50),
-        source_page: window.location.origin + window.location.pathname
+        source_page: window.location.origin + window.location.pathname,
+        utm_source: utm.utm_source || null,
+        utm_medium: utm.utm_medium || null,
+        utm_campaign: utm.utm_campaign || null,
+        utm_term: utm.utm_term || null,
+        utm_content: utm.utm_content || null
       };
 
       fetch(EDS_CONFIG.INCOMPLETE_URL, {
@@ -277,10 +365,12 @@
           'apikey': EDS_CONFIG.PUBLIC_ANON_KEY
         },
         body: JSON.stringify(payload)
-      }).catch(function () {});
+      }).catch(function (err) {
+        console.warn('[EDS HUB] Notice: Failed submission alert offline/skipped', err);
+      });
     };
 
-    // 6. Send Completed Form to EDS HUB (Used in Option A)
+    // 6. Send Completed Form to EDS HUB (Called strictly upon factual Laravel success)
     window.sendEdsHubCompletedForm = function () {
       var emailEl = form.querySelector('input[name="email"]');
       var phoneEl = form.querySelector('input[name="phone"]');
@@ -350,16 +440,6 @@
         console.warn('[EDS HUB] Notice: Completed form sync skipped', err);
       });
     };
-
-    // 7. Autonomous capture-phase submit listener: guarantees direct intake to EDS HUB
-    // without requiring manual template calls or waiting for third-party scripts.
-    var intakeDispatched = false;
-    form.addEventListener('submit', function (_e) {
-      if (!intakeDispatched) {
-        intakeDispatched = true;
-        window.sendEdsHubCompletedForm();
-      }
-    }, true);
   }
 
   if (document.readyState === 'loading') {
