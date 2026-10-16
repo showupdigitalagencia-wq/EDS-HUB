@@ -12,7 +12,11 @@
 import { corsHeaders, corsResponse } from '../_shared/cors.ts';
 import { createAdminClient } from '../_shared/supabase-client.ts';
 import { resolveCanonicalEmails } from '../_shared/canonical-email-resolver.ts';
-import { sendInternalContactNotification } from '../_shared/internal-enrollment-notifier.ts';
+import {
+  sendInternalContactNotification,
+  sendInternalCourseInfoNotification,
+  resolveCanonicalCourseName,
+} from '../_shared/internal-enrollment-notifier.ts';
 import type { LeadIntakePayload } from '../_shared/types.ts';
 
 const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB limit
@@ -594,6 +598,66 @@ Deno.serve(async (req) => {
         });
       } catch (contactErr) {
         console.warn('[submit-public-form] Internal contact notification notice:', contactErr);
+      }
+    }
+
+    // Dispatch internal notification push & email for successfully submitted Request Course Information forms (Part A)
+    const isWebsiteCourseInfo =
+      slug === 'website-course-info' ||
+      (form.source === 'website' && form.source_detail === 'course_information_request');
+    if (isWebsiteCourseInfo) {
+      const leadFullName =
+        `${fields.first_name || ''} ${fields.last_name || ''}`.trim() ||
+        (fields.name as string) ||
+        'Novo interessado';
+      const courseTitle = resolveCanonicalCourseName(
+        (fields.course as string | undefined) ||
+        (fields.course_interest as string | undefined) ||
+        (fields.course_name as string | undefined) ||
+        (fields.course_id as string | undefined) ||
+        null
+      );
+
+      // A6. Internal Push Notification
+      try {
+        await db.functions.invoke('send-push-notification', {
+          body: {
+            event_type: 'course_information_request',
+            event_id: submissionId,
+            idempotency_key: `course_info_push:${submissionId}`,
+            title: 'Nova solicitação de informações',
+            body: `Nova solicitação de informações — ${leadFullName} — ${courseTitle}`,
+            deep_link: leadId ? `/leads/${leadId}` : '/',
+          },
+        });
+      } catch (pushErr) {
+        console.warn('[submit-public-form] Internal course info push warning:', pushErr);
+      }
+
+      // A7. Immediate Internal Email Notification
+      try {
+        await sendInternalCourseInfoNotification(db, {
+          submission_id: submissionId,
+          lead_id: leadId,
+          idempotency_key: `internal_email:course_info:${submissionId}`,
+          lead_name: leadFullName,
+          first_name: fields.first_name as string | undefined,
+          last_name: fields.last_name as string | undefined,
+          email: rawEmail || (fields.email as string | undefined),
+          phone: phoneE164 || (fields.phone as string | undefined),
+          course: courseTitle,
+          raw_course: (fields.course_id || fields.course || fields.course_interest) as string | undefined,
+          message: fields.message as string | undefined,
+          raw_payload: fields,
+          source_page: (fields.source_page || fields.page_url || req.headers.get('referer')) as string | undefined,
+          utm_source: fields.utm_source as string | undefined,
+          utm_medium: fields.utm_medium as string | undefined,
+          utm_campaign: fields.utm_campaign as string | undefined,
+          utm_term: fields.utm_term as string | undefined,
+          utm_content: fields.utm_content as string | undefined,
+        });
+      } catch (emailErr) {
+        console.warn('[submit-public-form] Internal course info email warning:', emailErr);
       }
     }
 

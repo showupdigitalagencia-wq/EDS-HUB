@@ -720,20 +720,29 @@ export function MinimalLeadCard({
         </div>
       )}
 
-      {/* 4. Course Interests (Canonical Short Names only, deduplicated, without session/date/#) */}
+      {/* 4. Course Interests (Canonical Short Names, plus Turma when factual) */}
       <div className="space-y-1 pt-1 border-t border-slate-100/80">
         {canonicalInterests.length > 0 ? (
-          canonicalInterests.map((interest, idx) => (
-            <div
-              key={idx}
-              className="text-[11px] font-medium text-slate-700 bg-slate-50 hover:bg-slate-100/80 px-2 py-0.5 rounded-md border border-slate-100 truncate flex items-center gap-1.5"
-              title={interest.canonicalName}
-              data-testid="lead-card-course-badge"
-            >
-              <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
-              <span className="truncate">{interest.canonicalName}</span>
-            </div>
-          ))
+          canonicalInterests.map((interest, idx) => {
+            const rawTurma = interest.sessionTitle ? interest.sessionTitle.trim() : '';
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawTurma);
+            const hasValidTurma = rawTurma.length > 0 && !isUuid;
+            const fullDisplay = hasValidTurma
+              ? `${interest.canonicalName} • ${rawTurma}`
+              : interest.canonicalName;
+
+            return (
+              <div
+                key={idx}
+                className="text-[11px] font-medium text-slate-700 bg-slate-50 hover:bg-slate-100/80 px-2 py-0.5 rounded-md border border-slate-100 truncate flex items-center gap-1.5"
+                title={fullDisplay}
+                data-testid="lead-card-course-badge"
+              >
+                <GraduationCap className="h-3 w-3 text-[#449bd5] shrink-0" />
+                <span className="truncate">{fullDisplay}</span>
+              </div>
+            );
+          })
         ) : (
           <div className="text-[10px] text-slate-400 italic px-0.5">
             Sem curso de interesse

@@ -22,7 +22,7 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 });
 
-function createMockLead(overrides: Partial<Lead> = {}): Lead {
+function createMockLead(overrides: Partial<Lead> & Record<string, any> = {}): Lead {
   return {
     id: 'lead-test-uuid',
     first_name: 'Test',

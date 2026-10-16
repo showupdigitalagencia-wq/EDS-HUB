@@ -1551,3 +1551,407 @@ export async function sendInternalContactNotification(
   };
 }
 
+export interface InternalCourseInfoNotificationPayload {
+  submission_id?: string | null;
+  lead_id?: string | null;
+  idempotency_key: string;
+  lead_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  course?: string | null;
+  raw_course?: string | null;
+  message?: string | null;
+  raw_payload?: Record<string, unknown>;
+  source_page?: string | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_term?: string | null;
+  utm_content?: string | null;
+}
+
+export function buildCourseInfoEmail(
+  payload: InternalCourseInfoNotificationPayload,
+  leadUrl: string
+): { subject: string; html: string; text: string } {
+  const fullName =
+    payload.lead_name ||
+    `${payload.first_name || ''} ${payload.last_name || ''}`.trim() ||
+    (payload.raw_payload?.name as string) ||
+    'Lead';
+
+  const courseTitle =
+    payload.course ||
+    (payload.raw_payload?.course_interest as string) ||
+    (payload.raw_payload?.course as string) ||
+    'Curso';
+
+  const subject = `Request Course Information — ${fullName} — ${courseTitle}`;
+  const nowPtBr = formatDatePtBr(new Date().toISOString());
+
+  // Dynamic rendering of all safe submitted fields
+  const EXCLUDED_KEYS = new Set([
+    '_token',
+    'csrf',
+    'g-recaptcha-response',
+    'recaptcha',
+    'password',
+    'token',
+    'formData',
+    'raw_form_data',
+    'form_data',
+    'slug',
+    'form_slug',
+    'idempotency_key',
+    'external_attempt_id',
+    '_hp_company',
+    'message', // Rendered in dedicated callout
+  ]);
+
+  const raw = payload.raw_payload || {};
+  const dynamicFieldRows: Array<{ label: string; value: string }> = [];
+
+  for (const [key, rawVal] of Object.entries(raw)) {
+    if (EXCLUDED_KEYS.has(key)) continue;
+    if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') continue;
+
+    // Format label: replace underscores with spaces and capitalize
+    const formattedLabel = key
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+    dynamicFieldRows.push({
+      label: formattedLabel,
+      value: String(rawVal).trim(),
+    });
+  }
+
+  const visitorMessage = payload.message || (raw.message as string) || '';
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); max-width: 600px; width: 100%;">
+          <!-- Header -->
+          <tr>
+            <td style="background-color: #08254f; padding: 24px 32px; text-align: left;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td>
+                    <h1 style="color: #ffffff; font-size: 20px; font-weight: 700; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                      Expert Dental Solutions
+                    </h1>
+                    <p style="color: #449bd5; font-size: 13px; font-weight: 600; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Solicitação de Informações de Curso (Course Information)
+                    </p>
+                  </td>
+                  <td align="right">
+                    <span style="background-color: rgba(68, 155, 213, 0.2); color: #ffffff; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 9999px; border: 1px solid rgba(68, 155, 213, 0.4);">
+                      Course Info
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Notice Banner -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 16px 32px; border-bottom: 1px solid #e2e8f0;">
+              <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.5;">
+                Um visitante solicitou informações sobre o curso <strong>${escapeHtml(courseTitle)}</strong> através do site oficial.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Content Body -->
+          <tr>
+            <td style="padding: 24px 32px;">
+              <!-- 1. Dados do Contato & Curso -->
+              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 0 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
+                1. Dados do Contato &amp; Curso
+              </h2>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="6" style="margin-bottom: 20px; font-size: 13px;">
+                <tr>
+                  <td width="35%" style="color: #64748b; font-weight: 600;">Nome Completo:</td>
+                  <td width="65%" style="color: #0f172a; font-weight: 700;">${escapeHtml(fullName)}</td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 600;">Curso Solicitado:</td>
+                  <td style="color: #0284c7; font-weight: 700;">${escapeHtml(courseTitle)}</td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 600;">Email:</td>
+                  <td style="color: #0f172a;"><a href="mailto:${escapeHtml(payload.email || '')}" style="color: #0284c7; text-decoration: none;">${escapeHtml(payload.email || 'Não informado')}</a></td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 600;">Telefone:</td>
+                  <td style="color: #0f172a;">${escapeHtml(payload.phone || 'Não informado')}</td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 600;">Data do Envio:</td>
+                  <td style="color: #0f172a;">${escapeHtml(nowPtBr)}</td>
+                </tr>
+              </table>
+
+              <!-- 2. Mensagem do Visitante (se houver) -->
+              ${
+                visitorMessage
+                  ? `
+              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 20px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
+                2. Mensagem
+              </h2>
+              <div style="background-color: #f8fafc; border-left: 4px solid #08254f; padding: 16px; border-radius: 6px; font-size: 14px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; word-break: break-word; margin-bottom: 20px;">${escapeHtml(visitorMessage)}</div>
+              `
+                  : ''
+              }
+
+              <!-- 3. Formulário Enviado (Campos Adicionais) -->
+              ${
+                dynamicFieldRows.length > 0
+                  ? `
+              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 20px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
+                3. Formulário Enviado (Campos Adicionais)
+              </h2>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="6" style="margin-bottom: 20px; font-size: 13px; background-color: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
+                ${dynamicFieldRows
+                  .map(
+                    (row) => `<tr>
+                  <td width="40%" style="color: #64748b; font-weight: 600; border-bottom: 1px solid #e2e8f0;">${escapeHtml(row.label)}:</td>
+                  <td width="60%" style="color: #0f172a; border-bottom: 1px solid #e2e8f0;">${escapeHtml(row.value)}</td>
+                </tr>`
+                  )
+                  .join('')}
+              </table>`
+                  : ''
+              }
+
+              <!-- 4. Origem e Rastreamento UTM -->
+              <h2 style="font-size: 15px; font-weight: 700; color: #08254f; margin: 20px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
+                4. Origem / UTMs
+              </h2>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="6" style="margin-bottom: 24px; font-size: 13px;">
+                <tr>
+                  <td width="35%" style="color: #64748b; font-weight: 600;">Canal:</td>
+                  <td width="65%" style="color: #0f172a;">Website (Request Course Information)</td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 600;">Página:</td>
+                  <td style="color: #0f172a; word-break: break-all;">${escapeHtml(payload.source_page || 'https://www.expdentalsolutions.com/request-course-information')}</td>
+                </tr>
+                ${payload.utm_source ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Source:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_source)}</td></tr>` : ''}
+                ${payload.utm_medium ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Medium:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_medium)}</td></tr>` : ''}
+                ${payload.utm_campaign ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Campaign:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_campaign)}</td></tr>` : ''}
+                ${payload.utm_term ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Term:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_term)}</td></tr>` : ''}
+                ${payload.utm_content ? `<tr><td style="color: #64748b; font-weight: 600;">UTM Content:</td><td style="color: #0f172a;">${escapeHtml(payload.utm_content)}</td></tr>` : ''}
+              </table>
+
+              <!-- 5. CTA Button -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 28px 0 12px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="${escapeHtml(leadUrl)}" target="_blank" style="background-color: #08254f; color: #ffffff; padding: 14px 32px; border-radius: 8px; font-size: 14px; font-weight: 700; text-decoration: none; display: inline-block; box-shadow: 0 2px 4px rgba(8, 37, 79, 0.2);">
+                      Abrir lead no EDS HUB &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 16px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #94a3b8; line-height: 1.4;">
+                Este é um alerta operacional interno do EDS HUB gerado automaticamente.<br>
+                Não responda diretamente a este e-mail. Utilize os canais oficiais do CRM.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = `REQUEST COURSE INFORMATION - EDS HUB
+-----------------------------------------
+Nome: ${fullName}
+Curso: ${courseTitle}
+Email: ${payload.email || 'Não informado'}
+Telefone: ${payload.phone || 'Não informado'}
+Data: ${nowPtBr}
+
+${visitorMessage ? `MENSAGEM:\n${visitorMessage}\n\n` : ''}ORIGEM:
+Canal: Website (Request Course Information)
+Página: ${payload.source_page || 'https://www.expdentalsolutions.com/request-course-information'}
+${payload.utm_source ? `UTM Source: ${payload.utm_source}\n` : ''}${payload.utm_medium ? `UTM Medium: ${payload.utm_medium}\n` : ''}${payload.utm_campaign ? `UTM Campaign: ${payload.utm_campaign}\n` : ''}
+
+Abrir no EDS HUB:
+${leadUrl}
+`;
+
+  return { subject, html, text };
+}
+
+export async function sendInternalCourseInfoNotification(
+  db: any,
+  payload: InternalCourseInfoNotificationPayload
+): Promise<InternalNotificationResult> {
+  const { submission_id, lead_id, idempotency_key, raw_payload } = payload;
+  const effectiveKey = idempotency_key || `internal_email:course_info:${submission_id || Date.now()}`;
+
+  // 1. Idempotency Check
+  const { data: existingLog } = await db
+    .from('internal_notification_logs')
+    .select('id, status, provider_message_id, recipient_emails, subject')
+    .eq('idempotency_key', effectiveKey)
+    .maybeSingle();
+
+  if (existingLog && existingLog.status === 'sent') {
+    return {
+      success: true,
+      duplicate: true,
+      already_sent: true,
+      sent: 0,
+      message_id: existingLog.provider_message_id,
+      recipients: existingLog.recipient_emails || [],
+      subject: existingLog.subject || 'Request Course Information',
+    };
+  }
+
+  // 2. Resolve Active Internal EDS Administrators
+  const recipients = await resolveInternalRecipients(db);
+  if (recipients.length === 0) {
+    return {
+      success: false,
+      recipients: [],
+      subject: 'Request Course Information',
+      error: 'No active internal administrative recipients resolved',
+    };
+  }
+
+  // 3. Build Email Content
+  const appBaseUrl = getEnv('EDS_HUB_APP_URL') || 'https://hub.expdentalsolutions.com';
+  const leadUrl = lead_id ? `${appBaseUrl}/leads/${lead_id}` : appBaseUrl;
+  const emailData = buildCourseInfoEmail(payload, leadUrl);
+
+  const nowIso = new Date().toISOString();
+
+  // 4. Log or Update Pending Record
+  let logId = existingLog?.id;
+  if (!logId) {
+    const insCall: any = db
+      .from('internal_notification_logs')
+      .insert({
+        event_type: 'course_information_request',
+        idempotency_key: effectiveKey,
+        lead_id: lead_id || null,
+        submission_id: submission_id || null,
+        recipient_emails: recipients,
+        subject: emailData.subject,
+        status: 'pending',
+        payload_snapshot: raw_payload || {},
+        last_activity_at: nowIso,
+        scheduled_for: nowIso,
+        created_at: nowIso,
+      });
+
+    if (typeof insCall?.select === 'function') {
+      const sel = insCall.select('id');
+      const insRes = typeof sel?.maybeSingle === 'function' ? await sel.maybeSingle() : await sel;
+      if (insRes?.error) {
+        console.warn('[sendInternalCourseInfoNotification] Log insert warning:', insRes.error);
+      }
+      logId = insRes?.data?.id;
+    } else {
+      const insRes = await insCall;
+      if (insRes?.error) {
+        console.warn('[sendInternalCourseInfoNotification] Log insert warning:', insRes.error);
+      }
+    }
+  }
+
+  // 5. Dispatch Email via Resend
+  let primaryMessageId: string | null = null;
+  const sendErrors: string[] = [];
+  const fromEmail = getEnv('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
+  const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
+
+  for (const recipient of recipients) {
+    try {
+      const result = await sendEmail({
+        from: sender,
+        to: recipient,
+        subject: emailData.subject,
+        html: emailData.html,
+        text: emailData.text,
+        replyTo: 'info@expdentalsolutions.com',
+        idempotencyKey: `${effectiveKey}_${recipient}`,
+      });
+
+      if (result.success && result.messageId) {
+        if (!primaryMessageId) primaryMessageId = result.messageId;
+      } else {
+        sendErrors.push(`Failed sending to ${recipient}: ${result.errorMessage || result.errorCode || 'Unknown'}`);
+      }
+    } catch (sendErr) {
+      sendErrors.push(`Error sending to ${recipient}: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
+    }
+  }
+
+  const hasSuccess = Boolean(primaryMessageId) || (sendErrors.length === 0 && recipients.length > 0);
+
+  // 6. Update Log Record
+  await db
+    .from('internal_notification_logs')
+    .update({
+      status: hasSuccess ? 'sent' : 'failed',
+      provider_message_id: primaryMessageId,
+      error_message: sendErrors.length > 0 ? sendErrors.join('; ') : null,
+      sent_at: hasSuccess ? nowIso : null,
+    })
+    .eq('idempotency_key', effectiveKey);
+
+  // 7. Log Activity on Lead
+  if (lead_id && hasSuccess) {
+    try {
+      await db.from('lead_activities').insert({
+        lead_id,
+        activity_type: 'course_info_internal_email',
+        actor_type: 'system',
+        summary: `Alerta interno de Solicitação de Informações de Curso enviado para: ${recipients.join(', ')}`,
+        metadata: {
+          event_type: 'course_information_request',
+          idempotency_key: effectiveKey,
+          submission_id,
+          recipients,
+          provider_message_id: primaryMessageId,
+        },
+      });
+    } catch (_actErr) {
+      // non-blocking
+    }
+  }
+
+  return {
+    success: hasSuccess,
+    sent: hasSuccess ? recipients.length : 0,
+    message_id: primaryMessageId,
+    recipients,
+    subject: emailData.subject,
+    error: sendErrors.length > 0 ? sendErrors.join('; ') : undefined,
+  };
+}
+

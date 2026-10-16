@@ -78,11 +78,29 @@ export function PipelineKanbanPage() {
   // Lead Quick View Drawer
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
 
-  // Helper to extract formatted course interests from embedded lead_course_interests
+  // Helper to extract formatted course interests from embedded lead_course_interests or enrollments
   const extractCourseInterests = useCallback((lead: any): FormattedCourseInterest[] => {
+    // 1. Check enrollments first (authoritative for enrolled leads / Matrícula)
+    const rawEnrollments = lead.enrollments || [];
+    const enrollmentInterests: FormattedCourseInterest[] = [];
+    if (Array.isArray(rawEnrollments) && rawEnrollments.length > 0) {
+      rawEnrollments.forEach((en: any) => {
+        const cName = en.course?.name || en.course_name_snapshot;
+        if (cName) {
+          enrollmentInterests.push({
+            courseName: cName,
+            sessionTitle: en.session?.title,
+            startDate: en.session?.start_date,
+            priority: 1,
+          });
+        }
+      });
+    }
+
+    // 2. Check lead_course_interests
     const rawInterests = lead.lead_course_interests || [];
     if (Array.isArray(rawInterests) && rawInterests.length > 0) {
-      return rawInterests
+      const formatted = rawInterests
         .sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99))
         .map((item: any) => ({
           courseName: item.course?.name || item.notes || 'Curso',
@@ -90,7 +108,16 @@ export function PipelineKanbanPage() {
           startDate: item.session?.start_date,
           priority: item.priority,
         }));
+      if (enrollmentInterests.length > 0) {
+        return [...enrollmentInterests, ...formatted.filter((f) => !enrollmentInterests.some((e) => e.courseName === f.courseName))];
+      }
+      return formatted;
     }
+
+    if (enrollmentInterests.length > 0) {
+      return enrollmentInterests;
+    }
+
     if (lead.course_interest) {
       return [{
         courseName: lead.course_interest,
@@ -256,15 +283,19 @@ export function PipelineKanbanPage() {
           ]);
 
           if (interestsRes?.data && Array.isArray(interestsRes.data)) {
+            const byLead: Record<string, FormattedCourseInterest[]> = {};
             interestsRes.data.forEach((row: any) => {
-              if (!newInterestsMap[row.lead_id] || newInterestsMap[row.lead_id].length === 0) {
-                if (!newInterestsMap[row.lead_id]) newInterestsMap[row.lead_id] = [];
-                newInterestsMap[row.lead_id].push({
-                  courseName: row.course?.name || 'Curso',
-                  sessionTitle: row.session?.title,
-                  startDate: row.session?.start_date,
-                  priority: row.priority,
-                });
+              if (!byLead[row.lead_id]) byLead[row.lead_id] = [];
+              byLead[row.lead_id].push({
+                courseName: row.course?.name || 'Curso',
+                sessionTitle: row.session?.title,
+                startDate: row.session?.start_date,
+                priority: row.priority,
+              });
+            });
+            Object.entries(byLead).forEach(([lId, items]) => {
+              if (items.length > 0) {
+                newInterestsMap[lId] = items;
               }
             });
             setLeadInterestsMap({ ...newInterestsMap });
