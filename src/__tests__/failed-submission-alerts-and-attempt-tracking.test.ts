@@ -8,7 +8,6 @@ import {
   sendInternalEnrollmentNotification,
   queueOrUpdateIncompleteEnrollmentNotification,
   processPendingAbandonedEnrollments,
-  formatEdsSubject,
   type InternalNotificationPayload,
 } from '../../supabase/functions/_shared/internal-enrollment-notifier.ts';
 

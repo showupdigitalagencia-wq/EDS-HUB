@@ -385,7 +385,7 @@ Deno.serve(async (req) => {
           .from('form_submissions')
           .select('id')
           .or(`idempotency_key.eq.comp_${extAttId},submitted_data->>external_attempt_id.eq.${extAttId}`)
-          .eq('form_name', 'website-register')
+          .or('form_name.eq.website-register,source_detail.eq.website_registration_form')
           .eq('processing_status', 'processed')
           .limit(1);
         if (compByAtt && compByAtt.length > 0) alreadyCompleted = true;
@@ -396,7 +396,7 @@ Deno.serve(async (req) => {
           .from('form_submissions')
           .select('id')
           .eq('lead_id', txResult.lead_id)
-          .eq('form_name', 'website-register')
+          .or('form_name.eq.website-register,source_detail.eq.website_registration_form')
           .eq('processing_status', 'processed')
           .limit(1);
         if (compByLead && compByLead.length > 0) alreadyCompleted = true;
@@ -407,7 +407,7 @@ Deno.serve(async (req) => {
           .from('form_submissions')
           .select('id')
           .eq('email', cleanEmail)
-          .eq('form_name', 'website-register')
+          .or('form_name.eq.website-register,source_detail.eq.website_registration_form')
           .eq('processing_status', 'processed')
           .limit(1);
         if (compByEmail && compByEmail.length > 0) alreadyCompleted = true;

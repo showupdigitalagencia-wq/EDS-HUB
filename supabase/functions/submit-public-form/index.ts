@@ -567,21 +567,42 @@ Deno.serve(async (req) => {
       // non-blocking
     }
 
-    // Dispatch internal notification email for successfully submitted Contact Us forms (Part B)
+    // Dispatch internal notification push & email for successfully submitted Contact Us forms (Part B)
     const isWebsiteContact =
       slug === 'website-contact' ||
       (form.source === 'website' && form.source_detail === 'contact_form');
     if (isWebsiteContact) {
-      try {
-        const leadFullName =
-          `${fields.first_name || ''} ${fields.last_name || ''}`.trim() ||
-          (fields.name as string) ||
-          'Lead';
+      const leadFullName =
+        `${fields.first_name || ''} ${fields.last_name || ''}`.trim() ||
+        (fields.name as string) ||
+        'Novo contato';
 
+      // B1. Internal Push Notification
+      try {
+        await db.functions.invoke('send-push-notification', {
+          body: {
+            event_type: 'contact_us',
+            event_id: submissionId,
+            idempotency_key: effectiveAttemptId
+              ? `contact_push:attempt:${effectiveAttemptId}`
+              : `contact_push:${submissionId}`,
+            title: 'Nova mensagem de contato',
+            body: `Nova mensagem de contato — ${leadFullName}`,
+            deep_link: leadId ? `/leads/${leadId}` : '/',
+          },
+        });
+      } catch (pushErr) {
+        console.warn('[submit-public-form] Internal contact push warning:', pushErr);
+      }
+
+      // B2. Internal Email Notification
+      try {
         await sendInternalContactNotification(db, {
           submission_id: submissionId,
           lead_id: leadId,
-          idempotency_key: `internal_email:contact:${submissionId}`,
+          idempotency_key: effectiveAttemptId
+            ? `internal_email:contact:attempt:${effectiveAttemptId}`
+            : `internal_email:contact:${submissionId}`,
           lead_name: leadFullName,
           first_name: fields.first_name as string | undefined,
           last_name: fields.last_name as string | undefined,
@@ -624,7 +645,9 @@ Deno.serve(async (req) => {
           body: {
             event_type: 'course_information_request',
             event_id: submissionId,
-            idempotency_key: `course_info_push:${submissionId}`,
+            idempotency_key: effectiveAttemptId
+              ? `course_info_push:attempt:${effectiveAttemptId}`
+              : `course_info_push:${submissionId}`,
             title: 'Nova solicitação de informações',
             body: `Nova solicitação de informações — ${leadFullName} — ${courseTitle}`,
             deep_link: leadId ? `/leads/${leadId}` : '/',
@@ -639,7 +662,9 @@ Deno.serve(async (req) => {
         await sendInternalCourseInfoNotification(db, {
           submission_id: submissionId,
           lead_id: leadId,
-          idempotency_key: `internal_email:course_info:${submissionId}`,
+          idempotency_key: effectiveAttemptId
+            ? `internal_email:course_info:attempt:${effectiveAttemptId}`
+            : `internal_email:course_info:${submissionId}`,
           lead_name: leadFullName,
           first_name: fields.first_name as string | undefined,
           last_name: fields.last_name as string | undefined,

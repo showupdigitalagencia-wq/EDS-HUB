@@ -1450,16 +1450,28 @@ export function buildContactUsEmail(
   payload: InternalContactNotificationPayload,
   leadUrl: string
 ): { subject: string; html: string; text: string } {
+  const raw = payload.raw_payload || {};
+
   const fullName =
     payload.lead_name ||
     `${payload.first_name || ''} ${payload.last_name || ''}`.trim() ||
-    (payload.raw_payload?.name as string) ||
+    (raw.name as string) ||
     'Lead';
+
+  const email = payload.email || (raw.email as string) || (raw.email_confirmation as string) || null;
+  const phone = payload.phone || (raw.phone as string) || (raw.phone_raw as string) || null;
+  const visitorMessage = payload.message || (raw.message as string) || (raw.mensagem as string) || (raw.notes as string) || '';
+  const sourcePage = payload.source_page || (raw.source_page as string) || (raw.page_url as string) || 'https://www.expdentalsolutions.com/contact';
+  const utmSource = payload.utm_source || (raw.utm_source as string) || null;
+  const utmMedium = payload.utm_medium || (raw.utm_medium as string) || null;
+  const utmCampaign = payload.utm_campaign || (raw.utm_campaign as string) || null;
+  const utmTerm = payload.utm_term || (raw.utm_term as string) || null;
+  const utmContent = payload.utm_content || (raw.utm_content as string) || null;
 
   const subject = formatEdsSubject('[EDS] Novo contato pelo site', fullName);
   const nowPtBr = formatDatePtBr(new Date().toISOString());
 
-  // Dynamic rendering of all safe submitted fields
+  // Dynamic rendering of any safe additional submitted fields
   const EXCLUDED_KEYS = new Set([
     '_token',
     'csrf',
@@ -1476,9 +1488,27 @@ export function buildContactUsEmail(
     'external_attempt_id',
     '_hp_company',
     'message',
+    'mensagem',
+    'name',
+    'first_name',
+    'last_name',
+    'email',
+    'email_confirmation',
+    'phone',
+    'phone_raw',
+    'source_page',
+    'page_url',
+    'submitted_at',
+    'utm_source',
+    'utm_medium',
+    'utm_campaign',
+    'utm_term',
+    'utm_content',
+    'submission_id',
+    'lead_id',
+    'intake_event_id',
   ]);
 
-  const raw = payload.raw_payload || {};
   const dynamicFieldRows: EdsEmailSectionRow[] = [];
 
   for (const [key, rawVal] of Object.entries(raw)) {
@@ -1495,15 +1525,13 @@ export function buildContactUsEmail(
     });
   }
 
-  const visitorMessage = payload.message || (raw.message as string) || '';
-
   const sections: EdsEmailSection[] = [
     {
       title: 'Dados do Contato',
       rows: [
         { label: 'Nome Completo', value: fullName },
-        { label: 'E-mail', value: payload.email || 'Não informado', isLink: Boolean(payload.email), href: payload.email ? `mailto:${payload.email}` : undefined },
-        { label: 'Telefone', value: payload.phone || 'Não informado' },
+        { label: 'E-mail', value: email || 'Não informado', isLink: Boolean(email), href: email ? `mailto:${email}` : undefined },
+        { label: 'Telefone', value: phone || 'Não informado' },
         { label: 'Data do Envio', value: nowPtBr },
       ],
     },
@@ -1522,13 +1550,13 @@ export function buildContactUsEmail(
 
   const utmRows: EdsEmailSectionRow[] = [
     { label: 'Origem', value: 'Website (Formulário Fale Conosco / Contact Us)' },
-    { label: 'Página', value: payload.source_page || 'https://www.expdentalsolutions.com/contact' },
+    { label: 'Página', value: sourcePage },
   ];
-  if (payload.utm_source) utmRows.push({ label: 'UTM Source', value: payload.utm_source });
-  if (payload.utm_medium) utmRows.push({ label: 'UTM Medium', value: payload.utm_medium });
-  if (payload.utm_campaign) utmRows.push({ label: 'UTM Campaign', value: payload.utm_campaign });
-  if (payload.utm_term) utmRows.push({ label: 'UTM Term', value: payload.utm_term });
-  if (payload.utm_content) utmRows.push({ label: 'UTM Content', value: payload.utm_content });
+  if (utmSource) utmRows.push({ label: 'UTM Source', value: utmSource });
+  if (utmMedium) utmRows.push({ label: 'UTM Medium', value: utmMedium });
+  if (utmCampaign) utmRows.push({ label: 'UTM Campaign', value: utmCampaign });
+  if (utmTerm) utmRows.push({ label: 'UTM Term', value: utmTerm });
+  if (utmContent) utmRows.push({ label: 'UTM Content', value: utmContent });
 
   sections.push({
     title: 'Origem e Rastreamento',
@@ -1553,19 +1581,22 @@ export function buildContactUsEmail(
 
   const text = `NOVO CONTATO PELO SITE - EDS HUB
 -----------------------------------------
-Nome: ${fullName}
-Email: ${payload.email || 'Não informado'}
-Telefone: ${payload.phone || 'Não informado'}
-Data: ${nowPtBr}
+Nome Completo: ${fullName}
+E-mail: ${email || 'Não informado'}
+Telefone: ${phone || 'Não informado'}
+Data do Envio: ${nowPtBr}
 
 MENSAGEM:
 ${visitorMessage || 'Nenhuma mensagem escrita.'}
 
 ORIGEM:
 Canal: Website (Contact Us)
-Página: ${payload.source_page || 'https://www.expdentalsolutions.com/contact'}
-${payload.utm_source ? `UTM Source: ${payload.utm_source}\n` : ''}${payload.utm_medium ? `UTM Medium: ${payload.utm_medium}\n` : ''}${payload.utm_campaign ? `UTM Campaign: ${payload.utm_campaign}\n` : ''}
-
+Página: ${sourcePage}
+${utmSource ? `UTM Source: ${utmSource}\n` : ''}${utmMedium ? `UTM Medium: ${utmMedium}\n` : ''}${utmCampaign ? `UTM Campaign: ${utmCampaign}\n` : ''}${utmTerm ? `UTM Term: ${utmTerm}\n` : ''}${utmContent ? `UTM Content: ${utmContent}\n` : ''}${
+  dynamicFieldRows.length > 0
+    ? `\nOUTROS CAMPOS INFORMADOS:\n` + dynamicFieldRows.map(r => `${r.label}: ${r.value}`).join('\n') + '\n'
+    : ''
+}
 Abrir no EDS HUB:
 ${leadUrl}
 `;
@@ -1749,22 +1780,37 @@ export function buildCourseInfoEmail(
   payload: InternalCourseInfoNotificationPayload,
   leadUrl: string
 ): { subject: string; html: string; text: string } {
+  const raw = payload.raw_payload || {};
+
   const fullName =
     payload.lead_name ||
     `${payload.first_name || ''} ${payload.last_name || ''}`.trim() ||
-    (payload.raw_payload?.name as string) ||
+    (raw.name as string) ||
     'Lead';
 
   const rawCourse =
     payload.course ||
-    (payload.raw_payload?.course_interest as string) ||
-    (payload.raw_payload?.course as string) ||
+    (raw.course_interest as string) ||
+    (raw.course as string) ||
+    (raw.course_name as string) ||
+    (raw.course_code as string) ||
     '';
   const courseTitle = resolveCanonicalCourseName(rawCourse);
+
+  const email = payload.email || (raw.email as string) || (raw.email_confirmation as string) || null;
+  const phone = payload.phone || (raw.phone as string) || (raw.phone_raw as string) || null;
+  const visitorMessage = payload.message || (raw.message as string) || (raw.mensagem as string) || (raw.notes as string) || '';
+  const sourcePage = payload.source_page || (raw.source_page as string) || (raw.page_url as string) || 'https://www.expdentalsolutions.com/request-course-information';
+  const utmSource = payload.utm_source || (raw.utm_source as string) || null;
+  const utmMedium = payload.utm_medium || (raw.utm_medium as string) || null;
+  const utmCampaign = payload.utm_campaign || (raw.utm_campaign as string) || null;
+  const utmTerm = payload.utm_term || (raw.utm_term as string) || null;
+  const utmContent = payload.utm_content || (raw.utm_content as string) || null;
 
   const subject = formatEdsSubject('[EDS] Pedido de informações', fullName, courseTitle);
   const nowPtBr = formatDatePtBr(new Date().toISOString());
 
+  // Dynamic rendering of any safe additional submitted fields
   const EXCLUDED_KEYS = new Set([
     '_token',
     'csrf',
@@ -1781,9 +1827,31 @@ export function buildCourseInfoEmail(
     'external_attempt_id',
     '_hp_company',
     'message',
+    'mensagem',
+    'name',
+    'first_name',
+    'last_name',
+    'email',
+    'email_confirmation',
+    'phone',
+    'phone_raw',
+    'course',
+    'course_interest',
+    'course_name',
+    'course_code',
+    'source_page',
+    'page_url',
+    'submitted_at',
+    'utm_source',
+    'utm_medium',
+    'utm_campaign',
+    'utm_term',
+    'utm_content',
+    'submission_id',
+    'lead_id',
+    'intake_event_id',
   ]);
 
-  const raw = payload.raw_payload || {};
   const dynamicFieldRows: EdsEmailSectionRow[] = [];
 
   for (const [key, rawVal] of Object.entries(raw)) {
@@ -1800,50 +1868,45 @@ export function buildCourseInfoEmail(
     });
   }
 
-  const visitorMessage = payload.message || (raw.message as string) || '';
-
   const sections: EdsEmailSection[] = [
     {
       title: 'Dados do Contato',
       rows: [
         { label: 'Nome Completo', value: fullName },
-        { label: 'E-mail', value: payload.email || 'Não informado', isLink: Boolean(payload.email), href: payload.email ? `mailto:${payload.email}` : undefined },
-        { label: 'Telefone', value: payload.phone || 'Não informado' },
+        { label: 'E-mail', value: email || 'Não informado', isLink: Boolean(email), href: email ? `mailto:${email}` : undefined },
+        { label: 'Telefone', value: phone || 'Não informado' },
         { label: 'Data da Solicitação', value: nowPtBr },
       ],
     },
     {
       title: 'Curso de Interesse',
       rows: [
-        { label: 'Curso', value: courseTitle || 'Não especificado' },
+        { label: 'Curso Selecionado', value: courseTitle || 'Não especificado' },
         { label: 'Status do Lead', value: 'Novo Lead / Aguardando Atendimento' },
       ],
     },
-  ];
-
-  if (visitorMessage) {
-    sections.push({
+    {
       title: 'Mensagem do Interessado',
-      calloutHtml: `<div style="background-color: #f8fafc; border-left: 4px solid #08254f; padding: 14px 16px; border-radius: 6px; font-size: 14px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; word-break: break-word;">${escapeHtml(visitorMessage)}</div>`,
-    });
-  }
+      calloutHtml: `<div style="background-color: #f8fafc; border-left: 4px solid #08254f; padding: 14px 16px; border-radius: 6px; font-size: 14px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; word-break: break-word;">${escapeHtml(visitorMessage || 'Nenhuma mensagem escrita.')}</div>`,
+    },
+  ];
 
   if (dynamicFieldRows.length > 0) {
     sections.push({
-      title: 'Formulário Enviado (Campos Adicionais)',
+      title: 'Informações Adicionais Enviadas',
       rows: dynamicFieldRows,
     });
   }
 
   const utmRows: EdsEmailSectionRow[] = [
     { label: 'Origem', value: 'Website (Request Course Information)' },
-    { label: 'Página', value: payload.source_page || 'https://www.expdentalsolutions.com/request-course-information' },
+    { label: 'Página de Origem', value: sourcePage },
   ];
-  if (payload.utm_source) utmRows.push({ label: 'UTM Source', value: payload.utm_source });
-  if (payload.utm_medium) utmRows.push({ label: 'UTM Medium', value: payload.utm_medium });
-  if (payload.utm_campaign) utmRows.push({ label: 'UTM Campaign', value: payload.utm_campaign });
-  if (payload.utm_term) utmRows.push({ label: 'UTM Term', value: payload.utm_term });
-  if (payload.utm_content) utmRows.push({ label: 'UTM Content', value: payload.utm_content });
+  if (utmSource) utmRows.push({ label: 'UTM Source', value: utmSource });
+  if (utmMedium) utmRows.push({ label: 'UTM Medium', value: utmMedium });
+  if (utmCampaign) utmRows.push({ label: 'UTM Campaign', value: utmCampaign });
+  if (utmTerm) utmRows.push({ label: 'UTM Term', value: utmTerm });
+  if (utmContent) utmRows.push({ label: 'UTM Content', value: utmContent });
 
   sections.push({
     title: 'Origem e Atribuição',
@@ -1869,17 +1932,23 @@ export function buildCourseInfoEmail(
 
   const text = `PEDIDO DE INFORMAÇÕES SOBRE CURSO - EDS HUB
 -----------------------------------------
-Nome: ${fullName}
-Curso: ${courseTitle || 'Não especificado'}
-Email: ${payload.email || 'Não informado'}
-Telefone: ${payload.phone || 'Não informado'}
-Data: ${nowPtBr}
+Nome Completo: ${fullName}
+Curso Selecionado: ${courseTitle || 'Não especificado'}
+E-mail: ${email || 'Não informado'}
+Telefone: ${phone || 'Não informado'}
+Data da Solicitação: ${nowPtBr}
 
-${visitorMessage ? `MENSAGEM:\n${visitorMessage}\n\n` : ''}ORIGEM:
+MENSAGEM DO INTERESSADO:
+${visitorMessage || 'Nenhuma mensagem escrita.'}
+
+ORIGEM E ATRIBUIÇÃO:
 Canal: Website (Request Course Information)
-Página: ${payload.source_page || 'https://www.expdentalsolutions.com/request-course-information'}
-${payload.utm_source ? `UTM Source: ${payload.utm_source}\n` : ''}${payload.utm_medium ? `UTM Medium: ${payload.utm_medium}\n` : ''}${payload.utm_campaign ? `UTM Campaign: ${payload.utm_campaign}\n` : ''}
-
+Página: ${sourcePage}
+${utmSource ? `UTM Source: ${utmSource}\n` : ''}${utmMedium ? `UTM Medium: ${utmMedium}\n` : ''}${utmCampaign ? `UTM Campaign: ${utmCampaign}\n` : ''}${utmTerm ? `UTM Term: ${utmTerm}\n` : ''}${utmContent ? `UTM Content: ${utmContent}\n` : ''}${
+  dynamicFieldRows.length > 0
+    ? `\nOUTROS CAMPOS INFORMADOS:\n` + dynamicFieldRows.map(r => `${r.label}: ${r.value}`).join('\n') + '\n'
+    : ''
+}
 Abrir no EDS HUB:
 ${leadUrl}
 `;

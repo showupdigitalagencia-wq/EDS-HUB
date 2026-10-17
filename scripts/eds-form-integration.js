@@ -182,11 +182,11 @@
       try {
         key = sessionStorage.getItem('eds_comp_key:' + slug);
         if (!key) {
-          key = 'sub_' + slug + '_' + attemptId;
+          key = 'comp_' + attemptId;
           sessionStorage.setItem('eds_comp_key:' + slug, key);
         }
       } catch (_e) {
-        key = 'sub_' + slug + '_' + attemptId;
+        key = 'comp_' + attemptId;
       }
       return key;
     }
