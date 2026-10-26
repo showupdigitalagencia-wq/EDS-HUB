@@ -15,6 +15,7 @@ import {
   AlertOctagon,
   Sparkles,
   Settings,
+  CreditCard,
   X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -84,6 +85,13 @@ function getEventIcon(eventType: string) {
       return <FileText className="h-4 w-4 text-amber-600" />;
     case 'task_due':
       return <CheckSquare className="h-4 w-4 text-purple-600" />;
+    case 'task_overdue':
+      return <AlertCircle className="h-4 w-4 text-amber-600" />;
+    case 'payment_due':
+    case 'payment_task_due':
+      return <CreditCard className="h-4 w-4 text-emerald-600" />;
+    case 'payment_overdue':
+      return <AlertOctagon className="h-4 w-4 text-rose-600" />;
     case 'deliverability_critical':
       return <AlertOctagon className="h-4 w-4 text-rose-600" />;
     default:

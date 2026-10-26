@@ -225,3 +225,73 @@ export function parseLocalToUtc(
   const exactUtc = new Date(targetUtcGuess.getTime() - diffMs);
   return exactUtc.toISOString();
 }
+
+/**
+ * Formats a Date or UTC string into a local datetime string suitable for
+ * <input type="datetime-local"> (format: YYYY-MM-DDTHH:mm) in the user's localized timezone.
+ */
+export function formatToLocalDatetimeInputValue(
+  dateInput: Date | string | number | null | undefined,
+  ianaTimezone?: string
+): string {
+  if (!dateInput) return '';
+  const date = typeof dateInput === 'string' || typeof dateInput === 'number' ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) return '';
+
+  const tz = ianaTimezone || getUserTimezone();
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(date);
+
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '00';
+    const year = getPart('year');
+    const month = getPart('month');
+    const day = getPart('day');
+    let hour = getPart('hour');
+    if (hour === '24') hour = '00';
+    const minute = getPart('minute');
+
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+  } catch (err) {
+    console.warn('[Timezone] formatToLocalDatetimeInputValue error:', err);
+    return date.toISOString().slice(0, 16);
+  }
+}
+
+/**
+ * Converts a datetime-local input string ("YYYY-MM-DDTHH:mm") from the user's
+ * localized timezone into an exact UTC ISO-8601 string.
+ * DST-safe: uses parseLocalToUtc to calculate exact offset for that specific calendar date.
+ */
+export function parseLocalDatetimeInputToUtc(
+  datetimeLocalStr: string | null | undefined,
+  ianaTimezone?: string
+): string | null {
+  if (!datetimeLocalStr || !datetimeLocalStr.trim()) return null;
+
+  const parts = datetimeLocalStr.trim().split('T');
+  if (parts.length < 2) return null;
+
+  const dateStr = parts[0];
+  const timeStr = parts[1].slice(0, 5); // Take HH:mm
+
+  if (!dateStr || !timeStr || !dateStr.includes('-') || !timeStr.includes(':')) {
+    return null;
+  }
+
+  try {
+    return parseLocalToUtc(dateStr, timeStr, ianaTimezone);
+  } catch (err) {
+    console.warn('[Timezone] parseLocalDatetimeInputToUtc error:', err);
+    return new Date(datetimeLocalStr).toISOString();
+  }
+}
+

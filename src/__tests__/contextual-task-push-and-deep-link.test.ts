@@ -132,7 +132,52 @@ describe('Contextual Task Push Notification & Deep Link Specification', () => {
         deepLink: '/leads/lead-202?taskId=task-101',
         taskId: 'task-101',
         leadId: 'lead-202',
+        eventType: 'task_due',
       });
+    });
+
+    it('builds prioritized payment notification when taskType is payment and due today', () => {
+      const payload = buildTaskDueNotification({
+        taskId: 'task-pay-1',
+        taskTitle: 'Cobrar pagamento do aluno',
+        taskType: 'payment',
+        leadId: 'lead-pay-1',
+        leadName: 'Dr. Roberto Santos',
+      });
+
+      expect(payload.title).toBe('EDS Hub — Pagamento vence hoje');
+      expect(payload.body).toBe("A tarefa 'Cobrar pagamento do aluno' vence hoje.");
+      expect(payload.eventType).toBe('payment_task_due');
+      expect(payload.deepLink).toBe('/leads/lead-pay-1?taskId=task-pay-1');
+    });
+
+    it('builds payment overdue notification with student reference when overdue', () => {
+      const payload = buildTaskDueNotification({
+        taskId: 'task-pay-2',
+        taskTitle: 'Cobrar segunda parcela',
+        taskType: 'payment',
+        leadId: 'lead-pay-2',
+        leadName: 'Carlos Eduardo',
+        isOverdue: true,
+      });
+
+      expect(payload.title).toBe('EDS Hub — Pagamento atrasado');
+      expect(payload.body).toBe('A cobrança de Carlos Eduardo continua pendente. Verifique a tarefa no EDS Hub.');
+      expect(payload.eventType).toBe('payment_overdue');
+    });
+
+    it('builds regular task overdue notification when deadline has passed', () => {
+      const payload = buildTaskDueNotification({
+        taskId: 'task-reg-2',
+        taskTitle: 'Enviar informações do curso',
+        leadId: 'lead-reg-2',
+        leadName: 'Ana Clara',
+        isOverdue: true,
+      });
+
+      expect(payload.title).toBe('EDS Hub — Tarefa atrasada');
+      expect(payload.body).toBe("A tarefa 'Enviar informações do curso' ainda não foi concluída.");
+      expect(payload.eventType).toBe('task_overdue');
     });
   });
 

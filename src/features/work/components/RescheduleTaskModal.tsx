@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
-import { X, Clock, AlertCircle } from 'lucide-react';
+import { X, Clock, AlertCircle, Globe } from 'lucide-react';
 import { rescheduleCrmTask } from '../services/work-queue-service';
+import {
+  formatToLocalDatetimeInputValue,
+  parseLocalDatetimeInputToUtc,
+  formatInUserTimezone,
+  getUserTimezone,
+} from '../../../utils/timezone';
 
 interface RescheduleTaskModalProps {
   isOpen: boolean;
@@ -19,12 +25,13 @@ export const RescheduleTaskModal: React.FC<RescheduleTaskModalProps> = ({
   taskTitle,
   currentDueAt,
 }) => {
-  const [newDueDate, setNewDueDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(9, 0, 0, 0);
-    return d.toISOString().slice(0, 16);
-  });
+  const getTomorrowNineAm = () => {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const localStr = formatToLocalDatetimeInputValue(tomorrow);
+    return `${localStr.slice(0, 10)}T09:00`;
+  };
+
+  const [newDueDate, setNewDueDate] = useState(() => getTomorrowNineAm());
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,23 +39,18 @@ export const RescheduleTaskModal: React.FC<RescheduleTaskModalProps> = ({
   if (!isOpen) return null;
 
   const applyPreset = (hoursFromNow: number) => {
-    const d = new Date();
-    d.setHours(d.getHours() + hoursFromNow);
-    setNewDueDate(d.toISOString().slice(0, 16));
+    const d = new Date(Date.now() + hoursFromNow * 60 * 60 * 1000);
+    setNewDueDate(formatToLocalDatetimeInputValue(d));
   };
 
   const applyTomorrow = () => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(9, 0, 0, 0);
-    setNewDueDate(d.toISOString().slice(0, 16));
+    setNewDueDate(getTomorrowNineAm());
   };
 
   const applyDaysFromNow = (days: number) => {
-    const d = new Date();
-    d.setDate(d.getDate() + days);
-    d.setHours(9, 0, 0, 0);
-    setNewDueDate(d.toISOString().slice(0, 16));
+    const target = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    const localStr = formatToLocalDatetimeInputValue(target);
+    setNewDueDate(`${localStr.slice(0, 10)}T09:00`);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,7 +59,7 @@ export const RescheduleTaskModal: React.FC<RescheduleTaskModalProps> = ({
     setError(null);
 
     try {
-      const isoDate = newDueDate ? new Date(newDueDate).toISOString() : null;
+      const isoDate = newDueDate ? parseLocalDatetimeInputToUtc(newDueDate) : null;
       await rescheduleCrmTask(taskId, isoDate, reason.trim() || undefined);
       onRescheduled();
       onClose();
@@ -99,7 +101,7 @@ export const RescheduleTaskModal: React.FC<RescheduleTaskModalProps> = ({
             <p className="text-[11px] text-slate-500">
               Current Due:{' '}
               {currentDueAt
-                ? new Date(currentDueAt).toLocaleString()
+                ? formatInUserTimezone(currentDueAt)
                 : 'No due date set'}
             </p>
           </div>
@@ -151,6 +153,17 @@ export const RescheduleTaskModal: React.FC<RescheduleTaskModalProps> = ({
               className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5]"
               required
             />
+            <p className="mt-1 text-[11px] text-slate-500 flex items-center gap-1">
+              <Globe className="w-3 h-3 text-[#449bd5]" />
+              <span>
+                Fuso horário:{' '}
+                <strong className="text-slate-700">
+                  {getUserTimezone() === 'America/New_York'
+                    ? 'Flórida / Eastern Time (ET)'
+                    : getUserTimezone()}
+                </strong>
+              </span>
+            </p>
           </div>
 
           <div>

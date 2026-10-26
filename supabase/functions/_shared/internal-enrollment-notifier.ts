@@ -666,7 +666,7 @@ Abrir lead no EDS HUB: ${leadUrl}
 export function buildCompletedRegistrationEmail(
   payload: InternalNotificationPayload,
   leadUrl: string,
-  documentsUrl: string
+  _documentsUrl?: string
 ): { subject: string; html: string; text: string } {
   const raw = payload.raw_payload || {};
   const rawName = (typeof raw.name === 'string' ? raw.name : undefined) ||
@@ -705,16 +705,6 @@ export function buildCompletedRegistrationEmail(
   const promo = raw.promo_code || raw.cupom || 'Nenhum';
   const termsAccepted = raw.terms_accepted ? 'Sim (Aceite confirmado no envio)' : 'Sim';
   const completionTimestamp = formatDatePtBr((typeof raw.submitted_at === 'string' ? raw.submitted_at : undefined) || new Date().toISOString());
-
-  const docs = payload.documents || [];
-  let docsHtml = '';
-  if (docs.length > 0) {
-    docsHtml = `<ul style="margin: 8px 0; padding-left: 20px; color: #111827; font-size: 13px;">` +
-      docs.map((d) => `<li><strong>${escapeHtml(d.document_type)}:</strong> ${escapeHtml(d.original_filename)}</li>`).join('') +
-      `</ul>`;
-  } else {
-    docsHtml = `<p style="margin: 6px 0; font-size: 13px; color: #475569;">Documentos enviados via formulário (Passaporte / Licença Odontológica). Acesse a área segura de documentos no EDS HUB.</p>`;
-  }
 
   const subject = formatEdsSubject('[EDS] Nova matrícula concluída', fullName, courseTitle, cleanTurma);
 
@@ -755,20 +745,6 @@ export function buildCompletedRegistrationEmail(
       ],
     },
     {
-      title: 'Documentos & Anexos de Matrícula',
-      calloutHtml: `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px;">
-        ${docsHtml}
-        <div style="margin-top: 10px;">
-          <a href="${escapeHtml(documentsUrl)}" target="_blank" style="display: inline-block; padding: 7px 14px; background-color: #08254f; color: #ffffff; text-decoration: none; font-size: 12px; font-weight: 700; border-radius: 6px;">
-            Acessar Documentos Seguros &rarr;
-          </a>
-        </div>
-        <p style="margin: 8px 0 0 0; font-size: 11px; color: #64748b;">
-          Documentos de identificação e licenças profissionais são protegidos por acesso autenticado no EDS HUB.
-        </p>
-      </div>`,
-    },
-    {
       title: 'Origem & Atribuição',
       rows: [
         { label: 'Origem', value: 'Website (Formulário Oficial de Registro)' },
@@ -794,7 +770,7 @@ export function buildCompletedRegistrationEmail(
       label: 'Abrir matrícula no EDS HUB',
       url: leadUrl,
     },
-    footerNotice: 'Notificação operacional oficial de matrícula.',
+    footerNotice: 'Notificação operacional do EDS Hub.',
   });
 
   const text = `NOVA MATRÍCULA CONCLUÍDA - EDS HUB
@@ -806,7 +782,6 @@ Email: ${email}
 Telefone: ${phone}
 Data: ${completionTimestamp}
 
-Acessar Documentos Seguros: ${documentsUrl}
 Abrir Registro Completo no EDS HUB: ${leadUrl}
 `;
 
@@ -1204,20 +1179,9 @@ export async function sendInternalEnrollmentNotification(
     };
   }
 
-  // Guard: Completed registration is canonically dispatched by Laravel RegistrationReceivedAdminMail
-  // with physical attachments. EDS HUB CRM explicitly avoids duplicating this notification.
-  if (event_type === 'completed_registration') {
-    return {
-      success: true,
-      duplicate: false,
-      message_id: null,
-      recipients: [],
-      subject: 'Skipped: completed registration email is canonically dispatched by Laravel RegistrationReceivedAdminMail',
-    };
-  }
-
   const isFailedSubmit = payload.status === 'submission_failed';
-  const isImmediate = options?.immediate === true || isFailedSubmit;
+  const isCompleted = event_type === 'completed_registration';
+  const isImmediate = options?.immediate === true || isFailedSubmit || isCompleted;
 
   // If immediate mode is not requested, use the inactivity lifecycle queue
   if (!isImmediate) {
@@ -1315,9 +1279,12 @@ export async function sendInternalEnrollmentNotification(
   // 3. Resolve deep links
   const appBaseUrl = getEnv('EDS_HUB_APP_URL') || 'https://hub.expdentalsolutions.com';
   const leadUrl = lead_id ? `${appBaseUrl}/leads/${lead_id}` : appBaseUrl;
+  const documentsUrl = lead_id ? `${appBaseUrl}/leads/${lead_id}#documents` : appBaseUrl;
 
   // 4. Build Subject and Content
-  const emailData = buildIncompleteAttemptEmail(payload, leadUrl);
+  const emailData = isCompleted
+    ? buildCompletedRegistrationEmail(payload, leadUrl, documentsUrl)
+    : buildIncompleteAttemptEmail(payload, leadUrl);
   const fromEmail = getEnv('RESEND_FROM_EMAIL') || 'info@expdentalsolutions.com';
   const sender = fromEmail.includes('<') ? fromEmail : `Expert Dental Solutions <${fromEmail}>`;
 
@@ -1337,9 +1304,10 @@ export async function sendInternalEnrollmentNotification(
     created_at: new Date().toISOString(),
   };
 
-  const { error: reserveErr } = await db
-    .from('internal_notification_logs')
-    .upsert(logRecord, { onConflict: 'idempotency_key' });
+  const logTable = db.from('internal_notification_logs');
+  const { error: reserveErr } = typeof logTable.upsert === 'function'
+    ? await logTable.upsert(logRecord, { onConflict: 'idempotency_key' })
+    : await logTable.insert(logRecord);
 
   if (reserveErr) {
     console.error('[internal-enrollment-notifier] Reserve error:', reserveErr);
@@ -1352,7 +1320,12 @@ export async function sendInternalEnrollmentNotification(
 
   for (const recipient of recipients) {
     // Safety check: NEVER send internal notification to applicant!
-    if (payload.email && recipient.toLowerCase().trim() === payload.email.toLowerCase().trim()) {
+    // (Do not skip canonical operational mailbox info@expdentalsolutions.com)
+    if (
+      recipient.toLowerCase().trim() !== 'info@expdentalsolutions.com' &&
+      payload.email &&
+      recipient.toLowerCase().trim() === payload.email.toLowerCase().trim()
+    ) {
       console.warn(`[internal-enrollment-notifier] Guard triggered: skipped sending internal email to applicant address: ${recipient}`);
       continue;
     }
@@ -1390,9 +1363,11 @@ export async function sendInternalEnrollmentNotification(
   // 8. Log internal activity on lead if available
   if (lead_id && hasSuccess) {
     try {
-      const summaryMsg = isFailedSubmit
-        ? `Alerta imediato de falha no envio de matrícula enviado para: ${recipients.join(', ')}`
-        : `Alerta interno de tentativa de matrícula enviado para: ${recipients.join(', ')}`;
+      const summaryMsg = isCompleted
+        ? `Alerta operacional de nova matrícula concluída enviado para: ${recipients.join(', ')}`
+        : isFailedSubmit
+          ? `Alerta imediato de falha no envio de matrícula enviado para: ${recipients.join(', ')}`
+          : `Alerta interno de tentativa de matrícula enviado para: ${recipients.join(', ')}`;
       await db.from('lead_activities').insert({
         lead_id,
         activity_type: 'internal_notification_sent',

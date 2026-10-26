@@ -10,12 +10,25 @@
 // 5. Deep Link: Returns "/leads/:leadId?taskId=:taskId" (or "/work?taskId=:taskId").
 // =============================================================================
 
+export interface TaskNotificationParams {
+  taskId?: string | null;
+  taskTitle?: string | null;
+  taskType?: string | null;
+  priority?: string | null;
+  leadId?: string | null;
+  leadName?: string | null;
+  description?: string | null;
+  dueAt?: string | null;
+  isOverdue?: boolean;
+}
+
 export interface TaskNotificationContent {
   title: string;
   body: string;
   deepLink: string;
   taskId?: string;
   leadId?: string;
+  eventType?: 'task_due' | 'task_overdue' | 'payment_task_due' | 'payment_overdue';
 }
 
 /**
@@ -89,17 +102,44 @@ export function buildTaskDeepLink(
 
 /**
  * Composes the complete contextual task notification payload.
+ * Supports payment tasks, overdue tasks, and general tasks.
  */
-export function buildTaskDueNotification(params: {
-  taskId?: string | null;
-  taskTitle?: string | null;
-  leadId?: string | null;
-  leadName?: string | null;
-  description?: string | null;
-}): TaskNotificationContent {
-  const title = formatContextualTaskTitle(params.taskTitle, params.leadName);
-  const body = formatContextualTaskBody(params.description);
+export function buildTaskDueNotification(params: TaskNotificationParams): TaskNotificationContent {
+  const isPayment = params.taskType === 'payment';
+  const isOverdue = !!params.isOverdue;
   const deepLink = buildTaskDeepLink(params.taskId, params.leadId);
+
+  let title: string;
+  let body: string;
+  let eventType: 'task_due' | 'task_overdue' | 'payment_task_due' | 'payment_overdue';
+
+  if (isPayment) {
+    if (isOverdue) {
+      eventType = 'payment_overdue';
+      title = 'EDS Hub — Pagamento atrasado';
+      body = params.leadName
+        ? `A cobrança de ${params.leadName} continua pendente. Verifique a tarefa no EDS Hub.`
+        : 'A cobrança do aluno continua pendente. Verifique a tarefa no EDS Hub.';
+    } else {
+      eventType = 'payment_task_due';
+      title = 'EDS Hub — Pagamento vence hoje';
+      body = params.taskTitle
+        ? `A tarefa '${params.taskTitle}' vence hoje.`
+        : 'A cobrança do aluno vence hoje.';
+    }
+  } else {
+    if (isOverdue) {
+      eventType = 'task_overdue';
+      title = 'EDS Hub — Tarefa atrasada';
+      body = params.taskTitle
+        ? `A tarefa '${params.taskTitle}' ainda não foi concluída.`
+        : 'A tarefa de acompanhamento ainda não foi concluída.';
+    } else {
+      eventType = 'task_due';
+      title = formatContextualTaskTitle(params.taskTitle, params.leadName);
+      body = formatContextualTaskBody(params.description);
+    }
+  }
 
   return {
     title,
@@ -107,5 +147,6 @@ export function buildTaskDueNotification(params: {
     deepLink,
     taskId: params.taskId || undefined,
     leadId: params.leadId || undefined,
+    eventType,
   };
 }

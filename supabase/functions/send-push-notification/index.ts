@@ -37,6 +37,10 @@ const EVENT_PREFERENCE_MAP: Record<string, string> = {
   inbound_email: 'new_replies',
   incomplete_registration: 'incomplete_registrations',
   task_due: 'tasks',
+  task_overdue: 'tasks',
+  payment_due: 'tasks',
+  payment_task_due: 'tasks',
+  payment_overdue: 'tasks',
   deliverability_critical: 'deliverability_alerts',
 };
 
@@ -237,12 +241,14 @@ async function sendPushInternal(supabase: any, payload: SendPushRequest) {
 
   // 6. Deliver to each device with per-device idempotency
   for (const sub of subscriptions) {
-    const { data: existingLog } = await supabase
+    const { data: existingLogs } = await supabase
       .from('push_notification_logs')
       .select('id, status')
       .eq('subscription_id', sub.id)
       .eq('idempotency_key', idempotency_key)
-      .maybeSingle();
+      .limit(1);
+
+    const existingLog = existingLogs?.[0];
 
     if (existingLog && existingLog.status === 'sent') {
       skippedCount++;
@@ -477,6 +483,60 @@ function buildTaskDeepLink(taskId?: string | null, leadId?: string | null): stri
   return cleanTaskId ? `/work?taskId=${cleanTaskId}` : '/work';
 }
 
+function buildTaskNotificationPayload(params: {
+  taskId?: string | null;
+  taskTitle?: string | null;
+  taskType?: string | null;
+  priority?: string | null;
+  leadId?: string | null;
+  leadName?: string | null;
+  description?: string | null;
+  isOverdue?: boolean;
+}): {
+  title: string;
+  body: string;
+  deepLink: string;
+  eventType: 'task_due' | 'task_overdue' | 'payment_task_due' | 'payment_overdue';
+} {
+  const isPayment = params.taskType === 'payment';
+  const isOverdue = !!params.isOverdue;
+  const deepLink = buildTaskDeepLink(params.taskId, params.leadId);
+
+  let title: string;
+  let body: string;
+  let eventType: 'task_due' | 'task_overdue' | 'payment_task_due' | 'payment_overdue';
+
+  if (isPayment) {
+    if (isOverdue) {
+      eventType = 'payment_overdue';
+      title = 'EDS Hub — Pagamento atrasado';
+      body = params.leadName
+        ? `A cobrança de ${params.leadName} continua pendente. Verifique a tarefa no EDS Hub.`
+        : 'A cobrança do aluno continua pendente. Verifique a tarefa no EDS Hub.';
+    } else {
+      eventType = 'payment_task_due';
+      title = 'EDS Hub — Pagamento vence hoje';
+      body = params.taskTitle
+        ? `A tarefa '${params.taskTitle}' vence hoje.`
+        : 'A cobrança do aluno vence hoje.';
+    }
+  } else {
+    if (isOverdue) {
+      eventType = 'task_overdue';
+      title = 'EDS Hub — Tarefa atrasada';
+      body = params.taskTitle
+        ? `A tarefa '${params.taskTitle}' ainda não foi concluída.`
+        : 'A tarefa de acompanhamento ainda não foi concluída.';
+    } else {
+      eventType = 'task_due';
+      title = formatContextualTaskTitle(params.taskTitle, params.leadName);
+      body = formatContextualTaskBody(params.description);
+    }
+  }
+
+  return { title, body, deepLink, eventType };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -489,10 +549,10 @@ Deno.serve(async (req) => {
     // Support server-side scheduled check of pending due tasks
     if ((payload as any).event_type === 'check_due_tasks' || (payload as any).action === 'check_due_tasks') {
       const nowIso = new Date().toISOString();
-      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      const overdueWindow = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
       // Fetch pending tasks due up to now with lead relationship
-      const { data: dueTasks, error: dueErr } = await supabase
+      const { data: rawTasks, error: dueErr } = await supabase
         .from('tasks')
         .select(`
           id,
@@ -500,6 +560,9 @@ Deno.serve(async (req) => {
           description,
           status,
           due_at,
+          created_by,
+          task_type,
+          priority,
           lead_id,
           leads (
             id,
@@ -510,9 +573,9 @@ Deno.serve(async (req) => {
         .eq('status', 'pending')
         .not('due_at', 'is', null)
         .lte('due_at', nowIso)
-        .gte('due_at', twoHoursAgo)
+        .gte('due_at', overdueWindow)
         .order('due_at', { ascending: true })
-        .limit(20);
+        .limit(50);
 
       if (dueErr) {
         return new Response(JSON.stringify({ error: dueErr.message }), {
@@ -520,6 +583,17 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
+      // Sort candidate tasks to prioritize payment tasks first, then by priority, then by deadline
+      const dueTasks = [...(rawTasks || [])].sort((a: any, b: any) => {
+        const isPayA = a.task_type === 'payment' ? 0 : 1;
+        const isPayB = b.task_type === 'payment' ? 0 : 1;
+        if (isPayA !== isPayB) return isPayA - isPayB;
+        const prioRank = (p: string) => (p === 'critical' ? 0 : p === 'high' ? 1 : p === 'normal' ? 2 : 3);
+        const diffPrio = prioRank(a.priority || 'normal') - prioRank(b.priority || 'normal');
+        if (diffPrio !== 0) return diffPrio;
+        return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
+      });
 
       // Collect lead IDs for batch fallback resolution if relationship isn't joined
       const missingLeadIds = Array.from(
@@ -547,17 +621,27 @@ Deno.serve(async (req) => {
 
       let checkedCount = 0;
       let dispatchedTasksCount = 0;
+      const todayDateStr = nowIso.slice(0, 10);
 
       for (const t of dueTasks || []) {
-        const idKey = `task_reminder_${t.id}_${t.due_at}`;
-        const { data: existing } = await supabase
+        if (t.status !== 'pending') continue;
+
+        const dueTime = new Date(t.due_at).getTime();
+        const isOverdue = Date.now() - dueTime > 60 * 60 * 1000;
+
+        // Idempotency: Overdue reminders throttled to once per calendar day; Due reminders per deadline
+        const idKey = isOverdue
+          ? `task_overdue_${t.id}_${todayDateStr}`
+          : `task_reminder_${t.id}_${t.due_at}`;
+
+        const { data: existingLogs } = await supabase
           .from('push_notification_logs')
           .select('id')
-          .eq('idempotency_key', idKey)
+          .or(`idempotency_key.eq.${idKey},idempotency_key.like.${idKey}_user_%`)
           .eq('status', 'sent')
-          .maybeSingle();
+          .limit(1);
 
-        if (existing) continue;
+        if (existingLogs && existingLogs.length > 0) continue;
 
         // Resolve real lead name
         const rawLead = (t as any).leads || (t.lead_id ? leadMap.get(t.lead_id) : undefined);
@@ -566,21 +650,34 @@ Deno.serve(async (req) => {
           ? `${leadObj.first_name || ''} ${leadObj.last_name || ''}`.trim()
           : null;
 
-        const contextualTitle = formatContextualTaskTitle(t.title, leadName);
-        const contextualBody = formatContextualTaskBody(t.description);
-        const deepLink = buildTaskDeepLink(t.id, t.lead_id);
+        const notif = buildTaskNotificationPayload({
+          taskId: t.id,
+          taskTitle: t.title,
+          taskType: t.task_type,
+          priority: t.priority,
+          leadId: t.lead_id,
+          leadName,
+          description: t.description,
+          isOverdue,
+        });
 
-        // Dispatches task_due in-process directly to APNs / Web Push
+        // Resolve target user if created_by is a valid UUID
+        const isUuid = (val?: string | null) =>
+          val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+        const targetUserIds = isUuid(t.created_by) ? [t.created_by] : undefined;
+
+        // Dispatches task reminder in-process directly to APNs / Web Push
         try {
           const pushResult = await sendPushInternal(supabase, {
-            event_type: 'task_due',
+            event_type: notif.eventType,
             event_id: t.id,
             idempotency_key: idKey,
-            title: contextualTitle,
-            body: contextualBody,
-            deep_link: deepLink,
+            title: notif.title,
+            body: notif.body,
+            deep_link: notif.deepLink,
             task_id: t.id,
             lead_id: t.lead_id || undefined,
+            target_user_ids: targetUserIds,
           });
 
           if (pushResult && pushResult.body && pushResult.body.dispatched_count > 0) {

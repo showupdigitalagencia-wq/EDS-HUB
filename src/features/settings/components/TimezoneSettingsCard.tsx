@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Globe, Check, RefreshCw } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
 import {
   getUserTimezone,
   setUserTimezone,
@@ -16,25 +17,75 @@ export function TimezoneSettingsCard() {
   const [previewTime, setPreviewTime] = useState(formatInUserTimezone(new Date()));
 
   useEffect(() => {
+    // If auto-detected, check if user has a stored timezone in app_user profile
+    const loadProfileTimezone = async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user?.id) {
+          const { data } = await supabase
+            .from('app_user')
+            .select('timezone')
+            .eq('user_id', authData.user.id)
+            .maybeSingle();
+
+          if (data?.timezone && isTimezoneAutoDetected()) {
+            setUserTimezone(data.timezone);
+            setCurrentTimezone(data.timezone);
+            setIsAuto(false);
+          }
+        }
+      } catch (err) {
+        console.debug('[TimezoneSettingsCard] Profile timezone notice:', err);
+      }
+    };
+
+    loadProfileTimezone();
+  }, []);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       setPreviewTime(formatInUserTimezone(new Date(), undefined, currentTimezone));
     }, 1000);
     return () => clearInterval(interval);
   }, [currentTimezone]);
 
-  const handleSelectTimezone = (tz: string) => {
+  const handleSelectTimezone = async (tz: string) => {
     setUserTimezone(tz);
     setCurrentTimezone(tz);
     setIsAuto(false);
     setIsEditing(false);
+
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData?.user?.id) {
+        await supabase
+          .from('app_user')
+          .update({ timezone: tz, updated_at: new Date().toISOString() })
+          .eq('user_id', authData.user.id);
+      }
+    } catch (err) {
+      console.warn('[TimezoneSettingsCard] Failed to sync timezone to app_user:', err);
+    }
   };
 
-  const handleResetToAuto = () => {
+  const handleResetToAuto = async () => {
     setUserTimezone(null);
     const autoTz = detectBrowserTimezone();
     setCurrentTimezone(autoTz);
     setIsAuto(true);
     setIsEditing(false);
+
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData?.user?.id) {
+        await supabase
+          .from('app_user')
+          .update({ timezone: autoTz, updated_at: new Date().toISOString() })
+          .eq('user_id', authData.user.id);
+      }
+    } catch (err) {
+      console.warn('[TimezoneSettingsCard] Failed to sync auto timezone to app_user:', err);
+    }
   };
 
   const activeOption = COMMON_TIMEZONES.find((t) => t.value === currentTimezone);

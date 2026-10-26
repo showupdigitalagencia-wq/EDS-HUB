@@ -246,8 +246,8 @@ class RegisterController extends Controller
 
         // 2. Salvar arquivos físicos localmente no servidor do site
         // (Arquivos permanecem no servidor local e NÃO vão para o EDS HUB)
-        $passportPath = $request->file('passport')->store('registrations/passports', 'private');
-        $licensePath  = $request->file('dental_license')->store('registrations/licenses', 'private');
+        $passportPath = $request->file('passport')->store('uploads/passports', 'public');
+        $licensePath  = $request->file('dental_license')->store('uploads/licenses', 'public');
 
         // 3. Salvar registro no banco de dados local do Laravel
         /*

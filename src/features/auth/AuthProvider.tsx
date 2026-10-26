@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback, type React
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase, isTransientNetworkError } from '../../lib/supabase';
 import type { AppUser } from '../../types';
+import { setUserTimezone } from '../../utils/timezone';
 
 export type AuthErrorType = 'auth' | 'network' | 'workspace' | 'permission' | null;
 
@@ -65,9 +66,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { appUser: data as AppUser, errorType: 'inactive' };
       }
 
-      setAppUser(data as AppUser);
+      const activeUser = data as AppUser;
+      if (activeUser.timezone && activeUser.timezone.trim()) {
+        setUserTimezone(activeUser.timezone.trim());
+      }
+
+      setAppUser(activeUser);
       setAppUserError(null);
-      return { appUser: data as AppUser, errorType: null };
+      return { appUser: activeUser, errorType: null };
     } catch (err) {
       console.warn('[AuthProvider] fetchAppUser exception:', err);
       setAppUserError('network');
@@ -267,6 +273,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Ignore signOut network errors
     }
+    setUserTimezone(null);
     setSession(null);
     setAppUser(null);
     setAppUserError(null);

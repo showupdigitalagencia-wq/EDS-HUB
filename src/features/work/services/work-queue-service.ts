@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { supabase } from '../../../lib/supabase';
+import { getUserTimezone } from '../../../utils/timezone';
 import type {
   DailyOperationsDashboardKpis,
   DailyOperationsQueueResponse,
@@ -523,7 +524,7 @@ export async function fetchDailyOperationsQueueDirect(
     }
     const resolvedLeadName = leadName || lead?.email || 'Lead';
     const waitingReply = isTaskWaitingReply(t);
-    const isOverdue = !waitingReply && t.status !== 'completed' && t.due_at ? deriveIsCalendarOverdue(t.due_at, 'America/New_York') : false;
+    const isOverdue = !waitingReply && t.status !== 'completed' && t.due_at ? deriveIsCalendarOverdue(t.due_at, getUserTimezone()) : false;
 
     let itemType: any = 'TASK';
     if (t.task_type === 'payment') itemType = 'PAYMENT_ATTENTION';

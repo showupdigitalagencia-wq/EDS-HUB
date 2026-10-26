@@ -4,15 +4,21 @@
  * Target URL: https://www.expdentalsolutions.com/register
  * Target Form: #registerForm
  * 
- * Version: 2.0 (Production Release)
+ * Version: 2.2 (Production Release — Universal Attempt Capture on Submit)
+ * 
+ * Canonical Rule:
+ * ANY factual user attempt to submit the Register form must be captured if the
+ * registration does not complete (User clicks Register / Submit + does not complete).
+ * Zero minimum field threshold: captures Name only, Email only, Phone only,
+ * very incomplete forms, and anonymous attempts with factual missing value labels.
  * 
  * Responsibilities:
  * 1. Automatically tracks persistent attempt ID across session.
  * 2. Injects hidden field <input type="hidden" name="eds_form_attempt_id"> into #registerForm.
  * 3. Captures INCOMPLETE registration intent (debounced 1.5s) when visitor enters contact + course.
- * 4. Captures SUBMISSION FAILURES (validation error, captcha error, network timeout) with diagnostics.
+ * 4. Captures ALL SUBMISSION FAILURES upon explicit user Submit/Register action.
  * 5. Hooks into COMPLETED submissions (HTTP 200) to notify EDS HUB (Option A or Option B).
- * 6. Strictly excludes sensitive health notes (medical_conditions), dietary info, and binary uploads.
+ * 6. Strictly excludes sensitive health notes, dietary info, uploaded files, and blacklisted key patterns.
  * 7. Non-blocking: failures to reach CRM never prevent visitor registration or redirect.
  * =============================================================================
  */
@@ -92,7 +98,7 @@
   // Parse full name into first and last name
   function parseName(fullName) {
     var trimmed = (fullName || '').trim();
-    if (!trimmed) return { first: 'Lead', last: null };
+    if (!trimmed) return { first: null, last: null };
     var space = trimmed.indexOf(' ');
     if (space === -1) return { first: trimmed, last: null };
     return {
@@ -109,6 +115,31 @@
       cleaned = '+' + cleaned;
     }
     return cleaned || null;
+  }
+
+  // Strip any properties containing blacklisted substrings (e.g. 'rg' inside emergency_phone / surgical_experience)
+  var SENSITIVE_KEY_PATTERNS = [
+    'password', 'token', 'secret', 'credit_card', 'card_number', 'pan',
+    'cvv', 'cvc', 'expiry', 'ssn', 'cpf', 'rg', 'passport', 'bank_account', 'iban'
+  ];
+
+  function sanitizePayloadForEdge(payload) {
+    var safe = {};
+    for (var k in payload) {
+      if (!Object.prototype.hasOwnProperty.call(payload, k)) continue;
+      var lower = k.toLowerCase();
+      var isBlacklisted = false;
+      for (var i = 0; i < SENSITIVE_KEY_PATTERNS.length; i++) {
+        if (lower.indexOf(SENSITIVE_KEY_PATTERNS[i]) !== -1) {
+          isBlacklisted = true;
+          break;
+        }
+      }
+      if (!isBlacklisted && payload[k] !== undefined) {
+        safe[k] = payload[k];
+      }
+    }
+    return safe;
   }
 
   function init() {
@@ -130,8 +161,9 @@
 
     var debounceTimer = null;
     var lastCapturedSignature = '';
+    var lastReportedSubmitTime = 0;
 
-    // 2. Debounced Intent Listener (captures incomplete registrations)
+    // 2. Debounced Intent Listener (captures progressive incomplete form filling without submit)
     function onFieldChange() {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(captureIncompleteAttempt, 1500);
@@ -142,18 +174,16 @@
       el.addEventListener('change', onFieldChange);
     });
 
-    // 3. Dispatch Incomplete Registration to EDS HUB
+    // 3. Dispatch Incomplete Registration Intent to EDS HUB (Passive abandonment flow)
     function captureIncompleteAttempt() {
       var emailEl = form.querySelector('input[name="email"]');
       var phoneEl = form.querySelector('input[name="phone"]');
       var courseEl = form.querySelector('select[name="course"]');
       var nameEl = form.querySelector('input[name="name"]');
-      var emergencyPhoneEl = form.querySelector('input[name="emergency_phone"]');
       var certNameEl = form.querySelector('input[name="certificate_name"]');
       var agdEl = form.querySelector('input[name="agd_number"]');
       var specialtyEl = form.querySelector('select[name="specialty"]');
       var yearsEl = form.querySelector('select[name="years_in_practice"]');
-      var surgicalEl = form.querySelector('select[name="surgical_experience"]');
       var coatEl = form.querySelector('input[name="coat_size"]');
       var heardEl = form.querySelector('select[name="heard_from"]');
       var referralEl = form.querySelector('input[name="referral_name"]');
@@ -164,21 +194,19 @@
       var rawCourse = courseEl ? courseEl.value : '';
       var name = nameEl ? nameEl.value.trim() : '';
 
-      // Only fire if visitor entered contact info AND selected a course
+      // Only fire passive intent if visitor entered contact info AND selected a course
       if ((!email && !phone) || !rawCourse) return;
 
       var courseCode = resolveCourseCode(rawCourse);
 
-      // Signature encompasses all filled progressive fields so typing any field pushes inactivity timer
+      // Signature encompasses filled progressive fields
       var signature = [
         email,
         phone,
         rawCourse,
         name,
-        emergencyPhoneEl ? emergencyPhoneEl.value.trim() : '',
         specialtyEl ? specialtyEl.value : '',
         yearsEl ? yearsEl.value : '',
-        surgicalEl ? surgicalEl.value : '',
         agdEl ? agdEl.value.trim() : '',
         referralEl ? referralEl.value.trim() : '',
         promoEl ? promoEl.value.trim() : '',
@@ -193,22 +221,20 @@
       var names = parseName(name);
       var utm = getUtmParams();
 
-      var payload = {
+      var rawPayload = {
         idempotency_key: 'inc_' + attemptId + '_' + (courseCode || 'course'),
         external_attempt_id: attemptId,
-        first_name: names.first,
-        last_name: names.last,
+        first_name: names.first || undefined,
+        last_name: names.last || undefined,
         name: name || undefined,
         email: email || null,
         phone: phone || null,
-        emergency_phone: emergencyPhoneEl ? sanitizePhone(emergencyPhoneEl.value) : undefined,
         course: rawCourse || undefined,
         course_code: courseCode || null,
         certificate_name: certNameEl ? certNameEl.value.trim() : undefined,
         agd_number: agdEl ? agdEl.value.trim() : undefined,
         specialty: specialtyEl ? specialtyEl.value : undefined,
         years_in_practice: yearsEl ? yearsEl.value : undefined,
-        surgical_experience: surgicalEl ? surgicalEl.value : undefined,
         coat_size: coatEl ? coatEl.value.trim() : undefined,
         heard_from: heardEl ? heardEl.value : undefined,
         referral_name: referralEl ? referralEl.value.trim() : undefined,
@@ -221,6 +247,8 @@
         utm_term: utm.utm_term || null,
         utm_content: utm.utm_content || null
       };
+
+      var payload = sanitizePayloadForEdge(rawPayload);
 
       fetch(EDS_CONFIG.INCOMPLETE_URL, {
         method: 'POST',
@@ -276,7 +304,7 @@
       var hasPassport = passportInput && passportInput.files && passportInput.files.length > 0;
       var hasLicense = licenseInput && licenseInput.files && licenseInput.files.length > 0;
 
-      // Check details object if passed from Laravel response
+      // Check details object if passed from Laravel response or client diagnostics
       if (errorDetails && typeof errorDetails === 'object') {
         var errKeys = Object.keys(errorDetails);
         if (errKeys.indexOf('passport') !== -1 && !hasPassport) return 'Passport ausente';
@@ -289,6 +317,9 @@
       if (!hasPassport) return 'Passport ausente';
       if (!hasLicense) return 'Dental License ausente';
 
+      if (code.includes('CLIENT_VALIDATION')) {
+        return 'CLIENT_VALIDATION_FAILED';
+      }
       if (code.includes('422') || code.includes('VALIDATION')) {
         return 'Validation error';
       }
@@ -298,18 +329,21 @@
       return 'Validation error';
     }
 
-    // 5. Report Failed Submission to EDS HUB (for immediate alerts)
+    // 5. Report Failed Submission to EDS HUB (Captures ANY user submit attempt that does not complete)
     window.reportEdsHubSubmissionFailure = function (errorCode, errorDetails) {
+      // Coalescing: Ensure one submit click action with multiple issues triggers only ONE failed attempt (Requirement: One click = one attempt)
+      var now = Date.now();
+      if (now - lastReportedSubmitTime < 2500) return;
+      lastReportedSubmitTime = now;
+
       var emailEl = form.querySelector('input[name="email"]');
       var phoneEl = form.querySelector('input[name="phone"]');
       var courseEl = form.querySelector('select[name="course"]');
       var nameEl = form.querySelector('input[name="name"]');
-      var emergencyPhoneEl = form.querySelector('input[name="emergency_phone"]');
       var certNameEl = form.querySelector('input[name="certificate_name"]');
       var agdEl = form.querySelector('input[name="agd_number"]');
       var specialtyEl = form.querySelector('select[name="specialty"]');
       var yearsEl = form.querySelector('select[name="years_in_practice"]');
-      var surgicalEl = form.querySelector('select[name="surgical_experience"]');
       var coatEl = form.querySelector('input[name="coat_size"]');
       var heardEl = form.querySelector('select[name="heard_from"]');
       var referralEl = form.querySelector('input[name="referral_name"]');
@@ -317,31 +351,28 @@
 
       var email = emailEl ? emailEl.value.trim().toLowerCase() : '';
       var phone = phoneEl ? sanitizePhone(phoneEl.value) : '';
-      if (!email && !phone) return;
-
       var rawCourse = courseEl ? courseEl.value : '';
       var courseCode = resolveCourseCode(rawCourse);
-      var names = parseName(nameEl ? nameEl.value : '');
+      var name = nameEl ? nameEl.value.trim() : '';
+      var names = parseName(name);
       var utm = getUtmParams();
       var attemptCount = getSubmitAttemptCount();
       var category = resolveFailureCategory(errorCode, errorDetails);
 
-      var payload = {
+      var rawPayload = {
         idempotency_key: 'fail_' + attemptId + '_' + attemptCount,
         external_attempt_id: attemptId,
-        first_name: names.first,
-        last_name: names.last,
-        name: nameEl ? nameEl.value.trim() : undefined,
-        email: email || null,
-        phone: phone || null,
-        emergency_phone: emergencyPhoneEl ? sanitizePhone(emergencyPhoneEl.value) : undefined,
+        first_name: names.first || undefined,
+        last_name: names.last || undefined,
+        name: name || undefined,
+        email: email || undefined,
+        phone: phone || undefined,
         course: rawCourse || undefined,
         course_code: courseCode || null,
         certificate_name: certNameEl ? certNameEl.value.trim() : undefined,
         agd_number: agdEl ? agdEl.value.trim() : undefined,
         specialty: specialtyEl ? specialtyEl.value : undefined,
         years_in_practice: yearsEl ? yearsEl.value : undefined,
-        surgical_experience: surgicalEl ? surgicalEl.value : undefined,
         coat_size: coatEl ? coatEl.value.trim() : undefined,
         heard_from: heardEl ? heardEl.value : undefined,
         referral_name: referralEl ? referralEl.value.trim() : undefined,
@@ -358,6 +389,8 @@
         utm_content: utm.utm_content || null
       };
 
+      var payload = sanitizePayloadForEdge(rawPayload);
+
       fetch(EDS_CONFIG.INCOMPLETE_URL, {
         method: 'POST',
         headers: {
@@ -370,7 +403,69 @@
       });
     };
 
-    // 6. Send Completed Form to EDS HUB (Called strictly upon factual Laravel success)
+    // 6. Client-Side Submit Attempt & Validation Preflight Hook
+    // Captures ANY user attempt when user clicks Register but client requirements or native validation block completion
+    function handleClientSideSubmitAttempt(triggerSource) {
+      // Check native HTML5 validity
+      var isNativeInvalid = false;
+      if (typeof form.checkValidity === 'function') {
+        try {
+          isNativeInvalid = !form.checkValidity();
+        } catch (_e) {}
+      }
+
+      // Check required attachments and critical fields
+      var passportInput = form.querySelector('input[name="passport"]');
+      var licenseInput = form.querySelector('input[name="dental_license"]');
+      var hasPassport = passportInput && passportInput.files && passportInput.files.length > 0;
+      var hasLicense = licenseInput && licenseInput.files && licenseInput.files.length > 0;
+      var termsInput = form.querySelector('input[name="terms_accepted"]');
+      var hasTerms = termsInput ? termsInput.checked : true;
+      var dateInput = form.querySelector('input[name="date"]');
+      var hasDate = dateInput ? dateInput.value.trim() !== '' : true;
+      var sigInput = form.querySelector('input[name="signature"]');
+      var hasSig = sigInput ? sigInput.value.trim() !== '' : true;
+
+      var isClientBlocked = isNativeInvalid || !hasPassport || !hasLicense || !hasTerms || !hasDate || !hasSig;
+
+      if (isClientBlocked) {
+        window.reportEdsHubSubmissionFailure('CLIENT_VALIDATION_FAILED', {
+          trigger: triggerSource,
+          native_invalid: isNativeInvalid,
+          missing_passport: !hasPassport,
+          missing_license: !hasLicense,
+          missing_terms: !hasTerms,
+          missing_date: !hasDate,
+          missing_signature: !hasSig
+        });
+      }
+    }
+
+    // 7. Attach listeners for Submit Button Click, Native Invalid, and Form Submit
+    var submitBtn = document.getElementById('registerSubmitBtn') || form.querySelector('button[type="submit"], input[type="submit"]');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', function () {
+        handleClientSideSubmitAttempt('click');
+      }, true);
+    }
+
+    // Capture phase listener for native invalid event on any child input
+    form.addEventListener('invalid', function () {
+      handleClientSideSubmitAttempt('invalid');
+    }, true);
+
+    // Capture phase listener on form submit
+    form.addEventListener('submit', function () {
+      if (typeof form.checkValidity === 'function') {
+        try {
+          if (!form.checkValidity()) {
+            handleClientSideSubmitAttempt('submit');
+          }
+        } catch (_e) {}
+      }
+    }, true);
+
+    // 8. Send Completed Form to EDS HUB (Called strictly upon factual Laravel success)
     window.sendEdsHubCompletedForm = function () {
       var emailEl = form.querySelector('input[name="email"]');
       var phoneEl = form.querySelector('input[name="phone"]');
@@ -380,7 +475,6 @@
       var agdEl = form.querySelector('input[name="agd_number"]');
       var specialtyEl = form.querySelector('select[name="specialty"]');
       var yearsEl = form.querySelector('select[name="years_in_practice"]');
-      var surgicalEl = form.querySelector('select[name="surgical_experience"]');
       var coatEl = form.querySelector('input[name="coat_size"]');
       var heardEl = form.querySelector('select[name="heard_from"]');
       var referralEl = form.querySelector('input[name="referral_name"]');
@@ -392,13 +486,13 @@
       var names = parseName(nameEl ? nameEl.value : '');
       var utm = getUtmParams();
 
-      var payload = {
+      var rawPayload = {
         form_slug: EDS_CONFIG.FORM_SLUG,
         idempotency_key: 'comp_' + attemptId,
         external_attempt_id: attemptId,
         name: nameEl ? nameEl.value.trim() : '',
-        first_name: names.first,
-        last_name: names.last,
+        first_name: names.first || undefined,
+        last_name: names.last || undefined,
         email: emailEl ? emailEl.value.trim().toLowerCase() : '',
         phone: phoneEl ? sanitizePhone(phoneEl.value) : '',
         contact_preference: 'email',
@@ -408,7 +502,6 @@
         agd_number: agdEl ? agdEl.value.trim() : '',
         specialty: specialtyEl ? specialtyEl.value : '',
         years_in_practice: yearsEl ? yearsEl.value : '',
-        surgical_experience: surgicalEl ? surgicalEl.value : '',
         coat_size: coatEl ? coatEl.value.trim() : '',
         heard_from: heardEl ? heardEl.value : '',
         referral_name: referralEl ? referralEl.value.trim() : '',
@@ -422,6 +515,8 @@
         utm_term: utm.utm_term || null,
         utm_content: utm.utm_content || null
       };
+
+      var payload = sanitizePayloadForEdge(rawPayload);
 
       // Direct intake to EDS HUB submit-public-form with keepalive
       return fetch(EDS_CONFIG.COMPLETED_URL, {

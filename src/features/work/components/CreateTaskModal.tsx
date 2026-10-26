@@ -1,9 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { X, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { X, AlertCircle, CheckCircle2, Globe } from 'lucide-react';
 import { createCrmTask } from '../services/work-queue-service';
 import { notifyTaskDue } from '../../notifications/services/push-notification-service';
 import { SearchableLeadSelector } from './SearchableLeadSelector';
 import type { TaskPriority, TaskType } from '../../../types/database';
+import {
+  formatToLocalDatetimeInputValue,
+  parseLocalDatetimeInputToUtc,
+  getUserTimezone,
+} from '../../../utils/timezone';
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -39,9 +44,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const [taskType, setTaskType] = useState<TaskType>('follow_up');
   const [priority, setPriority] = useState<TaskPriority>(initialPriority);
   const [dueDate, setDueDate] = useState(() => {
-    const d = new Date();
-    d.setHours(d.getHours() + 4);
-    return d.toISOString().slice(0, 16);
+    return formatToLocalDatetimeInputValue(new Date(Date.now() + 4 * 60 * 60 * 1000));
   });
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,6 +55,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       setTitle(initialTitle);
       setPriority(initialPriority);
       setSelectedLeadId(initialLeadId || '');
+      setDueDate(formatToLocalDatetimeInputValue(new Date(Date.now() + 4 * 60 * 60 * 1000)));
       setError(null);
     }
   }, [isOpen, initialTitle, initialPriority, initialLeadId]);
@@ -75,7 +79,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     setError(null);
 
     try {
-      const dueIso = dueDate ? new Date(dueDate).toISOString() : null;
+      const dueIso = dueDate ? parseLocalDatetimeInputToUtc(dueDate) : null;
       const created = await createCrmTask({
         leadId: targetLeadId,
         title: title.trim(),
@@ -220,6 +224,17 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#449bd5]/20 focus:border-[#449bd5]"
               />
             </div>
+            <p className="mt-1 text-[11px] text-slate-500 flex items-center gap-1">
+              <Globe className="w-3 h-3 text-[#449bd5]" />
+              <span>
+                Fuso horário:{' '}
+                <strong className="text-slate-700">
+                  {getUserTimezone() === 'America/New_York'
+                    ? 'Flórida / Eastern Time (ET)'
+                    : getUserTimezone()}
+                </strong>
+              </span>
+            </p>
           </div>
 
           <div>

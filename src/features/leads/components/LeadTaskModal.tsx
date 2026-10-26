@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, CheckSquare, Clock } from 'lucide-react';
+import { X, Calendar, CheckSquare, Clock, Globe } from 'lucide-react';
 import { createCrmTask } from '../../work/services/work-queue-service';
 import { notifyTaskDue } from '../../notifications/services/push-notification-service';
 import type { TaskType } from '../../../types/database';
+import {
+  formatToLocalDatetimeInputValue,
+  parseLocalToUtc,
+  getUserTimezone,
+} from '../../../utils/timezone';
 
 interface LeadTaskModalProps {
   isOpen: boolean;
@@ -25,14 +30,12 @@ export function LeadTaskModal({
 
   const [taskType, setTaskType] = useState<TaskType>(isPaymentMode ? 'payment' : 'follow_up');
   const [date, setDate] = useState(() => {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
+    const localStr = formatToLocalDatetimeInputValue(new Date(Date.now() + 2 * 60 * 60 * 1000));
+    return localStr.slice(0, 10);
   });
   const [time, setTime] = useState(() => {
-    const d = new Date();
-    d.setHours(d.getHours() + 2);
-    const h = String(d.getHours()).padStart(2, '0');
-    return `${h}:00`;
+    const localStr = formatToLocalDatetimeInputValue(new Date(Date.now() + 2 * 60 * 60 * 1000));
+    return localStr.slice(11, 16);
   });
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,10 +46,9 @@ export function LeadTaskModal({
       setTaskType(isPaymentMode ? 'payment' : 'follow_up');
       setNote('');
       setError(null);
-      const d = new Date();
-      setDate(d.toISOString().slice(0, 10));
-      d.setHours(d.getHours() + 2);
-      setTime(`${String(d.getHours()).padStart(2, '0')}:00`);
+      const localStr = formatToLocalDatetimeInputValue(new Date(Date.now() + 2 * 60 * 60 * 1000));
+      setDate(localStr.slice(0, 10));
+      setTime(localStr.slice(11, 16));
     }
   }, [isOpen, isPaymentMode]);
 
@@ -75,7 +77,7 @@ export function LeadTaskModal({
           ? 'Ligar'
           : 'Follow-up';
 
-      const dueIso = date && time ? new Date(`${date}T${time}:00`).toISOString() : null;
+      const dueIso = date && time ? parseLocalToUtc(date, time) : null;
 
       const taskRes = await createCrmTask({
         leadId,
@@ -207,6 +209,18 @@ export function LeadTaskModal({
               />
             </div>
           </div>
+
+          <p className="text-[11px] text-slate-500 flex items-center gap-1">
+            <Globe className="w-3 h-3 text-[#449bd5]" />
+            <span>
+              Fuso horário:{' '}
+              <strong className="text-slate-700">
+                {getUserTimezone() === 'America/New_York'
+                  ? 'Flórida / Eastern Time (ET)'
+                  : getUserTimezone()}
+              </strong>
+            </span>
+          </p>
 
           {/* Observação (opcional) */}
           <div>

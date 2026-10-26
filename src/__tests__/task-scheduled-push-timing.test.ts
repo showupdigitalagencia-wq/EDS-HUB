@@ -161,7 +161,7 @@ describe('Task Push Timing & Reminder Scheduling Specification', () => {
       const results = await checkAndDispatchDueTaskReminders();
 
       // Verify canonical query structure
-      expect(selectMock).toHaveBeenCalledWith('id, title, description, status, due_at, created_by, lead_id');
+      expect(selectMock).toHaveBeenCalledWith('id, title, description, status, due_at, created_by, lead_id, task_type, priority');
       expect(eqMock).toHaveBeenCalledWith('status', 'pending');
       expect(notMock).toHaveBeenCalledWith('due_at', 'is', null);
 

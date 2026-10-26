@@ -37,23 +37,34 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
     const { data: authData } = await supabase.auth.getUser();
     const currentUserId = authData?.user?.id;
 
-    // 2. Fetch pending tasks due up to now (looking back up to 2 hours)
+    // 2. Fetch pending tasks due up to now (looking back up to 7 days for overdue tasks)
     // Only pending tasks qualify
-    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
+    const overdueWindow = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data: dueTasks, error: taskErr } = await supabase
+    const { data: rawDueTasks, error: taskErr } = await supabase
       .from('tasks')
-      .select('id, title, description, status, due_at, created_by, lead_id')
+      .select('id, title, description, status, due_at, created_by, lead_id, task_type, priority')
       .eq('status', 'pending')
       .not('due_at', 'is', null)
       .lte('due_at', nowIso)
-      .gte('due_at', twoHoursAgo)
+      .gte('due_at', overdueWindow)
       .order('due_at', { ascending: true })
-      .limit(20);
+      .limit(50);
 
-    if (taskErr || !dueTasks || dueTasks.length === 0) {
+    if (taskErr || !rawDueTasks || rawDueTasks.length === 0) {
       return results;
     }
+
+    // Sort to prioritize payment tasks first, then by priority, then by deadline
+    const dueTasks = [...rawDueTasks].sort((a: any, b: any) => {
+      const isPayA = a.task_type === 'payment' ? 0 : 1;
+      const isPayB = b.task_type === 'payment' ? 0 : 1;
+      if (isPayA !== isPayB) return isPayA - isPayB;
+      const prioRank = (p: string) => (p === 'critical' ? 0 : p === 'high' ? 1 : p === 'normal' ? 2 : 3);
+      const diffPrio = prioRank(a.priority || 'normal') - prioRank(b.priority || 'normal');
+      if (diffPrio !== 0) return diffPrio;
+      return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
+    });
 
     // Paged lead name map for due tasks
     const leadIds = Array.from(new Set(dueTasks.map((t) => t.lead_id).filter(Boolean))) as string[];
@@ -69,6 +80,8 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
         leadMap.set(l.id, l);
       }
     }
+
+    const todayDateStr = nowIso.slice(0, 10);
 
     for (const task of dueTasks) {
       // PART 15: State safety checks - do not notify completed or cancelled tasks
@@ -95,8 +108,14 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
       // Canonical task recipient: target current admin or all active admins with tasks enabled
       const targetUserIds = currentUserId ? [currentUserId] : undefined;
 
-      // PART 14: Idempotency Key (exactly 1 reminder per task per scheduled due timestamp)
-      const idempotencyKey = `task_reminder_${task.id}_${task.due_at}`;
+      // Overdue check: task deadline passed by more than 1 hour
+      const dueTime = new Date(task.due_at).getTime();
+      const isOverdue = now.getTime() - dueTime > 60 * 60 * 1000;
+
+      // Idempotency: Overdue reminders throttled to once per calendar day; Due reminders per deadline
+      const idempotencyKey = isOverdue
+        ? `task_overdue_${task.id}_${todayDateStr}`
+        : `task_reminder_${task.id}_${task.due_at}`;
 
       if (sentRemindersCache.has(idempotencyKey)) {
         results.push({
@@ -108,16 +127,29 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
         continue;
       }
 
-      // Check remote idempotency in push_notification_logs
+      // Check remote idempotency in push_notification_logs (support multi-device and fallback logs)
       try {
-        const { data: existingLog } = await supabase
+        let query = supabase
           .from('push_notification_logs')
-          .select('id, status')
-          .eq('idempotency_key', idempotencyKey)
-          .eq('status', 'sent')
-          .maybeSingle();
+          .select('id, status');
 
-        if (existingLog) {
+        if (typeof (query as any).or === 'function') {
+          query = (query as any).or(`idempotency_key.eq.${idempotencyKey},idempotency_key.like.${idempotencyKey}_user_%`);
+        } else {
+          query = query.eq('idempotency_key', idempotencyKey);
+        }
+
+        query = query.eq('status', 'sent');
+
+        const { data: existingLogs } = typeof (query as any).limit === 'function'
+          ? await (query as any).limit(1)
+          : await (query as any).maybeSingle();
+
+        const hasExisting = Array.isArray(existingLogs)
+          ? existingLogs.length > 0
+          : Boolean(existingLogs && (existingLogs as any).id);
+
+        if (hasExisting) {
           sentRemindersCache.add(idempotencyKey);
           results.push({
             taskId: task.id,
@@ -140,10 +172,16 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
       const notificationContent = buildTaskDueNotification({
         taskId: task.id,
         taskTitle: task.title,
+        taskType: task.task_type,
+        priority: task.priority,
         leadId: task.lead_id,
         leadName,
         description: task.description,
+        dueAt: task.due_at,
+        isOverdue,
       });
+
+      const eventType = notificationContent.eventType || (isOverdue ? 'task_overdue' : 'task_due');
 
       // Dispatch Web Push via send-push-notification edge function
       try {
@@ -151,7 +189,7 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
           'send-push-notification',
           {
             body: {
-              event_type: 'task_due',
+              event_type: eventType,
               event_id: task.id,
               idempotency_key: idempotencyKey,
               title: notificationContent.title,
@@ -160,6 +198,12 @@ export async function checkAndDispatchDueTaskReminders(): Promise<TaskReminderRe
               task_id: task.id,
               lead_id: task.lead_id || undefined,
               target_user_ids: targetUserIds,
+              data: {
+                task_type: task.task_type,
+                priority: task.priority,
+                due_at: task.due_at,
+                is_overdue: isOverdue,
+              },
             },
           }
         );

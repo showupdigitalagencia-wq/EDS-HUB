@@ -161,6 +161,7 @@ export interface AppUser {
   email: string;
   display_name: string;
   is_active: boolean;
+  timezone?: string | null;
   created_at: string;
   updated_at: string;
 }

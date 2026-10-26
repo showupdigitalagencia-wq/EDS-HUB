@@ -321,19 +321,20 @@ describe('Consolidated Task: Request Course Info & Completed Registration Matrí
       expect(mockSendEmail).toHaveBeenCalledTimes(1);
     });
 
-    it('A10. strict email isolation: Request Course Info never triggers registration or contact us email', async () => {
+    it('A10. strict email isolation: Completed registration generates independent EDS CRM operational alert without attachments or official Laravel template', async () => {
       const regPayload: any = {
         event_type: 'completed_registration',
         idempotency_key: 'completed_reg_test_1',
         lead_id: 'lead_reg_1',
+        first_name: 'Carlos',
+        last_name: 'Eduardo',
+        course_name: 'Implant Training',
       };
 
-      // Completed registration is canonically handled by Laravel RegistrationReceivedAdminMail
-      // EDS HUB explicitly skips completed registration email dispatch
       const regRes = await sendInternalEnrollmentNotification(mockDb, regPayload);
       expect(regRes.success).toBe(true);
-      expect(regRes.subject).toContain('Skipped: completed registration email is canonically dispatched by Laravel RegistrationReceivedAdminMail');
-      expect(mockSendEmail).not.toHaveBeenCalled();
+      expect(regRes.subject).toBe('[EDS] Nova matrícula concluída — Carlos Eduardo — Implant Training');
+      expect(mockSendEmail).toHaveBeenCalled();
     });
   });
 
@@ -491,23 +492,26 @@ describe('Consolidated Task: Request Course Info & Completed Registration Matrí
       expect(screen.queryByText(/•/)).not.toBeInTheDocument();
     });
 
-    it('B4 & B5. Completed Registration Email: single approved client recipient, zero EDS HUB duplicate', async () => {
+    it('B4 & B5. Completed Registration Email: independent EDS HUB CRM operational alert separate from Laravel official email', async () => {
       // In Laravel:
       // Mail::to(config('mail.admin_address'))->send(new RegistrationReceivedAdminMail($registration));
-      // Recipient count is exactly 1 (the single approved client email address from env/config)
+      // Handled independently with English legal documentation and attachments.
       const laravelRecipientConfig = "config('mail.admin_address') || env('MAIL_ADMIN_ADDRESS')";
       expect(laravelRecipientConfig).toBeDefined();
 
       // In EDS HUB:
+      // Generates an independent operational CRM alert without attachments
       const res = await sendInternalEnrollmentNotification(mockDb, {
         event_type: 'completed_registration',
         idempotency_key: 'comp_test_1',
+        first_name: 'Dra.',
+        last_name: 'Patricia',
+        course_name: 'Endodontics Training',
       });
 
-      // EDS HUB intentionally does NOT generate completed registration email
-      expect(res.subject).toContain('RegistrationReceivedAdminMail');
-      expect(res.recipients).toEqual([]);
-      expect(mockSendEmail).not.toHaveBeenCalled();
+      expect(res.subject).toBe('[EDS] Nova matrícula concluída — Dra. Patricia — Endodontics Training');
+      expect(res.recipients).toContain('admin@expdentalsolutions.com');
+      expect(mockSendEmail).toHaveBeenCalled();
     });
   });
 
