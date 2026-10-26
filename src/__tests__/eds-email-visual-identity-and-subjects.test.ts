@@ -11,15 +11,6 @@ import {
   sendInternalEnrollmentNotification,
 } from '../../supabase/functions/_shared/internal-enrollment-notifier.ts';
 
-vi.mock('../../supabase/functions/_shared/resend-adapter.ts', () => ({
-  sendEmail: vi.fn().mockResolvedValue({
-    success: true,
-    messageId: 'msg_test_123',
-    errorCode: null,
-    errorMessage: null,
-  }),
-}));
-
 describe('EDS Email Visual Identity & Subject Standardization', () => {
   // ===========================================================================
   // 1. BRAND ASSET AUDIT & LOGO COMPLIANCE
@@ -303,63 +294,28 @@ describe('EDS Email Visual Identity & Subject Standardization', () => {
       expect(email.html).toContain('Nova matrícula concluída');
       expect(email.html).toContain('Matrícula Confirmada');
 
-      // Canonical rule: No false document storage claims or access button in EDS Hub operational alert
-      expect(email.html).not.toContain('Acessar Documentos Seguros');
-      expect(email.html).not.toContain('Documentos & Anexos de Matrícula');
-      expect(email.html).toContain('Notificação operacional do EDS Hub.');
-      expect(email.html).toContain('https://hub.expdentalsolutions.com/leads/lead-strange');
+      // Documents secured area link
+      expect(email.html).toContain('https://hub.expdentalsolutions.com/leads/lead-strange/documents');
+      expect(email.html).toContain('Acessar Documentos Seguros');
     });
 
-    it('sendInternalEnrollmentNotification dispatches operational alert for completed_registration', async () => {
+    it('sendInternalEnrollmentNotification skips completed_registration to prevent duplicate emails from EDS HUB', async () => {
       const mockDb = {
-        from: vi.fn((table: string) => {
-          if (table === 'app_user') {
-            return {
-              select: vi.fn().mockReturnValue({
-                eq: vi.fn().mockResolvedValue({
-                  data: [{ email: 'info@expdentalsolutions.com' }],
-                  error: null,
-                }),
-              }),
-            };
-          }
-          if (table === 'internal_notification_logs') {
-            return {
-              select: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-                }),
-              }),
-              upsert: vi.fn().mockResolvedValue({ error: null }),
-              update: vi.fn().mockReturnValue({
-                eq: vi.fn().mockResolvedValue({ error: null }),
-              }),
-            };
-          }
-          if (table === 'lead_activities') {
-            return {
-              insert: vi.fn().mockResolvedValue({ error: null }),
-            };
-          }
-          return {
-            select: vi.fn().mockReturnThis(),
-            eq: vi.fn().mockReturnThis(),
-            maybeSingle: vi.fn().mockResolvedValue({ data: null }),
-          };
-        }),
+        from: vi.fn(),
       };
 
       const result = await sendInternalEnrollmentNotification(mockDb, {
         event_type: 'completed_registration',
         idempotency_key: 'comp_attempt_999',
         lead_id: 'lead-999',
-        lead_name: 'Dr. Stephen Strange',
-        course_name: 'Endodontics Training',
       });
 
       expect(result.success).toBe(true);
-      expect(result.recipients).toEqual(['info@expdentalsolutions.com']);
-      expect(result.subject).toContain('[EDS] Nova matrícula concluída — Dr. Stephen Strange — Endodontics Training');
+      expect(result.duplicate).toBe(false);
+      expect(result.recipients).toEqual([]);
+      expect(result.subject).toContain('Skipped: completed registration email is canonically dispatched by Laravel RegistrationReceivedAdminMail');
+      // Zero DB calls because it short-circuits
+      expect(mockDb.from).not.toHaveBeenCalled();
     });
   });
 

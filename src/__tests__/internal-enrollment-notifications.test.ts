@@ -391,9 +391,9 @@ describe('Hardened Internal Enrollment Notification Architecture', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 7: Completed Registration Sends Separate EDS Operational CRM Alert
+  // 7: Completed Registration Does NOT Duplicate Email in EDS
   // ---------------------------------------------------------------------------
-  it('7: completed registration sends separate EDS internal operational alert without legal attachments', async () => {
+  it('7: completed registration does NOT generate duplicate EDS internal email; Laravel remains canonical', async () => {
     const completedPayload: InternalNotificationPayload = {
       event_type: 'completed_registration',
       idempotency_key: 'internal_email:completed:sub_999888',
@@ -404,11 +404,11 @@ describe('Hardened Internal Enrollment Notification Architecture', () => {
       course_name: 'Zygomatic Implant Training',
     };
 
-    const res = await sendInternalEnrollmentNotification(mockDb, completedPayload, { immediate: true });
+    const res = await sendInternalEnrollmentNotification(mockDb, completedPayload);
     expect(res.success).toBe(true);
-    expect(res.recipients.length).toBe(2);
-    expect(res.subject).toContain('[EDS] Nova matrícula concluída — Dr. Sarah Connor — Zygomatic Implant Training');
-    expect(mockLogs.has('internal_email:completed:sub_999888')).toBe(true);
+    expect(res.recipients.length).toBe(0);
+    expect(res.subject).toContain('RegistrationReceivedAdminMail');
+    expect(mockLogs.has('internal_email:completed:sub_999888')).toBe(false);
   });
 
   // ---------------------------------------------------------------------------

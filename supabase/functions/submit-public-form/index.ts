@@ -15,7 +15,6 @@ import { resolveCanonicalEmails } from '../_shared/canonical-email-resolver.ts';
 import {
   sendInternalContactNotification,
   sendInternalCourseInfoNotification,
-  sendInternalEnrollmentNotification,
   resolveCanonicalCourseName,
 } from '../_shared/internal-enrollment-notifier.ts';
 import type { LeadIntakePayload } from '../_shared/types.ts';
@@ -104,9 +103,8 @@ Deno.serve(async (req) => {
   // 2. POST: Submit Form
   // ===========================================================================
   if (req.method === 'POST') {
-    try {
-      // 2.1 Payload size check
-      const contentLength = req.headers.get('content-length');
+    // 2.1 Payload size check
+    const contentLength = req.headers.get('content-length');
     if (contentLength && parseInt(contentLength, 10) > MAX_PAYLOAD_BYTES) {
       return new Response(
         JSON.stringify({ error: 'Payload too large (maximum 64KB)' }),
@@ -569,68 +567,6 @@ Deno.serve(async (req) => {
       // non-blocking
     }
 
-    // Dispatch independent EDS HUB operational notifications for successfully completed registrations
-    const isWebsiteRegister =
-      slug === 'website-register' ||
-      (form.source === 'website' && form.source_detail === 'website_registration_form') ||
-      form.source_detail === 'website_registration_form';
-    if (isWebsiteRegister) {
-      const leadFullName =
-        `${fields.first_name || ''} ${fields.last_name || ''}`.trim() ||
-        (fields.name as string) ||
-        'Novo aluno';
-      const courseTitle = resolveCanonicalCourseName(
-        (fields.course as string | undefined) ||
-        (fields.course_interest as string | undefined) ||
-        (fields.course_name as string | undefined) ||
-        (fields.course_code as string | undefined) ||
-        (fields.course_id as string | undefined) ||
-        null
-      ) || 'Curso EDS';
-
-      // 1. Dispatch independent EDS app/push notification
-      try {
-        await db.functions.invoke('send-push-notification', {
-          body: {
-            event_type: 'completed_registration',
-            event_id: leadId || submissionId,
-            idempotency_key: effectiveAttemptId
-              ? `completed_push:attempt:${effectiveAttemptId}`
-              : `completed_push:${submissionId}`,
-            title: 'Nova matrícula concluída',
-            body: `Nova matrícula concluída — ${leadFullName} — ${courseTitle}`,
-            deep_link: leadId ? `/leads/${leadId}` : '/',
-          },
-        });
-      } catch (pushErr) {
-        console.warn('[submit-public-form] Internal completed registration push warning:', pushErr);
-      }
-
-      // 2. Dispatch independent SEPARATE EDS operational email alert (no legal file attachments)
-      try {
-        await sendInternalEnrollmentNotification(db, {
-          event_type: 'completed_registration',
-          submission_id: submissionId,
-          lead_id: leadId,
-          idempotency_key: effectiveAttemptId
-            ? `internal_email:completed:attempt:${effectiveAttemptId}`
-            : `internal_email:completed:${submissionId}`,
-          lead_name: leadFullName,
-          first_name: fields.first_name as string | undefined,
-          last_name: fields.last_name as string | undefined,
-          email: rawEmail || (fields.email as string | undefined),
-          phone: phoneE164 || (fields.phone as string | undefined),
-          course_name: courseTitle,
-          course_code: (fields.course_code || fields.course_id) as string | undefined,
-          turma_name: (fields.turma || fields.session_title || fields.course_session) as string | undefined,
-          source_page: (fields.source_page || fields.page_url || req.headers.get('referer')) as string | undefined,
-          raw_payload: fields,
-        }, { immediate: true });
-      } catch (emailErr) {
-        console.warn('[submit-public-form] Internal completed registration email warning:', emailErr);
-      }
-    }
-
     // Dispatch internal notification push & email for successfully submitted Contact Us forms (Part B)
     const isWebsiteContact =
       slug === 'website-contact' ||
@@ -760,13 +696,6 @@ Deno.serve(async (req) => {
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-    } catch (err: any) {
-      console.error('[submit-public-form] POST unhandled error:', err);
-      return new Response(
-        JSON.stringify({ error: 'Internal Server Error', message: err?.message || String(err), stack: err?.stack }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
   }
 
   return new Response('Method Not Allowed', { status: 405, headers: corsHeaders });

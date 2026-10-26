@@ -16,7 +16,7 @@ import { createAdminClient } from '../_shared/supabase-client.ts';
 import { sendInternalEnrollmentNotification } from '../_shared/internal-enrollment-notifier.ts';
 
 const MAX_PAYLOAD_BYTES = 16 * 1024; // 16 KB limit
-const RATE_LIMIT_MAX_REQUESTS = 60;
+const RATE_LIMIT_MAX_REQUESTS = 10;
 const RATE_LIMIT_WINDOW_MINUTES = 10;
 
 const ALLOWED_PROD_ORIGINS = [
@@ -190,11 +190,6 @@ Deno.serve(async (req) => {
     }
   }
 
-  const db = createAdminClient();
-
-  const statusParam = sanitized.status || 'needs_followup';
-  const isFailedSubmit = (statusParam === 'submission_failed');
-
   // 6. Required Fields Validation
   const idempotencyKey = sanitized.idempotency_key;
   if (!idempotencyKey || idempotencyKey.length < 5) {
@@ -206,16 +201,14 @@ Deno.serve(async (req) => {
 
   const email = sanitized.email;
   const phone = sanitized.phone;
-  // For passive typing abandonment (needs_followup), require at least one contact identifier.
-  // For explicit submit failure attempts (submission_failed), capture ANY attempt (even name-only or empty form).
-  if (!isFailedSubmit && !email && !phone) {
+  if (!email && !phone) {
     return new Response(JSON.stringify({ error: 'At least one contact identifier (email or phone) is required' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
-  let courseId = sanitized.course_id;
+  const courseId = sanitized.course_id;
   let courseCode = sanitized.course_code;
   if (!courseCode && sanitized.course) {
     const rawCourseStr = sanitized.course.toLowerCase();
@@ -224,25 +217,6 @@ Deno.serve(async (req) => {
         courseCode = code;
         break;
       }
-    }
-  }
-
-  // Safe fallback if visitor has not selected a course: query default active course
-  if (!courseId && !courseCode) {
-    try {
-      const { data: defaultCourse } = await db
-        .from('courses')
-        .select('id, code, name')
-        .eq('active', true)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (defaultCourse) {
-        courseId = defaultCourse.id;
-        courseCode = defaultCourse.code;
-      }
-    } catch (_err) {
-      // ignore
     }
   }
 
@@ -258,11 +232,6 @@ Deno.serve(async (req) => {
       firstName = rawFullName;
     }
   }
-
-  const isAnonymous = (!firstName || firstName === 'Lead') && !lastName && !sanitized.name && !sanitized.full_name;
-  const leadFullName = isAnonymous
-    ? 'Visitante não identificado'
-    : ([firstName, lastName].filter(Boolean).join(' ').trim() || (sanitized.name || sanitized.full_name) || 'Visitante não identificado');
 
   // 6.1 Guard against contact / course info requests:
   // Submissions or visits to /contact or #course-info-form are COURSE INFORMATION REQUESTS,
@@ -284,6 +253,8 @@ Deno.serve(async (req) => {
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
+
+  const db = createAdminClient();
 
   // 7. Persistent IP Rate Limiting via SHA-256 Hash
   const rawIp =
@@ -317,6 +288,7 @@ Deno.serve(async (req) => {
     );
   }
 
+  const statusParam = sanitized.status || 'needs_followup';
   const failureCategoryParam = sanitized.failure_category || (payload.failure_category as string) || (sanitized.error_code ? String(sanitized.error_code) : null);
   const attemptCountParam = typeof payload.submit_attempt_count === 'number'
     ? payload.submit_attempt_count
@@ -328,7 +300,7 @@ Deno.serve(async (req) => {
     {
       p_idempotency_key: idempotencyKey,
       p_external_attempt_id: sanitized.external_attempt_id || null,
-      p_first_name: isAnonymous ? 'Visitante não identificado' : (firstName || 'Lead'),
+      p_first_name: firstName || 'Lead',
       p_last_name: lastName || null,
       p_email: email || null,
       p_phone: phone || null,
@@ -351,7 +323,7 @@ Deno.serve(async (req) => {
   if (txError) {
     console.error('[capture-incomplete-enrollment] Transaction RPC error:', txError.message);
     return new Response(
-      JSON.stringify({ error: 'Incomplete enrollment capture transaction failed', details: txError.message }),
+      JSON.stringify({ error: 'Incomplete enrollment capture transaction failed' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -364,13 +336,15 @@ Deno.serve(async (req) => {
   }
 
   if (txResult && txResult.success && txResult.lead_id) {
+    const isFailedSubmit = (statusParam === 'submission_failed');
     const effectiveAttemptCount = txResult.submit_attempt_count || attemptCountParam || 1;
+    const leadFullName = [firstName, lastName].filter(Boolean).join(' ').trim() || (sanitized.name || sanitized.full_name) || 'Lead';
 
-    let courseDisplayName = (payload.course as string) || (payload.course_name as string) || (courseCode ? CANONICAL_COURSE_MAP[courseCode.toUpperCase()] : null) || courseCode || 'Curso não selecionado';
+    let courseDisplayName = (payload.course as string) || (payload.course_name as string) || (courseCode ? CANONICAL_COURSE_MAP[courseCode.toUpperCase()] : null) || courseCode || 'Curso de Especialização';
     if (sanitized.course_id) {
       const { data: cData } = await db.from('courses').select('name').eq('id', sanitized.course_id).maybeSingle();
       if (cData?.name) courseDisplayName = cData.name;
-    } else if (courseCode && (!courseDisplayName || courseDisplayName === 'Curso não selecionado')) {
+    } else if (courseCode && !courseDisplayName) {
       const { data: cData } = await db.from('courses').select('name').eq('code', courseCode).maybeSingle();
       if (cData?.name) courseDisplayName = cData.name;
     }
@@ -401,10 +375,67 @@ Deno.serve(async (req) => {
 
     // Internal email notification
     try {
-      if (isFailedSubmit) {
-        // EXPLICIT FAILED SUBMIT: ALWAYS IMMEDIATE DISPATCH
-        // Explicit submit clicks that fail validation or server processing must notify immediately.
-        // They must never be suppressed by historical registrations.
+      // Pre-queue check: Has a completed registration already occurred for this attempt, lead, or email?
+      let alreadyCompleted = false;
+      const cleanEmail = email ? email.trim().toLowerCase() : '';
+      const extAttId = sanitized.external_attempt_id;
+
+      if (extAttId) {
+        const { data: compByAtt } = await db
+          .from('form_submissions')
+          .select('id')
+          .or(`idempotency_key.eq.comp_${extAttId},submitted_data->>external_attempt_id.eq.${extAttId}`)
+          .or('form_name.eq.website-register,source_detail.eq.website_registration_form')
+          .eq('processing_status', 'processed')
+          .limit(1);
+        if (compByAtt && compByAtt.length > 0) alreadyCompleted = true;
+      }
+
+      if (!alreadyCompleted && txResult.lead_id) {
+        const { data: compByLead } = await db
+          .from('form_submissions')
+          .select('id')
+          .eq('lead_id', txResult.lead_id)
+          .or('form_name.eq.website-register,source_detail.eq.website_registration_form')
+          .eq('processing_status', 'processed')
+          .limit(1);
+        if (compByLead && compByLead.length > 0) alreadyCompleted = true;
+      }
+
+      if (!alreadyCompleted && cleanEmail) {
+        const { data: compByEmail } = await db
+          .from('form_submissions')
+          .select('id')
+          .eq('email', cleanEmail)
+          .or('form_name.eq.website-register,source_detail.eq.website_registration_form')
+          .eq('processing_status', 'processed')
+          .limit(1);
+        if (compByEmail && compByEmail.length > 0) alreadyCompleted = true;
+      }
+
+      if (alreadyCompleted) {
+        // Registration already completed! Mark attempt resolved and log skipped audit entry
+        if (txResult.attempt_id) {
+          await db
+            .from('incomplete_enrollments')
+            .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+            .eq('id', txResult.attempt_id);
+        }
+        await db.from('internal_notification_logs').upsert({
+          idempotency_key: `internal_email:attempt:${sanitized.external_attempt_id || txResult.attempt_id || txResult.lead_id}`,
+          event_type: 'incomplete_registration',
+          lead_id: txResult.lead_id,
+          attempt_id: txResult.attempt_id,
+          recipient_emails: ['info@expdentalsolutions.com'],
+          subject: `Tentativa de matrícula — ${leadFullName} — ${courseDisplayName}`,
+          status: 'skipped',
+          error_message: 'Registration completed prior to incomplete capture',
+          payload_snapshot: payload,
+          last_activity_at: new Date().toISOString(),
+          scheduled_for: new Date().toISOString(),
+        }, { onConflict: 'idempotency_key' });
+      } else if (isFailedSubmit) {
+        // EXPLICIT FAILED SUBMIT: IMMEDIATE DISPATCH
         const failKey = `internal_email:attempt:fail_${sanitized.external_attempt_id || txResult.attempt_id}_${effectiveAttemptCount}`;
         await sendInternalEnrollmentNotification(db, {
           event_type: 'incomplete_registration',
@@ -413,10 +444,10 @@ Deno.serve(async (req) => {
           attempt_id: txResult.attempt_id,
           external_attempt_id: sanitized.external_attempt_id,
           lead_name: leadFullName,
-          first_name: isAnonymous ? 'Visitante não identificado' : (firstName || 'Visitante não identificado'),
-          last_name: lastName || null,
-          email: email || 'Não informado',
-          phone: phone || 'Não informado',
+          first_name: firstName,
+          last_name: lastName,
+          email: email,
+          phone: phone,
           course_code: courseCode,
           course_name: courseDisplayName,
           turma_name: sanitized.session_code,
@@ -434,68 +465,30 @@ Deno.serve(async (req) => {
           },
         }, { immediate: true });
       } else {
-        // PASSIVE INCOMPLETE ATTEMPT (Form filling without submit action)
-        // Check if THIS SPECIFIC attempt already completed registration
-        let alreadyCompleted = false;
-        const extAttId = sanitized.external_attempt_id;
-
-        if (extAttId) {
-          const { data: compByAtt } = await db
-            .from('form_submissions')
-            .select('id')
-            .or(`idempotency_key.eq.comp_${extAttId},submitted_data->>external_attempt_id.eq.${extAttId}`)
-            .eq('processing_status', 'processed')
-            .limit(1);
-          if (compByAtt && compByAtt.length > 0) alreadyCompleted = true;
-        }
-
-        if (alreadyCompleted) {
-          // Registration for this attempt already completed! Mark attempt resolved and log skipped audit entry
-          if (txResult.attempt_id) {
-            await db
-              .from('incomplete_enrollments')
-              .update({ status: 'resolved', resolved_at: new Date().toISOString() })
-              .eq('id', txResult.attempt_id);
-          }
-          await db.from('internal_notification_logs').upsert({
-            idempotency_key: `internal_email:attempt:${sanitized.external_attempt_id || txResult.attempt_id || txResult.lead_id}`,
-            event_type: 'incomplete_registration',
-            lead_id: txResult.lead_id,
-            attempt_id: txResult.attempt_id,
-            recipient_emails: ['info@expdentalsolutions.com'],
-            subject: `Tentativa de matrícula — ${leadFullName} — ${courseDisplayName}`,
-            status: 'skipped',
-            error_message: 'Registration completed prior to incomplete capture',
-            payload_snapshot: payload,
-            last_activity_at: new Date().toISOString(),
-            scheduled_for: new Date().toISOString(),
-          }, { onConflict: 'idempotency_key' });
-        } else {
-          // INACTIVITY ABANDONMENT: Queue ~10 minutes
-          const attemptIdKey = `internal_email:attempt:${sanitized.external_attempt_id || txResult.attempt_id || txResult.lead_id}`;
-          await sendInternalEnrollmentNotification(db, {
-            event_type: 'incomplete_registration',
-            idempotency_key: attemptIdKey,
-            lead_id: txResult.lead_id,
-            attempt_id: txResult.attempt_id,
-            external_attempt_id: sanitized.external_attempt_id,
-            lead_name: leadFullName,
-            first_name: firstName,
-            last_name: lastName,
-            email: email,
-            phone: phone,
-            course_code: courseCode,
-            course_name: courseDisplayName,
-            turma_name: sanitized.session_code,
-            source_page: sanitized.source_page,
-            status: sanitized.status || 'needs_followup',
-            error_code: sanitized.error_code,
-            raw_payload: {
-              ...payload,
-              name: leadFullName,
-            },
-          }, { immediate: false, inactivityMinutes: 10 });
-        }
+        // INACTIVITY ABANDONMENT: Queue ~10 minutes
+        const attemptIdKey = `internal_email:attempt:${sanitized.external_attempt_id || txResult.attempt_id || txResult.lead_id}`;
+        await sendInternalEnrollmentNotification(db, {
+          event_type: 'incomplete_registration',
+          idempotency_key: attemptIdKey,
+          lead_id: txResult.lead_id,
+          attempt_id: txResult.attempt_id,
+          external_attempt_id: sanitized.external_attempt_id,
+          lead_name: leadFullName,
+          first_name: firstName,
+          last_name: lastName,
+          email: email,
+          phone: phone,
+          course_code: courseCode,
+          course_name: courseDisplayName,
+          turma_name: sanitized.session_code,
+          source_page: sanitized.source_page,
+          status: sanitized.status || 'needs_followup',
+          error_code: sanitized.error_code,
+          raw_payload: {
+            ...payload,
+            name: leadFullName,
+          },
+        }, { immediate: false, inactivityMinutes: 10 });
       }
     } catch (emailErr) {
       console.warn('[capture-incomplete-enrollment] Internal email notification notice:', emailErr);
@@ -508,7 +501,6 @@ Deno.serve(async (req) => {
       received: true,
       processing_status: txResult.processing_status,
       attempt_id: txResult.attempt_id,
-      submit_attempt_count: txResult.submit_attempt_count || 1,
     }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );

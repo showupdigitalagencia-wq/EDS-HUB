@@ -471,25 +471,31 @@ describe('EDS HUB — Batch 4: Lead Detail & Operational Workspace Tests', () =>
     });
 
     it('renders pending tasks first with nearest due and overdue indicator', () => {
-      render(
-        <LeadTaskList
-          tasks={mockTasks}
-          onOpenCreateTask={vi.fn()}
-          onTaskUpdated={vi.fn()}
-        />
-      );
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-15T12:00:00Z'));
+      try {
+        render(
+          <LeadTaskList
+            tasks={mockTasks}
+            onOpenCreateTask={vi.fn()}
+            onTaskUpdated={vi.fn()}
+          />
+        );
 
-      // Overdue indicator
-      expect(screen.getByText('Atrasada')).toBeDefined();
-      expect(screen.getByText('Lembrete de pagamento da entrada')).toBeDefined();
+        // Overdue indicator
+        expect(screen.getByText('Atrasada')).toBeDefined();
+        expect(screen.getByText('Lembrete de pagamento da entrada')).toBeDefined();
 
-      // Pending tasks count
-      expect(screen.getByText(/Pendentes \(2\)/i)).toBeDefined();
+        // Pending tasks count
+        expect(screen.getByText(/Pendentes \(2\)/i)).toBeDefined();
 
-      // Completed task rendered with Concluída badge
-      expect(screen.getByText(/Concluídas \(1\)/i)).toBeDefined();
-      expect(screen.getByText('Follow-up inicial')).toBeDefined();
-      expect(screen.getByText('Concluída')).toBeDefined();
+        // Completed task rendered with Concluída badge
+        expect(screen.getByText(/Concluídas \(1\)/i)).toBeDefined();
+        expect(screen.getByText('Follow-up inicial')).toBeDefined();
+        expect(screen.getByText('Concluída')).toBeDefined();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('allows completing pending task via completeCrmTask and remains visible', async () => {
