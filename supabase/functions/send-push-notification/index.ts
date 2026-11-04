@@ -163,13 +163,12 @@ async function sendPushInternal(supabase: any, payload: SendPushRequest) {
     throw subsError;
   }
 
-  // Deduplicate subscriptions: take newest per device_type
-  const seenUserDevice = new Set<string>();
-  const subscriptions = (rawSubscriptions || []).filter((sub: { id: string; user_id: string; device_type: string }) => {
+  // Deduplicate subscriptions: deliver to all distinct active device endpoints without dropping multi-device users
+  const seenEndpoints = new Set<string>();
+  const subscriptions = (rawSubscriptions || []).filter((sub: { id: string; user_id: string; endpoint: string; device_type: string }) => {
     if (target_subscription_ids && target_subscription_ids.includes(sub.id)) return true;
-    const key = `${sub.user_id}_${sub.device_type}`;
-    if (seenUserDevice.has(key)) return false;
-    seenUserDevice.add(key);
+    if (seenEndpoints.has(sub.endpoint)) return false;
+    seenEndpoints.add(sub.endpoint);
     return true;
   });
 

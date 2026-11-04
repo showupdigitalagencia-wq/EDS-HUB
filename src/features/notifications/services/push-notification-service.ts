@@ -7,6 +7,7 @@
 
 import { supabase } from '../../../lib/supabase';
 import { buildTaskDueNotification } from '../utils/task-notification-format';
+import { getIsStandalone, getIsIosDevice } from '../../../hooks/useIsStandalone';
 
 export interface PushNotificationPreferences {
   id?: string;
@@ -174,13 +175,8 @@ export async function subscribeToPush(
     const deviceType = detectDeviceType();
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
 
-    // Revoke previous subscriptions for this user on this device type to prevent orphaned duplicates
-    await supabase
-      .from('push_subscriptions')
-      .update({ status: 'revoked', updated_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .eq('device_type', deviceType)
-      .neq('endpoint', subscription.endpoint);
+    // Support multiple devices per user without aggressive auto-revocation.
+    // Each distinct device endpoint is maintained independently and upserted cleanly.
 
     const { error: dbError } = await supabase.from('push_subscriptions').upsert(
       {
@@ -366,6 +362,244 @@ export async function getDevicePushDiagnostics(): Promise<DevicePushDiagnostics>
  * 3. Registers new PushSubscription with the current rotated VAPID public key
  * 4. Saves new subscription record in Supabase
  */
+
+export type DeviceSubscriptionSyncStatus =
+  | 'unsupported'
+  | 'ios_not_standalone'
+  | 'permission_default'
+  | 'permission_denied'
+  | 'subscription_missing'
+  | 'subscription_orphan'
+  | 'synced'
+  | 'transient_error';
+
+export interface DeviceSubscriptionSyncResult {
+  status: DeviceSubscriptionSyncStatus;
+  userId: string | null;
+  permission: NotificationPermission;
+  isStandalone: boolean;
+  isIos: boolean;
+  endpoint?: string | null;
+  subscriptionId?: string | null;
+  error?: string;
+}
+
+/**
+ * Performs a comprehensive audit of Web Push readiness on the current device:
+ * 1. Verifies browser support and iOS Standalone PWA requirement.
+ * 2. Checks permission state ('default', 'denied', 'granted').
+ * 3. Inspects real PushSubscription via pushManager.getSubscription().
+ * 4. Compares local endpoint with Supabase active records for current auth.uid().
+ * 5. Returns precise actionable status for banners, diagnostics, and auto-sync.
+ */
+export async function checkDeviceSubscriptionSync(): Promise<DeviceSubscriptionSyncResult> {
+  const isIos = getIsIosDevice();
+  const isStandalone = getIsStandalone();
+
+  if (isIos && !isStandalone) {
+    return {
+      status: 'ios_not_standalone',
+      userId: null,
+      permission: getNotificationPermission(),
+      isStandalone: false,
+      isIos: true,
+    };
+  }
+
+  if (!isPushSupported()) {
+    return {
+      status: 'unsupported',
+      userId: null,
+      permission: 'denied',
+      isStandalone,
+      isIos,
+    };
+  }
+
+  const permission = getNotificationPermission();
+
+  if (permission === 'denied') {
+    return {
+      status: 'permission_denied',
+      userId: null,
+      permission: 'denied',
+      isStandalone,
+      isIos,
+    };
+  }
+
+  if (permission === 'default') {
+    return {
+      status: 'permission_default',
+      userId: null,
+      permission: 'default',
+      isStandalone,
+      isIos,
+    };
+  }
+
+  try {
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData?.user?.id || null;
+
+    if (!userId) {
+      return {
+        status: 'transient_error',
+        userId: null,
+        permission: 'granted',
+        isStandalone,
+        isIos,
+        error: 'Sessão de usuário em carregamento',
+      };
+    }
+
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      return {
+        status: 'subscription_missing',
+        userId,
+        permission: 'granted',
+        isStandalone,
+        isIos,
+      };
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    if (!registration.pushManager) {
+      return {
+        status: 'subscription_missing',
+        userId,
+        permission: 'granted',
+        isStandalone,
+        isIos,
+      };
+    }
+
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      return {
+        status: 'subscription_missing',
+        userId,
+        permission: 'granted',
+        isStandalone,
+        isIos,
+      };
+    }
+
+    // Verify VAPID key match
+    const serverKey = subscription.options?.applicationServerKey;
+    const keyMatches = isApplicationServerKeyMatching(serverKey, DEFAULT_VAPID_PUBLIC_KEY);
+    if (!keyMatches) {
+      return {
+        status: 'subscription_orphan',
+        userId,
+        permission: 'granted',
+        isStandalone,
+        isIos,
+        endpoint: subscription.endpoint,
+      };
+    }
+
+    // Query Supabase for this endpoint belonging to current user with active status
+    const { data: subRecord, error } = await supabase
+      .from('push_subscriptions')
+      .select('id, user_id, status')
+      .eq('endpoint', subscription.endpoint)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[PushService] Database error checking push subscription:', error);
+      return {
+        status: 'transient_error',
+        userId,
+        permission: 'granted',
+        isStandalone,
+        isIos,
+        endpoint: subscription.endpoint,
+        error: error.message || 'Falha temporária ao consultar status no banco',
+      };
+    }
+
+    if (!subRecord || subRecord.status !== 'active' || subRecord.user_id !== userId) {
+      return {
+        status: 'subscription_orphan',
+        userId,
+        permission: 'granted',
+        isStandalone,
+        isIos,
+        endpoint: subscription.endpoint,
+        subscriptionId: subRecord?.id || null,
+      };
+    }
+
+    return {
+      status: 'synced',
+      userId,
+      permission: 'granted',
+      isStandalone,
+      isIos,
+      endpoint: subscription.endpoint,
+      subscriptionId: subRecord.id,
+    };
+  } catch (err) {
+    console.warn('[PushService] Unexpected sync check error:', err);
+    return {
+      status: 'transient_error',
+      userId: null,
+      permission: 'granted',
+      isStandalone,
+      isIos,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 10-Day Intelligent Dismissal Helpers
+// -----------------------------------------------------------------------------
+export const PUSH_PROMPT_DISMISSAL_KEY_PREFIX = 'eds_push_prompt_dismissed_';
+export const PUSH_PROMPT_SUPPRESSION_DAYS = 10;
+export const PUSH_PROMPT_SUPPRESSION_MS = PUSH_PROMPT_SUPPRESSION_DAYS * 24 * 60 * 60 * 1000;
+
+export function isPushPromptDismissed(userId?: string | null): boolean {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return false;
+  try {
+    const key = userId ? `${PUSH_PROMPT_DISMISSAL_KEY_PREFIX}${userId}` : 'eds_push_prompt_dismissed';
+    const val = localStorage.getItem(key);
+    if (!val) return false;
+    const timestamp = parseInt(val, 10);
+    if (isNaN(timestamp)) return false;
+    const elapsed = Date.now() - timestamp;
+    return elapsed < PUSH_PROMPT_SUPPRESSION_MS;
+  } catch {
+    return false;
+  }
+}
+
+export function recordPushPromptDismissed(userId?: string | null): void {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+  try {
+    const now = Date.now().toString();
+    if (userId) {
+      localStorage.setItem(`${PUSH_PROMPT_DISMISSAL_KEY_PREFIX}${userId}`, now);
+    }
+    localStorage.setItem('eds_push_prompt_dismissed', now);
+  } catch (err) {
+    console.debug('[PushService] Error saving dismissal:', err);
+  }
+}
+
+export function clearPushPromptDismissed(userId?: string | null): void {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+  try {
+    if (userId) {
+      localStorage.removeItem(`${PUSH_PROMPT_DISMISSAL_KEY_PREFIX}${userId}`);
+    }
+    localStorage.removeItem('eds_push_prompt_dismissed');
+  } catch (err) {
+    console.debug('[PushService] Error clearing dismissal:', err);
+  }
+}
+
 export async function reregisterCurrentDevice(
   vapidPublicKey: string = DEFAULT_VAPID_PUBLIC_KEY
 ): Promise<{ success: boolean; error?: string }> {
@@ -437,13 +671,8 @@ export async function reregisterCurrentDevice(
     const deviceType = detectDeviceType();
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
 
-    // Revoke previous subscriptions for this user on this device type to prevent orphaned duplicates
-    await supabase
-      .from('push_subscriptions')
-      .update({ status: 'revoked', updated_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .eq('device_type', deviceType)
-      .neq('endpoint', newSubscription.endpoint);
+    // Support multiple devices per user without aggressive auto-revocation.
+    // Note: The specific prior endpoint on this device was already revoked above before re-subscribing.
 
     const { error: dbError } = await supabase.from('push_subscriptions').upsert(
       {

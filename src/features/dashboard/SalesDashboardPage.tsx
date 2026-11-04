@@ -14,6 +14,7 @@ import { TasksAndConversationsWidget } from './components/TasksAndConversationsW
 import { EmailHealthCard } from './components/EmailHealthCard';
 import { IncompleteEnrollmentsWidget } from './components/IncompleteEnrollmentsWidget';
 import { ActivityTrendWidget } from './components/ActivityTrendWidget';
+import { PushActivationBanner } from '../notifications/components/PushActivationBanner';
 import {
   fetchSalesDashboardMetrics,
   getDateRangeBoundaries,
@@ -184,6 +185,9 @@ export const SalesDashboardPage: React.FC = () => {
       }
     >
       <div className="space-y-6 sm:space-y-8">
+        {/* Web Push & Mobile Notification Activation Banner */}
+        <PushActivationBanner />
+
         {/* High-Priority Spam Alert Banner (Domain Reputation Protection) */}
         {hasSpamComplaint && (
           <div
