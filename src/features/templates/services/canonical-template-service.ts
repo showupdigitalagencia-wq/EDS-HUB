@@ -31,6 +31,16 @@ export interface CanonicalSmsTemplate {
   updated_at?: string;
 }
 
+export interface CanonicalWhatsappTemplate {
+  id: string;
+  name: string;
+  template_key: string | null;
+  text_template: string;
+  category: string;
+  is_active: boolean;
+  updated_at?: string;
+}
+
 // Fallback templates used strictly if database table is empty or network fails
 export const DEFAULT_FALLBACK_SMS_TEMPLATES: CanonicalSmsTemplate[] = [
   {
@@ -151,7 +161,128 @@ I’m happy to answer any questions and help you find the course that best match
   },
 ];
 
+// Fallback WhatsApp templates used strictly if database table has no custom whatsapp templates or network fails
+export const DEFAULT_FALLBACK_WHATSAPP_TEMPLATES: CanonicalWhatsappTemplate[] = [
+  {
+    id: 'intensive_advanced_followup_whatsapp',
+    name: 'Contato WhatsApp inicial — Intensive + Advanced',
+    template_key: 'intensive_advanced_followup_whatsapp',
+    text_template: `Hello Dr. [SURNAME]
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Implant Training in Brazil.
+
+I just sent you an email with all the course details.
+
+To help you choose the best option, could you tell me a little about your implant experience?
+
+We currently have openings on November 11 to 14, 2026 and February 24 to 27, 2027. Would either of those dates work for you?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`,
+    category: 'whatsapp',
+    is_active: true,
+  },
+  {
+    id: 'endodontics_followup_whatsapp',
+    name: 'Contato WhatsApp inicial — Endodontics',
+    template_key: 'endodontics_followup_whatsapp',
+    text_template: `Hello Dr. [SURNAME]
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Endodontics Training in Brazil.
+
+I just sent you an email with all the course details.
+
+To help you choose the best option, could you tell me a little about your endodontics experience?
+
+Would you like to review the dates and program details together?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`,
+    category: 'whatsapp',
+    is_active: true,
+  },
+  {
+    id: 'zygomatic_followup_whatsapp',
+    name: 'Contato WhatsApp inicial — Zygomatic',
+    template_key: 'zygomatic_followup_whatsapp',
+    text_template: `Hello Dr. [SURNAME]
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Zygomatic Implant Training in Brazil.
+
+I just sent you an email with all the course details.
+
+To help you choose the best option, could you tell me a little about your implant experience?
+
+We currently have openings on November 7 to 10, 2026 and March 1 to 4, 2027. Would either of those dates work for you?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`,
+    category: 'whatsapp',
+    is_active: true,
+  },
+  {
+    id: 'wisdom_followup_whatsapp',
+    name: 'Contato WhatsApp inicial — Wisdom',
+    template_key: 'wisdom_followup_whatsapp',
+    text_template: `Hello Dr. [SURNAME]
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Wisdom Teeth Training in Brazil.
+
+I just sent you an email with all the course details.
+
+To help you choose the best option, could you tell me a little about your surgical extraction experience?
+
+Would you like to review upcoming dates together?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`,
+    category: 'whatsapp',
+    is_active: true,
+  },
+  {
+    id: 'rehabilitation_followup_whatsapp',
+    name: 'Contato WhatsApp inicial — Rehabilitation',
+    template_key: 'rehabilitation_followup_whatsapp',
+    text_template: `Hello Dr. [SURNAME]
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Oral Rehabilitation Training in Brazil.
+
+I just sent you an email with all the course details.
+
+To help you choose the best option, could you tell me a little about your prosthetic and rehabilitation experience?
+
+Would you like to review the upcoming dates together?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`,
+    category: 'whatsapp',
+    is_active: true,
+  },
+  {
+    id: 'periodontal_followup_whatsapp',
+    name: 'Contato WhatsApp inicial — Periodontal Plastic',
+    template_key: 'periodontal_followup_whatsapp',
+    text_template: `Hello Dr. [SURNAME]
+
+This is Natália from Expert Dental Solutions. Thank you for your interest in our Periodontal Plastic Surgery Training in Brazil.
+
+I just sent you an email with all the course details.
+
+To help you choose the best option, could you tell me a little about your soft-tissue grafting experience?
+
+Would you like to review the upcoming dates together?
+
+I’m happy to answer any questions and help you find the course that best matches your goals.`,
+    category: 'whatsapp',
+    is_active: true,
+  },
+  {
+    id: 'general_inquiry_whatsapp',
+    name: 'Contato WhatsApp inicial — Geral',
+    template_key: 'general_inquiry_whatsapp',
+    text_template: `Hello {{first_name}}, thank you for your interest in Expert Dental Solutions. We received your request and would love to answer your questions regarding our hands-on surgical programs.`,
+    category: 'whatsapp',
+    is_active: true,
+  },
+];
+
 let cachedSmsTemplates: CanonicalSmsTemplate[] | null = null;
+let cachedWhatsappTemplates: CanonicalWhatsappTemplate[] | null = null;
 
 /**
  * Invalidates in-memory template cache so any subsequent modal open
@@ -159,6 +290,7 @@ let cachedSmsTemplates: CanonicalSmsTemplate[] | null = null;
  */
 export function invalidateCanonicalTemplateCache(): void {
   cachedSmsTemplates = null;
+  cachedWhatsappTemplates = null;
 }
 
 /**
@@ -225,6 +357,114 @@ export function resolveDefaultSmsTemplate(
   lead: Lead
 ): CanonicalSmsTemplate {
   const tpls = templates && templates.length > 0 ? templates : DEFAULT_FALLBACK_SMS_TEMPLATES;
+  const interestStr = `${lead.course_interest || ''} ${JSON.stringify(lead.course_interests || [])}`.toLowerCase();
+
+  const findMatch = (keySub: string, nameSub: string) =>
+    tpls.find(
+      (t) =>
+        (t.template_key && t.template_key.toLowerCase().includes(keySub)) ||
+        t.name.toLowerCase().includes(nameSub)
+    );
+
+  if (interestStr.includes('zygoma')) {
+    const match = findMatch('zygomatic', 'zygomatic');
+    if (match) return match;
+  }
+  if (interestStr.includes('endo')) {
+    const match = findMatch('endodontic', 'endodontic');
+    if (match) return match;
+  }
+  if (interestStr.includes('wisdom') || interestStr.includes('molar')) {
+    const match = findMatch('wisdom', 'wisdom');
+    if (match) return match;
+  }
+  if (interestStr.includes('rehab')) {
+    const match = findMatch('rehabilitation', 'rehabilitation');
+    if (match) return match;
+  }
+  if (interestStr.includes('perio')) {
+    const match = findMatch('periodontal', 'periodontal');
+    if (match) return match;
+  }
+  if (interestStr.includes('implant') || interestStr.includes('intensive') || interestStr.includes('advanced')) {
+    const match = findMatch('intensive', 'intensive') || findMatch('implant', 'implant');
+    if (match) return match;
+  }
+
+  // Fallback to Zygomatic or first available
+  return (
+    tpls.find(
+      (t) =>
+        (t.template_key && t.template_key.includes('zygomatic')) ||
+        t.name.toLowerCase().includes('zygomatic')
+    ) || tpls[0]
+  );
+}
+
+/**
+ * Fetches canonical active WhatsApp templates from public.email_templates.
+ * If forceRefresh is true or cache is empty, queries Supabase directly.
+ */
+export async function fetchCanonicalWhatsappTemplates(forceRefresh: boolean = false): Promise<CanonicalWhatsappTemplate[]> {
+  if (!forceRefresh && cachedWhatsappTemplates && cachedWhatsappTemplates.length > 0) {
+    return cachedWhatsappTemplates;
+  }
+
+  try {
+    const fromBuilder = supabase.from('email_templates');
+    if (!fromBuilder || typeof fromBuilder.select !== 'function') {
+      return cachedWhatsappTemplates || DEFAULT_FALLBACK_WHATSAPP_TEMPLATES;
+    }
+
+    let query: any = fromBuilder.select('id, name, template_key, text_template, category, content_json, is_active, updated_at');
+    if (query && typeof query.eq === 'function') {
+      query = query.eq('is_active', true);
+    }
+    if (query && typeof query.order === 'function') {
+      query = query.order('name');
+    }
+
+    const res = await query;
+    if (res && res.error) throw res.error;
+
+    const rows = res?.data || [];
+    const whatsappRows = rows.filter((r: any) => {
+      const isWaCategory = r.category === 'whatsapp';
+      const isWaChannel = (r.content_json as any)?.channel === 'whatsapp';
+      const isWaKey = typeof r.template_key === 'string' && (r.template_key.includes('whatsapp') || r.template_key.includes('wpp'));
+      const hasWaInName = typeof r.name === 'string' && (r.name.toLowerCase().includes('whatsapp') || r.name.toLowerCase().includes('wpp') || r.name.toLowerCase().includes('zap'));
+      return isWaCategory || isWaChannel || isWaKey || hasWaInName;
+    });
+
+    if (whatsappRows.length > 0) {
+      const mapped: CanonicalWhatsappTemplate[] = whatsappRows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        template_key: r.template_key || null,
+        text_template: r.text_template || (r.content_json as any)?.body || '',
+        category: r.category || 'whatsapp',
+        is_active: r.is_active ?? true,
+        updated_at: r.updated_at,
+      }));
+      cachedWhatsappTemplates = mapped;
+      return mapped;
+    }
+  } catch (err) {
+    console.warn('[canonical-template-service] Failed to fetch WhatsApp templates from database, falling back:', err);
+  }
+
+  cachedWhatsappTemplates = DEFAULT_FALLBACK_WHATSAPP_TEMPLATES;
+  return DEFAULT_FALLBACK_WHATSAPP_TEMPLATES;
+}
+
+/**
+ * Resolves which WhatsApp template to select by default based on the lead's course interest.
+ */
+export function resolveDefaultWhatsappTemplate(
+  templates: CanonicalWhatsappTemplate[],
+  lead: Lead
+): CanonicalWhatsappTemplate {
+  const tpls = templates && templates.length > 0 ? templates : DEFAULT_FALLBACK_WHATSAPP_TEMPLATES;
   const interestStr = `${lead.course_interest || ''} ${JSON.stringify(lead.course_interests || [])}`.toLowerCase();
 
   const findMatch = (keySub: string, nameSub: string) =>

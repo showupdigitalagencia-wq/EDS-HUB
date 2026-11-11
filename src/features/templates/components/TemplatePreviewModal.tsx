@@ -10,6 +10,7 @@ import {
   APPROVED_COURSE_TEMPLATES,
   APPROVED_SMS_TEMPLATES,
 } from '../../../utils/template-variables';
+import { WhatsAppIcon } from '../../../components/icons/WhatsAppIcon';
 import type { EmailTemplate } from '../../../types';
 import {
   Mail,
@@ -142,6 +143,23 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
     return {
       text: substitutedText,
       segments,
+    };
+  }, [template, channel]);
+
+  const whatsappData = useMemo(() => {
+    if (!template || channel !== 'whatsapp') return null;
+
+    let bodyText = template.text_template || '';
+    if (!bodyText && template.content_json) {
+      if (typeof template.content_json === 'object' && 'body' in (template.content_json as any)) {
+        bodyText = (template.content_json as any).body || '';
+      }
+    }
+
+    const substitutedText = renderTemplateWithSampleData(bodyText, 'global');
+    return {
+      text: substitutedText,
+      characterCount: substitutedText.length,
     };
   }, [template, channel]);
 
@@ -315,6 +333,60 @@ export function TemplatePreviewModal({ isOpen, onClose, template }: TemplatePrev
               <div className="flex items-center justify-between text-[10px] text-slate-500">
                 <span>Codificação: <strong className="text-slate-300">{smsData.segments.encoding}</strong></span>
                 <span>Restantes no segmento: {smsData.segments.remainingInCurrentSegment}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* WhatsApp Preview */}
+        {channel === 'whatsapp' && whatsappData && (
+          <div className="max-w-md mx-auto rounded-3xl border border-slate-300 overflow-hidden shadow-sm bg-[#efeae2] text-slate-900">
+            {/* WhatsApp Phone Chrome Header */}
+            <div className="bg-[#075e54] text-white px-5 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-xs uppercase text-white">
+                  {SAMPLE_PREVIEW_DATA.first_name.charAt(0)}
+                </div>
+                <div>
+                  <p className="text-xs font-bold leading-tight">
+                    {SAMPLE_PREVIEW_DATA.first_name} {SAMPLE_PREVIEW_DATA.last_name}
+                  </p>
+                  <p className="text-[10px] text-emerald-100 font-mono">
+                    {SAMPLE_PREVIEW_DATA.recipient_phone}
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-semibold uppercase bg-emerald-800/80 text-emerald-100 px-2 py-0.5 rounded border border-emerald-600/40 inline-flex items-center gap-1">
+                <WhatsAppIcon className="w-3 h-3 text-emerald-300" /> WhatsApp
+              </span>
+            </div>
+
+            {/* Bubble Screen */}
+            <div className="p-6 bg-[#efeae2] min-h-[260px] flex flex-col justify-end space-y-2">
+              <div className="text-center">
+                <span className="text-[10px] bg-white/80 text-slate-500 font-medium px-2 py-0.5 rounded-md shadow-2xs">
+                  Hoje • Simulação de Envio Assistido
+                </span>
+              </div>
+
+              {/* Classic WhatsApp outgoing bubble - Strictly NO fake check marks */}
+              <div className="max-w-[88%] self-end bg-[#dcf8c6] text-slate-800 rounded-lg rounded-tr-xs p-3.5 shadow-xs border border-emerald-200/40 text-xs leading-relaxed break-words whitespace-pre-wrap">
+                <p>{whatsappData.text || '(Template de WhatsApp sem mensagem de texto)'}</p>
+                <div className="mt-1.5 flex items-center justify-end text-[10px] text-slate-500 font-sans">
+                  <span>Pré-visualização do texto</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Metrics Footer */}
+            <div className="bg-[#f0f2f5] px-4 py-3 border-t border-slate-200 text-[11px] text-slate-600 space-y-1">
+              <div className="flex items-center justify-between font-sans">
+                <span>Comprimento: <strong className="text-slate-800">{whatsappData.characterCount}</strong> caracteres</span>
+                <span className="text-emerald-700 font-semibold">Envio Manual Assistido</span>
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                <span>Variáveis dinâmicas hidratadas</span>
+                <span>Sem envio real</span>
               </div>
             </div>
           </div>

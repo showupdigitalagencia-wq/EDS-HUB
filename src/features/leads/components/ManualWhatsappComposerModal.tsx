@@ -32,8 +32,10 @@ import { resolveSmsDestinationPhone } from '../../../utils/phone';
 import { WhatsAppIcon } from '../../../components/icons/WhatsAppIcon';
 import {
   fetchCanonicalSmsTemplates,
+  fetchCanonicalWhatsappTemplates,
   hydrateTemplateForLead,
   type CanonicalSmsTemplate,
+  type CanonicalWhatsappTemplate,
 } from '../../templates/services/canonical-template-service';
 import type { Lead } from '../../../types';
 
@@ -91,17 +93,86 @@ export const SHARED_WHATSAPP_TEMPLATES: SharedMessageTemplate[] = [
   },
 ];
 
-export function resolveDefaultWhatsappTemplateId(lead: Lead): string | null {
-  const interestStr = `${lead.course_interest || ''} ${JSON.stringify(lead.course_interests || [])}`.toLowerCase();
-  if (interestStr.includes('zygoma')) return 'zygomatic_followup_whatsapp';
-  if (interestStr.includes('endo')) return 'endodontics_followup_whatsapp';
-  if (interestStr.includes('wisdom') || interestStr.includes('molar')) return 'wisdom_followup_whatsapp';
-  if (interestStr.includes('rehab')) return 'rehabilitation_followup_whatsapp';
-  if (interestStr.includes('perio')) return 'periodontal_followup_whatsapp';
-  if (interestStr.includes('implant') || interestStr.includes('intensive') || interestStr.includes('advanced')) {
-    return 'intensive_advanced_followup_whatsapp';
+/**
+ * Detects all distinct course families matching the lead's course interest or course interests list.
+ */
+export function detectMatchingCourseFamilies(lead: Lead): string[] {
+  const families: string[] = [];
+
+  const checkItem = (str: string) => {
+    if (!str || typeof str !== 'string') return;
+    const s = str.toLowerCase();
+    if (s.includes('zygoma')) {
+      families.push('zygomatic_followup_whatsapp');
+    }
+    if (s.includes('endo')) {
+      families.push('endodontics_followup_whatsapp');
+    }
+    if (s.includes('wisdom') || s.includes('molar') || s.includes('siso')) {
+      families.push('wisdom_followup_whatsapp');
+    }
+    if (s.includes('rehab') || s.includes('reab')) {
+      families.push('rehabilitation_followup_whatsapp');
+    }
+    if (s.includes('perio')) {
+      families.push('periodontal_followup_whatsapp');
+    }
+    if (
+      (s.includes('implant') || s.includes('intensive') || s.includes('advanced')) &&
+      !s.includes('zygoma') &&
+      !s.includes('rehab') &&
+      !s.includes('reab')
+    ) {
+      families.push('intensive_advanced_followup_whatsapp');
+    }
+  };
+
+  if (Array.isArray(lead.course_interests) && lead.course_interests.length > 0) {
+    lead.course_interests.forEach(checkItem);
+  } else if (lead.course_interest) {
+    // If multiple courses are separated by slash, comma or plus (e.g. "Zygomatic / Endodontics")
+    const parts = lead.course_interest.split(/[,;/+]/);
+    if (parts.length > 1) {
+      parts.forEach(checkItem);
+    } else {
+      checkItem(lead.course_interest);
+    }
   }
+
+  return [...new Set(families)];
+}
+
+/**
+ * Resolves the default WhatsApp template ID.
+ * When there is ambiguity (multiple courses) or an unknown course, returns null
+ * to require the operator to choose the course explicitly before loading the message.
+ */
+export function resolveDefaultWhatsappTemplateId(lead: Lead): string | null {
+  const matching = detectMatchingCourseFamilies(lead);
+  // Exactly 1 course family matched -> unambiguous, return it
+  if (matching.length === 1) {
+    return matching[0];
+  }
+  // 0 (unknown) or > 1 (multiple courses ambiguity) -> operator must select explicitly
   return null;
+}
+
+/**
+ * Adjusts WhatsApp template copy based on factual confirmation of email delivery.
+ * If email was not confirmed sent (or lead preferred WhatsApp), suppresses the claim
+ * "I just sent you an email with all the course details." to prevent misleading the lead.
+ */
+export function adjustWhatsappTextForEmailConfirmation(
+  rawText: string,
+  emailConfirmedSent: boolean
+): string {
+  if (emailConfirmedSent) {
+    return rawText;
+  }
+  return rawText
+    .replace(/\s*I just sent you an email with all the course details\.\s*/gi, '\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 export function cleanPhoneForWhatsApp(raw: string): string {
@@ -115,17 +186,22 @@ export const ManualWhatsappComposerModal: React.FC<ManualWhatsappComposerModalPr
   onWhatsappRecorded,
 }) => {
   const [canonicalTemplates, setCanonicalTemplates] = useState<CanonicalSmsTemplate[]>([]);
+  const [canonicalWhatsappTemplates, setCanonicalWhatsappTemplates] = useState<CanonicalWhatsappTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [messageText, setMessageText] = useState('');
   const [hasOpenedApp, setHasOpenedApp] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unknownCourseNotice, setUnknownCourseNotice] = useState(false);
+  const [hasConfirmedEmailSent, setHasConfirmedEmailSent] = useState<boolean>(false);
   const submittingRef = useRef(false);
 
   const destinationPhone = resolveSmsDestinationPhone(lead);
   const rawPhone = destinationPhone || lead.phone_e164 || lead.phone_raw || '';
   const digitsOnly = cleanPhoneForWhatsApp(destinationPhone || rawPhone);
+
+  const matchingCourseFamilies = detectMatchingCourseFamilies(lead);
+  const isAmbiguousCourse = matchingCourseFamilies.length > 1;
 
   // Initialize template text when modal opens
   useEffect(() => {
@@ -134,19 +210,74 @@ export const ManualWhatsappComposerModal: React.FC<ManualWhatsappComposerModalPr
     setError(null);
     submittingRef.current = false;
 
+    // Check if email was confirmed sent to this lead
+    let isMounted = true;
+    let emailConfirmed = false;
+
     const defaultTplId = resolveDefaultWhatsappTemplateId(lead);
     if (defaultTplId) {
       setSelectedTemplateId(defaultTplId);
       setUnknownCourseNotice(false);
       const staticTpl = SHARED_WHATSAPP_TEMPLATES.find((t) => t.id === defaultTplId);
-      if (staticTpl) setMessageText(staticTpl.generator(lead));
+      if (staticTpl) {
+        const text = staticTpl.generator(lead);
+        setMessageText(adjustWhatsappTextForEmailConfirmation(text, emailConfirmed));
+      }
     } else {
       setSelectedTemplateId('');
       setMessageText('');
       setUnknownCourseNotice(true);
     }
 
-    let isMounted = true;
+    // Check factual email delivery confirmation strictly scoped to this lead
+    const checkEmailDelivery = async () => {
+      try {
+        if (!lead.id) return;
+        const { data: outbox } = await supabase
+          .from('outbound_messages')
+          .select('id, status, sent_at')
+          .eq('lead_id', lead.id)
+          .eq('channel', 'email')
+          .in('status', ['sent', 'delivered', 'opened', 'clicked'])
+          .limit(1);
+
+        const emailWasSent = Boolean(outbox && outbox.length > 0 && lead.contact_preference !== 'whatsapp');
+        if (isMounted) {
+          setHasConfirmedEmailSent(emailWasSent);
+          emailConfirmed = emailWasSent;
+          setMessageText((curr) => adjustWhatsappTextForEmailConfirmation(curr, emailWasSent));
+        }
+      } catch (e) {
+        if (isMounted) {
+          const fallbackPref = lead.contact_preference !== 'whatsapp';
+          setHasConfirmedEmailSent(fallbackPref);
+          emailConfirmed = fallbackPref;
+          setMessageText((curr) => adjustWhatsappTextForEmailConfirmation(curr, fallbackPref));
+        }
+      }
+    };
+    void checkEmailDelivery();
+
+    // Load canonical WhatsApp templates (from database or canonical fallbacks)
+    fetchCanonicalWhatsappTemplates(false)
+      .then((waTemplates) => {
+        if (!isMounted) return;
+        setCanonicalWhatsappTemplates(waTemplates);
+        if (defaultTplId) {
+          const canonicalWa = waTemplates.find(
+            (t) => t.template_key === defaultTplId || t.id === defaultTplId
+          );
+          if (canonicalWa && canonicalWa.text_template) {
+            const hydrated = hydrateTemplateForLead(canonicalWa.text_template, lead);
+            setMessageText(adjustWhatsappTextForEmailConfirmation(hydrated, emailConfirmed));
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback already initialized synchronously
+      });
+
+    // Also fetch canonical SMS templates for backwards-compatibility
     fetchCanonicalSmsTemplates(false)
       .then((loaded) => {
         if (!isMounted) return;
@@ -157,7 +288,9 @@ export const ManualWhatsappComposerModal: React.FC<ManualWhatsappComposerModalPr
             (t) => t.template_key === equivalentSmsKey || t.id === equivalentSmsKey
           );
           if (canonical && canonical.text_template) {
-            setMessageText(hydrateTemplateForLead(canonical.text_template, lead));
+            setMessageText((prev) =>
+              prev || adjustWhatsappTextForEmailConfirmation(hydrateTemplateForLead(canonical.text_template, lead), emailConfirmed)
+            );
           }
         }
       })
@@ -175,17 +308,34 @@ export const ManualWhatsappComposerModal: React.FC<ManualWhatsappComposerModalPr
   const handleTemplateChange = (templateId: string) => {
     setSelectedTemplateId(templateId);
     setUnknownCourseNotice(false);
-    const equivalentSmsKey = templateId.replace('_whatsapp', '_sms');
-    const canonical = canonicalTemplates.find(
-      (t) => t.template_key === equivalentSmsKey || t.id === equivalentSmsKey
+
+    let rawResolvedText = '';
+
+    // 1. Check canonical WhatsApp templates from database
+    const canonicalWa = canonicalWhatsappTemplates.find(
+      (t) => t.template_key === templateId || t.id === templateId
     );
-    if (canonical && canonical.text_template) {
-      setMessageText(hydrateTemplateForLead(canonical.text_template, lead));
+    if (canonicalWa && canonicalWa.text_template) {
+      rawResolvedText = hydrateTemplateForLead(canonicalWa.text_template, lead);
     } else {
-      const tpl = SHARED_WHATSAPP_TEMPLATES.find((t) => t.id === templateId);
-      if (tpl) {
-        setMessageText(tpl.generator(lead));
+      // 2. Check canonical SMS templates
+      const equivalentSmsKey = templateId.replace('_whatsapp', '_sms');
+      const canonical = canonicalTemplates.find(
+        (t) => t.template_key === equivalentSmsKey || t.id === equivalentSmsKey
+      );
+      if (canonical && canonical.text_template) {
+        rawResolvedText = hydrateTemplateForLead(canonical.text_template, lead);
+      } else {
+        // 3. Fallback to SHARED_WHATSAPP_TEMPLATES generators
+        const tpl = SHARED_WHATSAPP_TEMPLATES.find((t) => t.id === templateId);
+        if (tpl) {
+          rawResolvedText = tpl.generator(lead);
+        }
       }
+    }
+
+    if (rawResolvedText) {
+      setMessageText(adjustWhatsappTextForEmailConfirmation(rawResolvedText, hasConfirmedEmailSent));
     }
   };
 
@@ -444,8 +594,21 @@ export const ManualWhatsappComposerModal: React.FC<ManualWhatsappComposerModalPr
             </div>
           </div>
 
+          {/* Ambiguous Course (Multiple Courses) Warning */}
+          {isAmbiguousCourse && !selectedTemplateId && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
+              <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="block font-semibold">Lead com interesse em múltiplos cursos</strong>
+                <span>
+                  Este lead possui múltiplos cursos associados ({Array.isArray(lead.course_interests) && lead.course_interests.length > 0 ? lead.course_interests.join(', ') : lead.course_interest}). Por favor, selecione abaixo para qual curso deseja direcionar este atendimento antes de carregar a mensagem.
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Unknown Course Warning */}
-          {unknownCourseNotice && (
+          {unknownCourseNotice && !isAmbiguousCourse && !selectedTemplateId && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
               <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
               <div>
@@ -460,8 +623,8 @@ export const ManualWhatsappComposerModal: React.FC<ManualWhatsappComposerModalPr
           {/* Template Selector */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
-              <span>Template de Mensagem (Compartilhado com SMS)</span>
-              <span className="text-[10px] text-slate-400 font-normal">Conteúdo 100% idêntico</span>
+              <span>Template de Mensagem (WhatsApp)</span>
+              <span className="text-[10px] text-slate-400 font-normal">Modelos oficiais e customizados</span>
             </label>
             <select
               value={selectedTemplateId}
@@ -470,13 +633,54 @@ export const ManualWhatsappComposerModal: React.FC<ManualWhatsappComposerModalPr
               className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#25d366]/20 focus:border-[#25d366] bg-white cursor-pointer"
             >
               <option value="">Selecione um curso / template aprovado...</option>
+              {/* Approved Standard Course Templates */}
               {SHARED_WHATSAPP_TEMPLATES.map((tpl) => (
                 <option key={tpl.id} value={tpl.id}>
                   {tpl.name}
                 </option>
               ))}
+              {/* Additional Custom Database WhatsApp Templates */}
+              {canonicalWhatsappTemplates
+                .filter(
+                  (c) =>
+                    !SHARED_WHATSAPP_TEMPLATES.some(
+                      (s) => s.id === c.template_key || s.id === c.id
+                    )
+                )
+                .map((tpl) => (
+                  <option key={tpl.id} value={tpl.template_key || tpl.id}>
+                    {tpl.name} (Customizado)
+                  </option>
+                ))}
             </select>
           </div>
+
+          {/* Email Confirmation Status Indicator */}
+          {hasConfirmedEmailSent ? (
+            <div className="p-2.5 bg-emerald-50/80 border border-emerald-200/80 rounded-xl text-[11px] text-emerald-900 flex items-center justify-between">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="truncate">E-mail com detalhes confirmado como enviado previamente. Menção mantida.</span>
+              </div>
+              <span className="font-semibold text-emerald-800 text-[10px] bg-emerald-100/60 px-2 py-0.5 rounded border border-emerald-300/40 shrink-0 ml-2">
+                E-mail confirmado
+              </span>
+            </div>
+          ) : (
+            <div className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] text-slate-600 flex items-center justify-between">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="truncate">
+                  {lead.contact_preference === 'whatsapp'
+                    ? 'Preferência de contato: WhatsApp (E-mail automático não presumido).'
+                    : 'Nenhum e-mail de detalhes confirmado como enviado. Menção suprimida.'}
+                </span>
+              </div>
+              <span className="font-semibold text-slate-600 text-[10px] bg-slate-200/60 px-2 py-0.5 rounded border border-slate-300/60 shrink-0 ml-2">
+                Sem presunção de envio
+              </span>
+            </div>
+          )}
 
           {/* Message Textarea */}
           <div>

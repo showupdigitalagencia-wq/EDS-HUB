@@ -40,26 +40,39 @@ export {
   APPROVED_COURSE_TEMPLATES,
 } from './salutation';
 
-export type TemplateChannel = 'email' | 'sms';
+export type TemplateChannel = 'email' | 'sms' | 'whatsapp';
 
 /**
  * Safely extracts the channel from an email_templates record.
  * Handles:
- * - New templates with content_json.channel === 'sms' | 'email'
+ * - New templates with content_json.channel === 'whatsapp' | 'sms' | 'email'
+ * - Templates with category === 'whatsapp' | 'sms' | 'email'
+ * - Template keys or names containing 'whatsapp' or 'sms'
  * - Legacy templates where content_json is an EmailBlock[] array (treated as 'email')
  */
 export function getTemplateChannel(
-  template: { content_json?: unknown; category?: string; channel?: string; type?: string } | null | undefined
+  template: { content_json?: unknown; category?: string; channel?: string; type?: string; template_key?: string | null; name?: string } | null | undefined
 ): TemplateChannel {
   if (!template) return 'email';
   const anyTpl = template as Record<string, unknown>;
+  if (anyTpl.channel === 'whatsapp' || anyTpl.category === 'whatsapp' || anyTpl.type === 'whatsapp') return 'whatsapp';
   if (anyTpl.channel === 'sms' || anyTpl.category === 'sms' || anyTpl.type === 'sms') return 'sms';
   if (anyTpl.channel === 'email' || anyTpl.category === 'email' || anyTpl.type === 'email') return 'email';
   const cj = template.content_json;
   if (typeof cj === 'object' && cj !== null && !Array.isArray(cj)) {
     const channel = (cj as { channel?: string }).channel;
+    if (channel === 'whatsapp') return 'whatsapp';
     if (channel === 'sms') return 'sms';
     if (channel === 'email') return 'email';
+  }
+  if (typeof anyTpl.template_key === 'string') {
+    const tk = anyTpl.template_key.toLowerCase();
+    if (tk.includes('whatsapp') || tk.includes('wpp')) return 'whatsapp';
+    if (tk.includes('sms')) return 'sms';
+  }
+  if (typeof anyTpl.name === 'string') {
+    const lowerName = anyTpl.name.toLowerCase();
+    if (lowerName.includes('whatsapp') || lowerName.includes('wpp') || lowerName.includes('zap')) return 'whatsapp';
   }
   // Default for legacy EmailBlock[] arrays or undefined
   return 'email';

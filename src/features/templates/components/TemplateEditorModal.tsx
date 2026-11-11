@@ -18,6 +18,7 @@ import {
 import { renderBlocksToHtml, renderBlocksToText } from '../../editor/utils/htmlGenerator';
 import { getTemplateUsage, type TemplateUsage } from '../services/template-usage-service';
 import { invalidateCanonicalTemplateCache } from '../services/canonical-template-service';
+import { WhatsAppIcon } from '../../../components/icons/WhatsAppIcon';
 import type { EmailTemplate } from '../../../types';
 import type { EmailBlock, BlockType } from '../../editor/types';
 import {
@@ -79,6 +80,10 @@ export function TemplateEditorModal({
   // SMS specific state
   const [smsBody, setSmsBody] = useState('');
   const smsTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // WhatsApp specific state
+  const [whatsappBody, setWhatsappBody] = useState('');
+  const whatsappTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const subjectInputRef = useRef<HTMLInputElement | null>(null);
 
   // Status & Usage
@@ -205,12 +210,21 @@ export function TemplateEditorModal({
         if (tplKey) {
           void loadAttachment(tplKey);
         }
+      } else if (ch === 'whatsapp') {
+        setSubject('');
+        setCurrentBlocks([]);
+        setCurrentHtml('');
+        setCurrentText('');
+        setSmsBody('');
+        setWhatsappBody(editingTemplate.text_template || (editingTemplate.content_json as any)?.body || '');
+        setAttachment(null);
       } else {
         setSubject('');
         setCurrentBlocks([]);
         setCurrentHtml('');
         setCurrentText('');
-        setSmsBody(editingTemplate.text_template || '');
+        setSmsBody(editingTemplate.text_template || (editingTemplate.content_json as any)?.body || '');
+        setWhatsappBody('');
         setAttachment(null);
       }
 
@@ -255,6 +269,7 @@ export function TemplateEditorModal({
       setCurrentHtml(renderBlocksToHtml(defaultBlocks));
       setCurrentText(renderBlocksToText(defaultBlocks));
       setSmsBody('');
+      setWhatsappBody('');
       setUsage(null);
     }
   }, [isOpen, editingTemplate, loadAttachment]);
@@ -294,7 +309,21 @@ export function TemplateEditorModal({
       setTimeout(() => setVariableCopiedNotice(null), 2500);
     }
 
-    if (channel === 'sms') {
+    if (channel === 'whatsapp') {
+      const textarea = whatsappTextareaRef.current;
+      if (!textarea) {
+        setWhatsappBody((prev) => `${prev} ${varKey}`);
+        return;
+      }
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newText = whatsappBody.substring(0, start) + varKey + whatsappBody.substring(end);
+      setWhatsappBody(newText);
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + varKey.length, start + varKey.length);
+      }, 0);
+    } else if (channel === 'sms') {
       const textarea = smsTextareaRef.current;
       if (!textarea) {
         setSmsBody((prev) => `${prev} ${varKey}`);
@@ -643,6 +672,41 @@ export function TemplateEditorModal({
 
           if (insErr) throw insErr;
         }
+      } else if (channel === 'whatsapp') {
+        // WhatsApp channel
+        const payloadContentJson = {
+          channel: 'whatsapp',
+          body: whatsappBody.trim(),
+        };
+        const effectiveCategory = category && category !== 'general' ? category : 'whatsapp';
+
+        if (editingTemplate) {
+          const { error: upErr } = await supabase
+            .from('email_templates')
+            .update({
+              name: name.trim(),
+              description: description.trim() || null,
+              category: effectiveCategory,
+              content_json: payloadContentJson,
+              html_template: '',
+              text_template: whatsappBody.trim(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', editingTemplate.id);
+
+          if (upErr) throw upErr;
+        } else {
+          const { error: insErr } = await supabase.from('email_templates').insert({
+            name: name.trim(),
+            description: description.trim() || null,
+            category: effectiveCategory,
+            content_json: payloadContentJson,
+            html_template: '',
+            text_template: whatsappBody.trim(),
+          });
+
+          if (insErr) throw insErr;
+        }
       } else {
         // SMS channel
         const payloadContentJson = {
@@ -713,6 +777,14 @@ export function TemplateEditorModal({
     };
   }, [smsBody]);
 
+  const previewWhatsappData = useMemo(() => {
+    const substitutedText = renderTemplateWithSampleData(whatsappBody, 'global');
+    return {
+      text: substitutedText,
+      characterCount: substitutedText.length,
+    };
+  }, [whatsappBody]);
+
   if (!isOpen) return null;
 
   return (
@@ -751,7 +823,7 @@ export function TemplateEditorModal({
             <div className="min-w-0">
               <h2 className="text-sm sm:text-base font-bold text-[#08254f] truncate font-heading tracking-tight">
                 {editingTemplate
-                  ? `Editar Template (${channel === 'sms' ? 'SMS' : 'Email'})`
+                  ? `Editar Template (${channel === 'sms' ? 'SMS' : channel === 'whatsapp' ? 'WhatsApp' : 'Email'})`
                   : 'Novo Template'}
               </h2>
               <p className="text-[11px] text-slate-500 truncate hidden sm:block">
@@ -865,7 +937,7 @@ export function TemplateEditorModal({
                 <label className="block text-xs font-semibold text-slate-700 mb-2 font-heading">
                   Canal de Comunicação
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {/* Email Card */}
                   <button
                     type="button"
@@ -917,6 +989,33 @@ export function TemplateEditorModal({
                       <p className="text-[11px] text-slate-500 truncate">Mensagens curtas</p>
                     </div>
                   </button>
+
+                  {/* WhatsApp Card */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChannel('whatsapp');
+                      if (category === 'general') setCategory('whatsapp');
+                      if (activeMode === 'blocos') setActiveMode('compor');
+                    }}
+                    className={`p-3 rounded-xl border text-left flex items-start gap-3 transition-all duration-150 cursor-pointer ${
+                      channel === 'whatsapp'
+                        ? 'border-emerald-600 bg-emerald-50/40 text-emerald-950 ring-1 ring-emerald-600/20 shadow-2xs'
+                        : 'border-slate-200/90 hover:border-slate-300 bg-white text-slate-700'
+                    }`}
+                  >
+                    <div
+                      className={`p-2 rounded-lg shrink-0 ${
+                        channel === 'whatsapp' ? 'bg-[#25D366] text-white' : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      <WhatsAppIcon className="w-4 h-4 fill-current" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-xs sm:text-sm font-heading">WhatsApp</p>
+                      <p className="text-[11px] text-slate-500 truncate">Mensagens assistidas</p>
+                    </div>
+                  </button>
                 </div>
               </div>
             )}
@@ -934,7 +1033,9 @@ export function TemplateEditorModal({
                   placeholder={
                     channel === 'email'
                       ? 'Ex: Boas-vindas Pós-Inscrição'
-                      : 'Ex: Lembrete de Matrícula SMS'
+                      : channel === 'whatsapp'
+                        ? 'Ex: Contato Inicial WhatsApp'
+                        : 'Ex: Lembrete de Matrícula SMS'
                   }
                   className="w-full h-11 px-3.5 text-xs sm:text-sm bg-white border border-slate-200/90 hover:border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#08254f]/15 focus:border-[#08254f] transition-all"
                 />
@@ -1366,6 +1467,45 @@ export function TemplateEditorModal({
                   )}
                 </div>
               </>
+            ) : channel === 'whatsapp' ? (
+              /* WHATSAPP COMPOSER */
+              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-6 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <div className="flex items-center gap-2">
+                    <WhatsAppIcon className="w-4 h-4 fill-[#25D366]" />
+                    <label className="block text-xs font-bold text-[#08254f] font-heading">
+                      Mensagem de WhatsApp (Envio Assistido)
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-mono">
+                    <span className="text-slate-500">
+                      {whatsappBody.length} caracteres
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      WhatsApp Web / App
+                    </span>
+                  </div>
+                </div>
+
+                <textarea
+                  ref={whatsappTextareaRef}
+                  rows={8}
+                  value={whatsappBody}
+                  onChange={(e) => setWhatsappBody(e.target.value)}
+                  placeholder="Ex: Olá, Dr(a). {{first_name}}! Tudo bem? Sou da equipe da Expert Dental Solutions e estou entrando em contato sobre o curso de Implantes..."
+                  className="w-full p-4 text-xs sm:text-sm text-slate-900 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 leading-relaxed transition-all font-sans"
+                />
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-slate-400 gap-1 pt-1">
+                  <p>
+                    Suporta quebras de linha, emojis e formatação nativa (*negrito*, _itálico_).
+                  </p>
+                  <span className="text-slate-400 font-medium shrink-0">
+                    Disparo assistido via link wa.me
+                  </span>
+                </div>
+              </div>
             ) : (
                 /* SMS COMPOSER */
                 <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-6 space-y-3">
@@ -1539,6 +1679,62 @@ export function TemplateEditorModal({
                     </div>
                   </div>
                 </div>
+              ) : channel === 'whatsapp' ? (
+                /* WHATSAPP PREVIEW (WITHOUT FAKE TICKS/CHECKS) */
+                <div className="max-w-sm mx-auto rounded-3xl border border-slate-300 overflow-hidden shadow-lg bg-[#efeae2] text-slate-900">
+                  {/* WhatsApp Chrome Header */}
+                  <div className="bg-[#075e54] text-white px-5 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-xs uppercase text-white">
+                        {SAMPLE_PREVIEW_DATA.first_name.charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold leading-tight truncate">
+                          {SAMPLE_PREVIEW_DATA.first_name} {SAMPLE_PREVIEW_DATA.last_name}
+                        </p>
+                        <p className="text-[10px] text-emerald-100 font-mono">
+                          {SAMPLE_PREVIEW_DATA.recipient_phone}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-semibold uppercase bg-emerald-800/80 text-emerald-100 px-2 py-0.5 rounded border border-emerald-600/40">
+                      WhatsApp
+                    </span>
+                  </div>
+
+                  {/* Chat bubble screen */}
+                  <div className="p-4 bg-[#efeae2] min-h-[280px] flex flex-col justify-end space-y-2">
+                    <div className="text-center">
+                      <span className="text-[10px] bg-white/80 text-slate-500 font-medium px-2 py-0.5 rounded-md shadow-2xs">
+                        Hoje • Simulação de Envio Assistido
+                      </span>
+                    </div>
+
+                    {/* WhatsApp Outgoing Bubble (#dcf8c6) - Strictly NO fake blue ticks/check marks */}
+                    <div className="max-w-[88%] self-end bg-[#dcf8c6] text-slate-800 rounded-lg rounded-tr-xs p-3 shadow-xs border border-emerald-200/40 text-xs leading-relaxed break-words whitespace-pre-wrap">
+                      <p>{previewWhatsappData.text || '(Template de WhatsApp sem mensagem de texto)'}</p>
+                      <div className="mt-1.5 flex items-center justify-end text-[10px] text-slate-500 font-sans">
+                        <span>Pré-visualização do texto</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Metrics Footer */}
+                  <div className="bg-[#f0f2f5] px-4 py-2.5 border-t border-slate-200 text-[11px] text-slate-600 space-y-1 font-sans">
+                    <div className="flex items-center justify-between">
+                      <span>
+                        Comprimento: <strong className="text-slate-800">{previewWhatsappData.characterCount} caracteres</strong>
+                      </span>
+                      <span className="text-emerald-700 font-semibold">
+                        Envio Manual Assistido
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-500">
+                      <span>Variáveis hidratadas dinamicamente</span>
+                      <span>Sem envio real</span>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 /* SMS PREVIEW */
                 <div className="max-w-sm mx-auto rounded-3xl border border-slate-300 overflow-hidden shadow-lg bg-slate-900 text-white">
@@ -1609,7 +1805,9 @@ export function TemplateEditorModal({
           <div className="text-xs text-slate-400 truncate max-w-[180px] sm:max-w-md">
             {channel === 'sms'
               ? `${smsMetrics.characterCount} caracteres • ${smsMetrics.segmentCount} segmento(s)`
-              : `${currentBlocks.length} bloco(s) • Exportação HTML automática`}
+              : channel === 'whatsapp'
+                ? `${whatsappBody.length} caracteres • Modelo de WhatsApp Assistido`
+                : `${currentBlocks.length} bloco(s) • Exportação HTML automática`}
           </div>
 
           <div className="flex items-center gap-2.5">
