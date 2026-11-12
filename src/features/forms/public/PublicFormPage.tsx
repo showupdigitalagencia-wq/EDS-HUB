@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Clock,
 } from 'lucide-react';
+import { PhoneCountryInput } from './components/PhoneCountryInput';
 
 export function PublicFormPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -129,8 +130,8 @@ export function PublicFormPage() {
       // Phone format check
       if (field.field_type === 'phone' && val) {
         const digits = String(val).replace(/\D/g, '');
-        if (digits.length < 7) {
-          errors[field.internal_name] = 'Please enter a complete phone number.';
+        if (digits.length < 8 || digits.length > 15) {
+          errors[field.internal_name] = 'Please enter a valid international phone number (8-15 digits).';
         }
       }
     }
@@ -412,17 +413,23 @@ export function PublicFormPage() {
                         {field.placeholder || field.label}
                       </span>
                     </label>
+                  ) : field.field_type === 'phone' ? (
+                    /* Field Type: phone with international country selector */
+                    <PhoneCountryInput
+                      id={`field-${field.internal_name}`}
+                      value={String(value || '')}
+                      error={Boolean(error)}
+                      placeholder={field.placeholder || 'Enter Phone Number'}
+                      onChange={(fullE164, countryIso) => {
+                        handleFieldChange(field.internal_name, fullE164);
+                        handleFieldChange(`${field.internal_name}_country`, countryIso);
+                      }}
+                    />
                   ) : (
-                    /* Default text / email / phone inputs */
+                    /* Default text / email inputs */
                     <input
                       id={`field-${field.internal_name}`}
-                      type={
-                        field.field_type === 'email'
-                          ? 'email'
-                          : field.field_type === 'phone'
-                          ? 'tel'
-                          : 'text'
-                      }
+                      type={field.field_type === 'email' ? 'email' : 'text'}
                       value={String(value || '')}
                       placeholder={field.placeholder || ''}
                       onChange={(e) => handleFieldChange(field.internal_name, e.target.value)}

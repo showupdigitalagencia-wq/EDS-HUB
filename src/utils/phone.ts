@@ -1,7 +1,10 @@
+import { parsePhoneNumber, type CountryCode } from 'libphonenumber-js';
+
 // =============================================================================
 // Phone Normalization Utility
 // =============================================================================
 // Safe international phone parsing & E.164 normalization for EDS HUB.
+// Powered by libphonenumber-js with conservative fallback guards.
 //
 // Rules:
 // 1. Explicit International (+):
@@ -20,6 +23,7 @@
 // 3. Ambiguous Local / No Country Code:
 //    - If the number does NOT start with '+' and cannot be unambiguously resolved,
 //      do NOT guess or fabricate country.
+//      do NOT assume +1.
 //    - Preserve phone_raw verbatim.
 //    - Set phone_e164 to null and mark as ambiguous.
 // =============================================================================
@@ -29,6 +33,7 @@ export interface PhoneParseResult {
   phone_e164: string | null;
   isValidE164: boolean;
   countryCode: string | null;
+  phone_country?: string | null;
   isAmbiguous: boolean;
   formattedDisplay: string | null;
 }
@@ -45,14 +50,18 @@ export interface PhoneNormalizationOptions {
  */
 export function normalizePhoneSafe(
   rawInput?: string | null,
-  options?: PhoneNormalizationOptions
+  options?: PhoneNormalizationOptions | string
 ): PhoneParseResult {
+  const normOptions: PhoneNormalizationOptions =
+    typeof options === 'string' ? { sourceCountry: options } : options || {};
+
   if (!rawInput || !rawInput.trim()) {
     return {
       phone_raw: null,
       phone_e164: null,
       isValidE164: false,
       countryCode: null,
+      phone_country: null,
       isAmbiguous: false,
       formattedDisplay: null,
     };
@@ -64,16 +73,44 @@ export function normalizePhoneSafe(
   // 1. Check for explicit international prefix (+)
   if (phone_raw.startsWith('+')) {
     if (digitsOnly.length >= 8 && digitsOnly.length <= 15) {
+      try {
+        const parsed = parsePhoneNumber(phone_raw);
+        if (parsed && parsed.isValid()) {
+          const iso = parsed.country;
+          let labelCountry = 'INTL';
+          if (iso === 'US' || iso === 'CA') labelCountry = 'US/CA';
+          else if (iso === 'BR') labelCountry = 'BR';
+          else if (iso === 'GB') labelCountry = 'UK';
+          else if (iso) labelCountry = iso;
+
+          return {
+            phone_raw,
+            phone_e164: parsed.number,
+            isValidE164: true,
+            countryCode: labelCountry,
+            phone_country: iso || labelCountry,
+            isAmbiguous: false,
+            formattedDisplay: formatE164Display(parsed.number, labelCountry),
+          };
+        }
+      } catch {
+        // Fallback to candidate digits
+      }
+
       const e164Candidate = `+${digitsOnly}`;
 
       // Detect known country prefixes safely
       let countryCode: string | null = null;
+      let phoneCountryIso: string | null = null;
       if (digitsOnly.startsWith('1') && digitsOnly.length === 11) {
         countryCode = 'US/CA';
+        phoneCountryIso = 'US';
       } else if (digitsOnly.startsWith('55') && (digitsOnly.length === 12 || digitsOnly.length === 13)) {
         countryCode = 'BR';
+        phoneCountryIso = 'BR';
       } else if (digitsOnly.startsWith('44') && (digitsOnly.length === 11 || digitsOnly.length === 12)) {
         countryCode = 'UK';
+        phoneCountryIso = 'GB';
       } else if (digitsOnly.length >= 8) {
         countryCode = 'INTL';
       }
@@ -83,6 +120,7 @@ export function normalizePhoneSafe(
         phone_e164: e164Candidate,
         isValidE164: true,
         countryCode,
+        phone_country: phoneCountryIso || countryCode,
         isAmbiguous: false,
         formattedDisplay: formatE164Display(e164Candidate, countryCode),
       };
@@ -115,9 +153,43 @@ export function normalizePhoneSafe(
   }
 
   // 3. Country-Assisted Normalization (ONLY if reliable source country metadata exists)
-  const normSourceCountry = (options?.sourceCountry || '').trim().toUpperCase();
+  const normSourceCountry = (normOptions.sourceCountry || '').trim().toUpperCase();
   if (normSourceCountry) {
-    // UK confirmed by source metadata (e.g. country field from HubSpot or form)
+    let targetIso: CountryCode | null = null;
+    if (normSourceCountry === 'UK' || normSourceCountry === 'GB') targetIso = 'GB';
+    else if (normSourceCountry === 'BR' || normSourceCountry === 'BRAZIL' || normSourceCountry === 'BRASIL') targetIso = 'BR';
+    else if (normSourceCountry === 'US' || normSourceCountry === 'USA') targetIso = 'US';
+    else if (normSourceCountry === 'CA' || normSourceCountry === 'CANADA') targetIso = 'CA';
+    else if (normSourceCountry.length === 2) targetIso = normSourceCountry as CountryCode;
+
+    // A. First try libphonenumber-js parsing with target country (handles national trunk zeros, formatting, etc.)
+    if (targetIso) {
+      try {
+        const parsed = parsePhoneNumber(phone_raw, targetIso);
+        if (parsed && parsed.isValid()) {
+          const iso = parsed.country;
+          let labelCountry: string = 'INTL';
+          if (iso === 'US' || iso === 'CA') labelCountry = 'US/CA';
+          else if (iso === 'BR') labelCountry = 'BR';
+          else if (iso === 'GB') labelCountry = 'UK';
+          else if (iso) labelCountry = iso;
+
+          return {
+            phone_raw,
+            phone_e164: parsed.number,
+            isValidE164: true,
+            countryCode: labelCountry,
+            phone_country: iso || labelCountry,
+            isAmbiguous: false,
+            formattedDisplay: formatE164Display(parsed.number, labelCountry),
+          };
+        }
+      } catch {
+        // Fall through to manual rules
+      }
+    }
+
+    // B. Fallback to strict legacy manual checks for specific edge cases
     if (normSourceCountry === 'UK' || normSourceCountry === 'GB') {
       if (digitsOnly.startsWith('44') && digitsOnly.length === 12) {
         const e164Candidate = `+${digitsOnly}`;
@@ -143,7 +215,6 @@ export function normalizePhoneSafe(
       }
     }
 
-    // Brazil confirmed by source metadata
     if (normSourceCountry === 'BR' || normSourceCountry === 'BRAZIL' || normSourceCountry === 'BRASIL') {
       if (digitsOnly.startsWith('55') && (digitsOnly.length === 12 || digitsOnly.length === 13)) {
         const e164Candidate = `+${digitsOnly}`;
@@ -169,7 +240,6 @@ export function normalizePhoneSafe(
       }
     }
 
-    // US/Canada confirmed by source metadata
     if (normSourceCountry === 'US' || normSourceCountry === 'USA' || normSourceCountry === 'CA' || normSourceCountry === 'CANADA') {
       if (digitsOnly.startsWith('1') && digitsOnly.length === 11 && /^[2-9]/.test(digitsOnly.slice(1))) {
         const e164Candidate = `+${digitsOnly}`;
@@ -260,15 +330,15 @@ export function resolveSmsDestinationPhone(
 /**
  * Formats known E.164 phone numbers for clean UI presentation.
  */
-export function formatE164Display(e164: string, countryCode: string | null): string {
+export function formatE164Display(e164: string, countryCode?: string | null): string {
   const digits = e164.replace(/\D/g, '');
 
-  if (countryCode === 'US/CA' && digits.length === 11) {
+  if ((countryCode === 'US/CA' || (!countryCode && digits.startsWith('1'))) && digits.length === 11) {
     // +1 (AAA) NNN-NNNN
     return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
   }
 
-  if (countryCode === 'BR') {
+  if (countryCode === 'BR' || (!countryCode && digits.startsWith('55'))) {
     if (digits.length === 13) {
       // +55 (DD) 9NNNN-NNNN (Mobile)
       return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
@@ -279,9 +349,21 @@ export function formatE164Display(e164: string, countryCode: string | null): str
     }
   }
 
-  if (countryCode === 'UK' && digits.length === 12) {
-    // +44 7833 252393
-    return `+44 ${digits.slice(2, 6)} ${digits.slice(6)}`;
+  if ((countryCode === 'UK' || (!countryCode && digits.startsWith('44'))) && (digits.length === 12 || digits.length === 11)) {
+    // +44 7956 463939
+    if (digits.length === 12) {
+      return `+44 ${digits.slice(2, 6)} ${digits.slice(6)}`;
+    }
+    return `+44 ${digits.slice(2)}`;
+  }
+
+  try {
+    const parsed = parsePhoneNumber(e164);
+    if (parsed) {
+      return parsed.formatInternational();
+    }
+  } catch {
+    // ignore
   }
 
   return e164;

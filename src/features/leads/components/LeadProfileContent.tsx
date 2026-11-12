@@ -36,6 +36,7 @@ import { MatriculaCourseTurmaModal } from './MatriculaCourseTurmaModal';
 import { formatCohortDateRange } from '../../../utils/format';
 import { resolveLeadCanonicalCourseInterests } from '../../../utils/course-resolver';
 import { isUuid } from '../../courses/services/turma-catalog-service';
+import { resolveSmsDestinationPhone, formatE164Display } from '../../../utils/phone';
 
 export function formatSafeTurmaLabel(
   title?: string | null,
@@ -493,7 +494,7 @@ export function LeadProfileContent({
                 {lead.phone_raw || lead.phone_e164 ? (
                   <span className="flex items-center gap-1">
                     <Phone className="h-3 w-3 text-slate-400" />
-                    {lead.phone_raw || lead.phone_e164}
+                    {lead.phone_e164 ? formatE164Display(lead.phone_e164) : (lead.phone_raw || lead.phone_e164)}
                   </span>
                 ) : null}
                 {lead.email ? (
@@ -796,15 +797,22 @@ export function LeadProfileContent({
               <div>
                 <span className="text-slate-400 block text-[11px] mb-0.5">Telefone</span>
                 {lead.phone_raw || lead.phone_e164 ? (
-                  <a
-                    href={`tel:${(lead.phone_e164 || lead.phone_raw || '').replace(/\D/g, '')}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="inline-flex w-fit max-w-full items-center gap-1.5 font-semibold text-slate-800 hover:text-[#08254f] py-1 px-1.5 -ml-1.5 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
-                    title={`Ligar para ${lead.phone_raw || lead.phone_e164}`}
-                  >
-                    <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate">{lead.phone_raw || lead.phone_e164}</span>
-                  </a>
+                  (() => {
+                    const destPhone = resolveSmsDestinationPhone(lead);
+                    const telHref = destPhone ? `tel:${destPhone}` : `tel:${(lead.phone_e164 || lead.phone_raw || '').replace(/\D/g, '')}`;
+                    const displayPhone = lead.phone_e164 ? formatE164Display(lead.phone_e164) : (lead.phone_raw || lead.phone_e164);
+                    return (
+                      <a
+                        href={telHref}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex w-fit max-w-full items-center gap-1.5 font-semibold text-slate-800 hover:text-[#08254f] py-1 px-1.5 -ml-1.5 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
+                        title={`Ligar para ${destPhone || displayPhone}`}
+                      >
+                        <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate">{displayPhone}</span>
+                      </a>
+                    );
+                  })()
                 ) : (
                   <span className="font-semibold text-slate-400 italic">Não informado</span>
                 )}
